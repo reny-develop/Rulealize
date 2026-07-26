@@ -16,4 +16,9 @@
     <WarningsAsErrors>$(WarningsAsErrors);NU1605;CS1591</WarningsAsErrors>
   </PropertyGroup>
 
+  <ItemGroup>
+    <Folder Include="Internal\Utility\" />
+    <Folder Include="Internal\Node\" />
+  </ItemGroup>
+
 </Project>

@@ -1,17 +1,17 @@
 ﻿// Copyright (c) 2026 Reny
-// Licensed under the MIT License.
+// Licensed under the Apache License, Version 2.0.
 
-using Rulealize.Definition;
+using Rulealize.Plugin.Abstraction;
 using System.Text.Json;
 
 namespace Rulealize.Execution
 {
     public class StateVariable
     {
-        public TypeDefinition Type { get; }
+        public TypeDefinitionBase Type { get; }
         public IReadOnlyDictionary<string, JsonElement> Values { get; }
         public StateVariable(
-            TypeDefinition type,
+            TypeDefinitionBase type,
             IReadOnlyDictionary<string, JsonElement> values)
         {
             Type = type;

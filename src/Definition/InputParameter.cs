@@ -1,5 +1,7 @@
 ﻿// Copyright (c) 2026 Reny
-// Licensed under the MIT License.
+// Licensed under the Apache License, Version 2.0.
+
+using Rulealize.Plugin.Abstraction;
 
 namespace Rulealize.Definition
 {
@@ -19,10 +21,10 @@ namespace Rulealize.Definition
         private readonly object _value;
 
         /// <summary>
-        /// Initializes a new instance of the <see cref="InputParameter"/> class with a <see cref="FunctionDefinition"/>.
+        /// Initializes a new instance of the <see cref="InputParameter"/> class with a <see cref="FunctionDefinitionBase"/>.
         /// </summary>
         /// <param name="value"></param>
-        public InputParameter(string name, FunctionDefinition value)
+        public InputParameter(string name, FunctionDefinitionBase value)
         {
             Name = name ?? throw new ArgumentNullException(nameof(name));
             _value = value ?? throw new ArgumentNullException(nameof(value));
@@ -32,7 +34,7 @@ namespace Rulealize.Definition
         /// Initializes a new instance of the <see cref="InputParameter"/> class with a <see cref="TypeDefinition"/>.
         /// </summary>
         /// <param name="value"></param>
-        public InputParameter(string name, TypeDefinition value)
+        public InputParameter(string name, TypeDefinitionBase value)
         {
             Name = name ?? throw new ArgumentNullException(nameof(name));
             _value = value ?? throw new ArgumentNullException(nameof(value));
@@ -48,13 +50,13 @@ namespace Rulealize.Definition
         }
 
         /// <summary>
-        /// Tries to get the underlying value as a <see cref="FunctionDefinition"/>.
+        /// Tries to get the underlying value as a <see cref="FunctionDefinitionBase"/>.
         /// </summary>
         /// <param name="value"></param>
         /// <returns></returns>
-        public bool TryGetFunctionDefinitionValue(out FunctionDefinition? value)
+        public bool TryGetFunctionDefinitionValue(out FunctionDefinitionBase? value)
         {
-            if (_value is FunctionDefinition f)
+            if (_value is FunctionDefinitionBase f)
             {
                 value = f;
                 return true;
@@ -65,13 +67,13 @@ namespace Rulealize.Definition
         }
 
         /// <summary>
-        /// Tries to get the underlying value as a <see cref="TypeDefinition"/>.
+        /// Tries to get the underlying value as a <see cref="TypeDefinitionBase"/>.
         /// </summary>
         /// <param name="value"></param>
         /// <returns></returns>
-        public bool TryGetTypeDefinitionValue(out TypeDefinition? value)
+        public bool TryGetTypeDefinitionValue(out TypeDefinitionBase? value)
         {
-            if (_value is TypeDefinition t)
+            if (_value is TypeDefinitionBase t)
             {
                 value = t;
                 return true;
@@ -108,14 +110,14 @@ namespace Rulealize.Definition
         /// <returns></returns>
         /// <exception cref="InvalidOperationException"></exception>
         public T MatchValueType<T>(
-            Func<FunctionDefinition, T> function,
-            Func<TypeDefinition, T> type,
+            Func<FunctionDefinitionBase, T> function,
+            Func<TypeDefinitionBase, T> type,
             Func<string, T> text)
         {
             return _value switch
             {
-                FunctionDefinition x => function(x),
-                TypeDefinition x => type(x),
+                FunctionDefinitionBase x => function(x),
+                TypeDefinitionBase x => type(x),
                 string x => text(x),
                 _ => throw new InvalidOperationException()
             };

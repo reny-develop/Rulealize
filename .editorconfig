@@ -248,4 +248,4 @@ dotnet_naming_style.begins_with_i.word_separator =
 dotnet_naming_style.begins_with_i.capitalization = pascal_case
 
 #### File header ####
-file_header_template = Copyright (c) 2026 Reny\nLicensed under the MIT License.
+file_header_template = Copyright (c) 2026 Reny\nLicensed under the Apache License, Version 2.0.
