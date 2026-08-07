@@ -8,6 +8,6 @@
   <Project Path="src/Rulealize.csproj" />
   <Project Path="test/Rulealize.Tests.csproj" />
   <Folder Name="/sample/">
-    <Project Path="sample/Othello/Rulealize.Sample.Othello.csproj" />
+    <Project Path="sample/Reversi/Rulealize.Sample.Reversi.csproj" />
   </Folder>
 </Solution>

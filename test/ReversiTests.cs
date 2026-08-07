@@ -7,20 +7,20 @@ namespace Rulealize.Tests
 {
     /// <summary>The rule set the whole design was worked out on, played for real.</summary>
     /// <remarks>
-    /// Othello is the test that matters most, because the document describing it contains no
-    /// Othello-specific vocabulary at all. Everything here — capturing, flipping, passing,
+    /// Reversi is the test that matters most, because the document describing it contains no
+    /// Reversi-specific vocabulary at all. Everything here — capturing, flipping, passing,
     /// counting at the end — is assembled out of general operations, so a game that plays
     /// correctly is evidence about the whole decomposition and not just about one rule set.
     /// </remarks>
     [Collection(StandardCollection.Name)]
-    public class OthelloTests(StandardRuntime standard)
+    public class ReversiTests(StandardRuntime standard)
     {
-        private RuleContext Othello => standard.Othello;
+        private RuleContext Reversi => standard.Reversi;
 
         [Fact]
         public void TheOpeningPositionHasFourStones()
         {
-            Board board = Board.Of(Othello.InitialState);
+            Board board = Board.Of(Reversi.InitialState);
 
             Assert.Equal("white", board["d4"]);
             Assert.Equal("black", board["e4"]);
@@ -34,7 +34,7 @@ namespace Rulealize.Tests
         [Fact]
         public void BlackHasFourOpeningMoves()
         {
-            ValidInputSet moves = Othello.GetValidInputs(Othello.InitialState, 128);
+            ValidInputSet moves = Reversi.GetValidInputs(Reversi.InitialState, 128);
 
             Assert.Equal(
                 ["c4", "d3", "e6", "f5"],
@@ -48,7 +48,7 @@ namespace Rulealize.Tests
         public void EveryCandidateIsCountedWhetherOrNotItSurvives()
         {
             // Sixty-four squares for place, and one for pass, which takes no parameters.
-            ValidInputSet moves = Othello.GetValidInputs(Othello.InitialState, 128);
+            ValidInputSet moves = Reversi.GetValidInputs(Reversi.InitialState, 128);
 
             Assert.Equal(65, moves.Evaluated);
             Assert.False(moves.Truncated);
@@ -57,8 +57,8 @@ namespace Rulealize.Tests
         [Fact]
         public void TheLimitTruncatesRatherThanLying()
         {
-            ValidInputSet full = Othello.GetValidInputs(Othello.InitialState, 128);
-            ValidInputSet clipped = Othello.GetValidInputs(Othello.InitialState, 10);
+            ValidInputSet full = Reversi.GetValidInputs(Reversi.InitialState, 128);
+            ValidInputSet clipped = Reversi.GetValidInputs(Reversi.InitialState, 10);
 
             Assert.True(clipped.Truncated);
             Assert.Equal(10, clipped.Evaluated);
@@ -69,12 +69,12 @@ namespace Rulealize.Tests
 
         [Fact]
         public void TheLimitMustBePositive() =>
-            Assert.Throws<ArgumentOutOfRangeException>(() => Othello.GetValidInputs(Othello.InitialState, 0));
+            Assert.Throws<ArgumentOutOfRangeException>(() => Reversi.GetValidInputs(Reversi.InitialState, 0));
 
         [Fact]
         public void PlacingAtD3CapturesExactlyOneStone()
         {
-            TransitionResult result = Othello.ApplyToState(Place("d3"), Othello.InitialState);
+            TransitionResult result = Reversi.ApplyToState(Place("d3"), Reversi.InitialState);
             Board board = Board.Of(result.State);
 
             Assert.Equal("black", board["d3"]);
@@ -94,7 +94,7 @@ namespace Rulealize.Tests
             // Two effects write the same board: one places the stone, one flips what it
             // captured. Under sequential semantics the second would rescan a board that
             // already had the new stone on it. Exactly one stone must flip here.
-            TransitionResult result = Othello.ApplyToState(Place("d3"), Othello.InitialState);
+            TransitionResult result = Reversi.ApplyToState(Place("d3"), Reversi.InitialState);
 
             Assert.Equal(4, Board.Of(result.State).CountOf("black"));
             Assert.Equal(1, Board.Of(result.State).CountOf("white"));
@@ -104,7 +104,7 @@ namespace Rulealize.Tests
         public void AnIllegalPlacementIsRefused()
         {
             IllegalInputException exception = Assert.Throws<IllegalInputException>(
-                () => Othello.ApplyToState(Place("a1"), Othello.InitialState));
+                () => Reversi.ApplyToState(Place("a1"), Reversi.InitialState));
 
             Assert.Equal("place", exception.Input);
         }
@@ -112,9 +112,9 @@ namespace Rulealize.Tests
         [Fact]
         public void PassingIsRefusedWhileAMoveExists() =>
             Assert.Throws<IllegalInputException>(
-                () => Othello.ApplyToState(
+                () => Reversi.ApplyToState(
                     """{ "input": "pass", "args": {} }""",
-                    Othello.InitialState));
+                    Reversi.InitialState));
 
         [Theory]
         [InlineData("c4")]
@@ -123,18 +123,18 @@ namespace Rulealize.Tests
         [InlineData("f5")]
         public void AMoveThatCameOutOfGetValidInputsCanBeFedStraightBackIn(string square)
         {
-            ValidInput move = Othello.GetValidInputs(Othello.InitialState, 128)
+            ValidInput move = Reversi.GetValidInputs(Reversi.InitialState, 128)
                 .Single(m => m.Arguments["at"] == square);
 
-            TransitionResult result = Othello.ApplyToState(
-                move.ToInputDocument(Othello.RuleSet),
-                Othello.InitialState);
+            TransitionResult result = Reversi.ApplyToState(
+                move.ToInputDocument(Reversi.RuleSet),
+                Reversi.InitialState);
 
             Assert.Equal("black", Board.Of(result.State)[square]);
         }
 
         [Fact]
-        public void TheOpeningIsNotTerminal() => Assert.False(Othello.GetTerminalStatus(Othello.InitialState).IsTerminal);
+        public void TheOpeningIsNotTerminal() => Assert.False(Reversi.GetTerminalStatus(Reversi.InitialState).IsTerminal);
 
         [Fact]
         public void AGamePlayedToTheEndFillsTheBoardAndNamesAWinner()
@@ -142,17 +142,17 @@ namespace Rulealize.Tests
             // Always taking the first legal move is enough to reach a real ending, and the
             // arithmetic is checkable: four stones to start, one placed per ply, sixty-four
             // squares. Sixty plies with no passes means every ply was a legal placement.
-            string state = Othello.InitialState;
-            TerminalStatus status = Othello.GetTerminalStatus(state);
+            string state = Reversi.InitialState;
+            TerminalStatus status = Reversi.GetTerminalStatus(state);
             int plies = 0;
 
             while (!status.IsTerminal && plies < 200)
             {
-                ValidInputSet moves = Othello.GetValidInputs(state, 128);
+                ValidInputSet moves = Reversi.GetValidInputs(state, 128);
                 Assert.NotEmpty(moves);
 
-                TransitionResult step = Othello.ApplyToState(
-                    moves[0].ToInputDocument(Othello.RuleSet),
+                TransitionResult step = Reversi.ApplyToState(
+                    moves[0].ToInputDocument(Reversi.RuleSet),
                     state);
 
                 state = step.State;
@@ -173,7 +173,7 @@ namespace Rulealize.Tests
         [Fact]
         public void ADeadlockedPositionOffersOnlyAPass()
         {
-            ValidInputSet moves = Othello.GetValidInputs(StandardRuntime.Deadlocked(), 128);
+            ValidInputSet moves = Reversi.GetValidInputs(StandardRuntime.Deadlocked(), 128);
 
             ValidInput only = Assert.Single(moves);
             Assert.Equal("pass", only.Input);
@@ -184,7 +184,7 @@ namespace Rulealize.Tests
         [Fact]
         public void OnePassCountsUpAndTwoEndTheGame()
         {
-            TransitionResult first = Othello.ApplyToState(
+            TransitionResult first = Reversi.ApplyToState(
                 """{ "input": "pass", "args": {} }""",
                 StandardRuntime.Deadlocked());
 
@@ -192,7 +192,7 @@ namespace Rulealize.Tests
             Assert.Equal(1, Board.Of(first.State).Passes);
             Assert.Equal("black", Board.Of(first.State).Turn);
 
-            TransitionResult second = Othello.ApplyToState(
+            TransitionResult second = Reversi.ApplyToState(
                 """{ "input": "pass", "args": {} }""",
                 first.State);
 
@@ -204,7 +204,7 @@ namespace Rulealize.Tests
         [Fact]
         public void TheOutcomeIsReportedOnlyOnceTheGameIsOver()
         {
-            TransitionResult ongoing = Othello.ApplyToState(Place("d3"), Othello.InitialState);
+            TransitionResult ongoing = Reversi.ApplyToState(Place("d3"), Reversi.InitialState);
 
             Assert.Null(ongoing.Result);
         }
@@ -212,17 +212,17 @@ namespace Rulealize.Tests
         [Fact]
         public void ARuleSetKnowsItsOwnIdentity()
         {
-            Assert.Equal("othello", Othello.Id);
-            Assert.Equal("1.0.0", Othello.Version);
-            Assert.Equal("othello@1.0.0", Othello.RuleSet);
-            Assert.Equal<string>(["place", "pass"], Othello.Inputs);
+            Assert.Equal("reversi", Reversi.Id);
+            Assert.Equal("1.0.0", Reversi.Version);
+            Assert.Equal("reversi@1.0.0", Reversi.RuleSet);
+            Assert.Equal<string>(["place", "pass"], Reversi.Inputs);
         }
 
         [Fact]
         public void TheDocumentedShapeOfGetValidInputsIsWhatComesOut()
         {
             using JsonDocument document = JsonDocument.Parse(
-                Othello.GetValidInputs(Othello.InitialState, 128).ToJson());
+                Reversi.GetValidInputs(Reversi.InitialState, 128).ToJson());
 
             JsonElement first = document.RootElement[0];
 
@@ -233,7 +233,7 @@ namespace Rulealize.Tests
 
         private static string Place(string square) =>
             $$"""
-            { "$schema": "rulealize/input/v1", "ruleSet": "othello@1.0.0",
+            { "$schema": "rulealize/input/v1", "ruleSet": "reversi@1.0.0",
               "input": "place", "args": { "at": "{{square}}" } }
             """;
 

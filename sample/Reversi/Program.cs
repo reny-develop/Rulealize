@@ -4,9 +4,9 @@
 using System.Text.Json;
 using Rulealize;
 
-// A game of Othello, played entirely through the runtime. Nothing in this file knows the
+// A game of Reversi, played entirely through the runtime. Nothing in this file knows the
 // rules: it loads plugins, compiles a document, asks what is legal, and applies what the
-// user picked. Swapping othello.json for another rule set would change the game without
+// user picked. Swapping reversi.json for another rule set would change the game without
 // changing a line here — except the board rendering, which does assume a board.
 
 bool automatic = args.Contains("--auto", StringComparer.OrdinalIgnoreCase);
@@ -28,29 +28,29 @@ foreach (var manifest in runtime.Plugins.OrderBy(p => p.Namespace, StringCompare
 // Everything decidable from the document is decided here. If this call returns, the
 // document is coherent: no unknown operations, no unbound names, no cyclic definitions,
 // no state path that the schema does not have.
-RuleContext othello = runtime.CreateContext(
-    File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "RuleSets", "othello.json")));
+RuleContext reversi = runtime.CreateContext(
+    File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "RuleSets", "reversi.json")));
 
-Console.WriteLine($"\nRule set: {othello.RuleSet}   inputs: {string.Join(", ", othello.Inputs)}");
+Console.WriteLine($"\nRule set: {reversi.RuleSet}   inputs: {string.Join(", ", reversi.Inputs)}");
 
 // ── 3. Play ───────────────────────────────────────────────────────────────────────
 // A context holds no position. The state travels in and out as a document, so a game can
 // be suspended, stored, and resumed by keeping nothing but this string.
-string state = othello.InitialState;
+string state = reversi.InitialState;
 int ply = 0;
 
 while (true)
 {
     // GetValidInputs enumerates the product of each input's parameter domains and sifts it
-    // with that input's guard. The limit bounds how many guards are evaluated; Othello has
+    // with that input's guard. The limit bounds how many guards are evaluated; Reversi has
     // sixty-five candidates, so it is never close.
-    ValidInputSet moves = othello.GetValidInputs(state, validationLimit: 128);
+    ValidInputSet moves = reversi.GetValidInputs(state, validationLimit: 128);
 
     // Whether a position is final is a separate question from what is legal in it.
     // GetValidInputs does not consult the terminal section — a rule set whose guards stay
     // satisfiable after the game ends would still list moves, and the runtime does not
     // second-guess it. Asking here is the host's job.
-    TerminalStatus status = othello.GetTerminalStatus(state);
+    TerminalStatus status = reversi.GetTerminalStatus(state);
 
     Render(state, moves, status);
 
@@ -78,8 +78,8 @@ while (true)
     // A move that came out of GetValidInputs goes straight back in. That round trip is why
     // arguments are written in their own JSON form and why an opaque value such as a
     // coordinate has to have a text form.
-    TransitionResult result = othello.ApplyToState(
-        chosen.ToInputDocument(othello.RuleSet),
+    TransitionResult result = reversi.ApplyToState(
+        chosen.ToInputDocument(reversi.RuleSet),
         state);
 
     state = result.State;

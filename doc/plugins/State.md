@@ -20,7 +20,7 @@
 
 ## 提供ノード
 
-| ノード | 種別 | オセロでの使用 |
+| ノード | 種別 | リバーシでの使用 |
 | --- | --- | --- |
 | `state.get` | 式 | ○ 糖衣 `$` として全域 |
 | `state.set` | 効果 | ○ `inputs.place`, `inputs.pass` |
@@ -52,7 +52,7 @@
 
 現状 `state.schema` の直下は「フィールド名 → スキーマノード」のマップに限られ、
 入れ子の Record は書けない（[TypeSchema](TypeSchema.md) の未確定事項）。
-したがってオセロで有効なパスは `board` / `turn` / `passes` の 3 つのみ。
+したがってリバーシで有効なパスは `board` / `turn` / `passes` の 3 つのみ。
 ドット記法は将来の入れ子に備えた予約。
 
 ### 盤面の内部へはパスで到達しない
@@ -90,7 +90,7 @@
 | `terminal` | 判定対象の State |
 
 `effects` の中で `state.get` が **効果適用前** の値を読むのは、
-[値モデル §5](../value-model.md) のスナップショット意味論による。オセロの
+[値モデル §5](../value-model.md) のスナップショット意味論による。リバーシの
 `inputs.pass` がこれに依存している。
 
 ```jsonc
@@ -111,7 +111,7 @@
 値が `Null` であることはエラーではない（スキーマが `nullable` を許していれば
 正常）。
 
-### 例（オセロ）
+### 例（リバーシ）
 
 ```jsonc
 "me": { "op": "state.get", "path": "turn" }
@@ -145,7 +145,7 @@ State プラグインは盤面値を取り出すだけで、中身は見ない�
 （[TypeSchema](TypeSchema.md) の「効果適用後の検証」）。`GetValidInputs` が
 数百候補を試す場面ではコストが問題になる。
 
-### 例（オセロ `inputs.place.effects`）
+### 例（リバーシ `inputs.place.effects`）
 
 ```jsonc
 [
@@ -185,7 +185,7 @@ State プラグインは盤面値を取り出すだけで、中身は見ない�
 2. その束縛下で `value` を評価する
 3. 結果をドラフトの `path` へ書き込む
 
-`state.set` に `state.get` を組み合わせても同じことができる。オセロの
+`state.set` に `state.get` を組み合わせても同じことができる。リバーシの
 `inputs.pass` は後者の形で書いている。
 
 ```jsonc
@@ -197,7 +197,7 @@ State プラグインは盤面値を取り出すだけで、中身は見ない�
   "value": { "op": "math.add", "of": ["@n", 1] } }
 ```
 
-パスが長い場合に重複を避けられる、という程度の利点しかない。オセロでは
+パスが長い場合に重複を避けられる、という程度の利点しかない。リバーシでは
 使用しない。
 
 ---
@@ -209,7 +209,7 @@ State プラグインは盤面値を取り出すだけで、中身は見ない�
 ```jsonc
 {
   "$schema": "rulealize/state/v1",
-  "ruleSet": "othello@1.0.0",
+  "ruleSet": "reversi@1.0.0",
   "data": {
     "board": { "d4": "white", "e4": "black", "d5": "black", "e5": "white" },
     "turn": "black",
@@ -235,13 +235,13 @@ State 文書の `ruleSet` が `RuleContext` の RuleSet と一致しない場合
 
 ## 未確定事項
 
-- **バージョン互換** — `othello@1.0.0` で作られた State を `othello@1.1.0` の
+- **バージョン互換** — `reversi@1.0.0` で作られた State を `reversi@1.1.0` の
   コンテキストで読めるか。RuleSet のバージョニング方針と合わせて決める。
 - **入れ子 Record へのパス** — ドット記法は予約済みだが、
   [TypeSchema](TypeSchema.md) が入れ子スキーマを持たないため現状使えない。
 - **効果適用後のスキーマ検証** — 上述。
 - **状態の差分表現** — `ApplyToState` が状態全体を返す設計。長い対局で
-  状態を積み上げる用途では差分が欲しくなるが、盤面が小さいオセロでは不要。
+  状態を積み上げる用途では差分が欲しくなるが、盤面が小さいリバーシでは不要。
 - **読み取り専用の派生フィールド** — 石数のような値を状態に持たせるか、
   `definitions` で都度計算するか。現状は後者（`terminal.result` が
   `seq.count` で数えている）。

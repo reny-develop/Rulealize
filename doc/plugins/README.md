@@ -1,6 +1,6 @@
 # プラグイン仕様書
 
-オセロの RuleSet（[../dsl-example-othello.md](../dsl-example-othello.md)）を
+リバーシの RuleSet（[../dsl-example-reversi.md](../dsl-example-reversi.md)）を
 記述するために必要なプラグインの詳細仕様。
 
 全プラグインが [値モデルとノード種別](../value-model.md) を前提とする。

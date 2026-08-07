@@ -10,7 +10,7 @@
 
 二次元盤面、座標、方向、レイ走査。
 
-**オセロ専用の語彙は一つも含まない。** 「石を挟む」「裏返す」といった概念は
+**リバーシ専用の語彙は一つも含まない。** 「石を挟む」「裏返す」といった概念は
 Grid には無く、それらは RuleSet 側が `grid.ray` と `seq.takeWhile` の組み合わせ
 として記述する。この境界を守れているかが、プラグイン設計の妥当性を測る基準に
 なっている。
@@ -22,7 +22,7 @@ Grid には無く、それらは RuleSet 側が `grid.ray` と `seq.takeWhile` �
 
 ## 提供ノード
 
-| ノード | 種別 | オセロでの使用 |
+| ノード | 種別 | リバーシでの使用 |
 | --- | --- | --- |
 | `grid.board` | スキーマ | ○ `state.schema.board` |
 | `grid.at` | 式 | ○ `flips1`, `canPlace`, `terminal.when` |
@@ -80,7 +80,7 @@ Grid には無く、それらは RuleSet 側が `grid.ray` と `seq.takeWhile` �
 `"algebraic"` は `width` が 26 以下の場合のみ使用できる（静的エラー）。
 
 原点と軸の向きは `"algebraic"` の場合、**左下が `a1`、y は上向き** とする
-（チェス／オセロの慣行）。`"index"` は **左上が `0,0`、y は下向き**。
+（チェス／リバーシの慣行）。`"index"` は **左上が `0,0`、y は下向き**。
 両者で向きが違うのは混乱の元だが、それぞれの記法の慣行に従うほうが誤解が
 少ないと判断した。
 
@@ -95,7 +95,7 @@ Grid は [TypeSchema](TypeSchema.md) を参照しない。`cell` に来るのは
 
 **Grid は `nullable` を要求しないが、`grid.at` が盤外に `Null` を返す以上、
 `cell` が `nullable` でない盤面では「盤外」と「正常なセル値」の区別がつく**
-（正常なセル値は決して `Null` にならないため）。オセロは `nullable` にして
+（正常なセル値は決して `Null` にならないため）。リバーシは `nullable` にして
 両者をあえて同一視している（下記 `grid.at` 参照）。
 
 ### JSON 表現
@@ -162,7 +162,7 @@ Grid は [TypeSchema](TypeSchema.md) を参照しない。`cell` に来るのは
 
 これが Grid の設計上もっとも重要な判断。
 
-オセロの `flips1` は、レイの終端を越えた位置を読む。
+リバーシの `flips1` は、レイの終端を越えた位置を読む。
 
 ```jsonc
 "coord": { "op": "seq.elementAt", "source": "@ray",
@@ -203,7 +203,7 @@ Grid は [TypeSchema](TypeSchema.md) を参照しない。`cell` に来るのは
 （`"index"` 記法での `(0,0), (1,0), …`）とする。`GetValidInputs` の出力順が
 実行ごとに変わらないようにするため。
 
-### 例（オセロ）
+### 例（リバーシ）
 
 ```jsonc
 // inputs.place.params — 候補生成の domain
@@ -231,7 +231,7 @@ validationLimit に十分収まる。
 
 座標ではなく値の列を返す。順序は `grid.coords` と同じ。
 
-### 例（オセロ `terminal.result`）
+### 例（リバーシ `terminal.result`）
 
 ```jsonc
 { "op": "seq.count", "source": { "op": "grid.cells", "of": "$board" },
@@ -272,11 +272,11 @@ validationLimit に十分収まる。
 
 ### `from` を含まない理由
 
-含める設計だと、オセロの `flips1` は毎回先頭を読み飛ばす必要がある。
+含める設計だと、リバーシの `flips1` は毎回先頭を読み飛ばす必要がある。
 「隣から先を見る」がレイの主用途であり、含めないほうが記述が短い。
 起点自体が要るなら `from` を直接使えばよい。
 
-### 例（オセロ `flips1`）
+### 例（リバーシ `flips1`）
 
 ```jsonc
 { "op": "grid.ray", "grid": "$board", "from": "@at", "dir": "@dir" }
@@ -319,7 +319,7 @@ validationLimit に十分収まる。
 現状、`{ "op": "grid.directions" }` の集合からしか方向を得られない。
 特定の 1 方向（駒の前方など）を指定する手段は未提供。→ 未確定事項。
 
-オセロは 8 方向すべてを等しく扱うため、これで足りている。
+リバーシは 8 方向すべてを等しく扱うため、これで足りている。
 
 ---
 
@@ -357,7 +357,7 @@ validationLimit に十分収まる。
 「そこには何も無い」という有意味な答えになるが、書きの範囲外に対応する
 有意味な動作は「無視する」しかなく、それはルールの誤りを静かに握り潰す。
 
-オセロの `place` は `when`（`canPlace`）で座標が盤内かつ空であることを確認済み
+リバーシの `place` は `when`（`canPlace`）で座標が盤内かつ空であることを確認済み
 なので、この厳格さに抵触しない。
 
 ---
@@ -386,7 +386,7 @@ validationLimit に十分収まる。
 
 空列なら何もしない。範囲外・`Null` 座標は `grid.set` と同じくエラー。
 
-### 例（オセロ `inputs.place.effects`）
+### 例（リバーシ `inputs.place.effects`）
 
 ```jsonc
 { "op": "grid.setMany", "target": "$board",
@@ -399,12 +399,12 @@ validationLimit に十分収まる。
 これは [値モデル §5](../value-model.md) のスナップショット意味論が実際に
 効いている箇所。
 
-座標ごとに異なる値を書く手段（`grid.setEach` のようなもの）は未提供。オセロ
+座標ごとに異なる値を書く手段（`grid.setEach` のようなもの）は未提供。リバーシ
 では不要。→ 未確定事項。
 
 ---
 
-## オセロで使わなかった概念
+## リバーシで使わなかった概念
 
 Grid が意図的に持たない、あるいは未提供のもの。
 
@@ -433,5 +433,5 @@ Grid が意図的に持たない、あるいは未提供のもの。
 - **座標の順序** — [Comparison](Comparison.md) の未確定事項と連動。
   `Opaque(grid/coord)` に順序を与えれば `seq.orderBy` で並べ替えられる。
 - **`grid.coords` の絞り込み版** — `GetValidInputs` の候補数を domain の
-  段階で減らす `grid.coordsWhere`。オセロ（64 候補）では不要だが、
+  段階で減らす `grid.coordsWhere`。リバーシ（64 候補）では不要だが、
   より大きな盤や複数パラメータの入力では必須になる。

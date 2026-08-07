@@ -7,7 +7,7 @@ a plugin type, so each shows the same discovery path a deployed application take
 
 | | |
 | --- | --- |
-| [`Othello/`](Othello/) | a playable Othello in the terminal — `dotnet run --project sample/Othello -- --auto` |
+| [`Reversi/`](Reversi/) | a playable Reversi in the terminal — `dotnet run --project sample/Reversi -- --auto` |
 
 ## Adding a sample
 

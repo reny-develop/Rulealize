@@ -139,7 +139,7 @@ namespace Rulealize
     /// <remarks>
     /// <para>
     /// Candidates are the product of the parameter domains, sifted by each input's guard.
-    /// Othello produces sixty-five of them — sixty-four squares and a pass — which is
+    /// Reversi produces sixty-five of them — sixty-four squares and a pass — which is
     /// nothing; a move written as <c>from</c>, <c>to</c> and a promotion flag on a shogi
     /// board produces thirteen thousand, which is not.
     /// </para>

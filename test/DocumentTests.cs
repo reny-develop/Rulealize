@@ -16,13 +16,13 @@ namespace Rulealize.Tests
     [Collection(StandardCollection.Name)]
     public class DocumentTests(StandardRuntime standard)
     {
-        private RuleContext Othello => standard.Othello;
+        private RuleContext Reversi => standard.Reversi;
 
         [Fact]
         public void EveryViolationIsReportedAtOnce()
         {
             RuleDocumentException exception = Assert.Throws<RuleDocumentException>(
-                () => Othello.GetValidInputs(
+                () => Reversi.GetValidInputs(
                     """{ "data": { "board": { "z9": "black" }, "turn": "green", "passes": 7 } }""",
                     64));
 
@@ -36,7 +36,7 @@ namespace Rulealize.Tests
         public void AViolationInsideABoardNamesTheSquare()
         {
             RuleDocumentException exception = Assert.Throws<RuleDocumentException>(
-                () => Othello.GetValidInputs(
+                () => Reversi.GetValidInputs(
                     """{ "data": { "board": { "d4": "green" }, "turn": "black", "passes": 0 } }""",
                     64));
 
@@ -47,14 +47,14 @@ namespace Rulealize.Tests
         public void AMissingFieldIsAViolation() =>
             Assert.Contains(
                 Assert.Throws<RuleDocumentException>(
-                    () => Othello.GetValidInputs("""{ "data": { "turn": "black", "passes": 0 } }""", 64)).Violations,
+                    () => Reversi.GetValidInputs("""{ "data": { "turn": "black", "passes": 0 } }""", 64)).Violations,
                 static v => v.StartsWith("board", StringComparison.Ordinal));
 
         [Fact]
         public void AFieldTheSchemaDoesNotDeclareIsAViolation() =>
             Assert.Contains(
                 Assert.Throws<RuleDocumentException>(
-                    () => Othello.GetValidInputs(
+                    () => Reversi.GetValidInputs(
                         """{ "data": { "board": {}, "turn": "black", "passes": 0, "extra": 1 } }""",
                         64)).Violations,
                 static v => v.StartsWith("extra", StringComparison.Ordinal));
@@ -64,7 +64,7 @@ namespace Rulealize.Tests
             Assert.Contains(
                 "shogi@1.0.0",
                 Assert.Throws<RuleDocumentException>(
-                    () => Othello.GetValidInputs(
+                    () => Reversi.GetValidInputs(
                         """{ "ruleSet": "shogi@1.0.0", "data": { "board": {}, "turn": "black", "passes": 0 } }""",
                         64)).Message,
                 StringComparison.Ordinal);
@@ -73,7 +73,7 @@ namespace Rulealize.Tests
         public void MalformedJsonIsReportedAsSuch() =>
             Assert.Contains(
                 "not valid JSON",
-                Assert.Throws<RuleDocumentException>(() => Othello.GetValidInputs("{ nope", 64)).Message,
+                Assert.Throws<RuleDocumentException>(() => Reversi.GetValidInputs("{ nope", 64)).Message,
                 StringComparison.Ordinal);
 
         [Fact]
@@ -81,31 +81,31 @@ namespace Rulealize.Tests
             Assert.Contains(
                 "'fly' is not an input",
                 Assert.Throws<RuleDocumentException>(
-                    () => Othello.ApplyToState("""{ "input": "fly", "args": {} }""", Othello.InitialState))
+                    () => Reversi.ApplyToState("""{ "input": "fly", "args": {} }""", Reversi.InitialState))
                     .Message,
                 StringComparison.Ordinal);
 
         [Fact]
         public void AMissingArgumentIsRefused() =>
             Assert.Throws<RuleDocumentException>(
-                () => Othello.ApplyToState("""{ "input": "place", "args": {} }""", Othello.InitialState));
+                () => Reversi.ApplyToState("""{ "input": "place", "args": {} }""", Reversi.InitialState));
 
         [Fact]
         public void AnArgumentTheInputDoesNotTakeIsRefused() =>
             Assert.Throws<RuleDocumentException>(
-                () => Othello.ApplyToState(
+                () => Reversi.ApplyToState(
                     """{ "input": "place", "args": { "at": "d3", "how": "hard" } }""",
-                    Othello.InitialState));
+                    Reversi.InitialState));
 
         [Fact]
         public void AStateDocumentRoundTripsThroughItsOwnOutput()
         {
             // What ApplyToState hands back has to be something the next call accepts.
-            string state = Othello.InitialState;
-            ValidInputSet moves = Othello.GetValidInputs(state, 128);
+            string state = Reversi.InitialState;
+            ValidInputSet moves = Reversi.GetValidInputs(state, 128);
 
             Assert.Equal(4, moves.Count);
-            Assert.Equal(4, Othello.GetValidInputs(Othello.InitialState, 128).Count);
+            Assert.Equal(4, Reversi.GetValidInputs(Reversi.InitialState, 128).Count);
         }
 
         [Fact]
@@ -115,9 +115,9 @@ namespace Rulealize.Tests
             // this that genuinely is I/O.
             using MemoryStream input = new(Encoding.UTF8.GetBytes(
                 """{ "input": "place", "args": { "at": "d3" } }"""));
-            using MemoryStream state = new(Encoding.UTF8.GetBytes(Othello.InitialState));
+            using MemoryStream state = new(Encoding.UTF8.GetBytes(Reversi.InitialState));
 
-            TransitionResult result = await Othello.ApplyToStateAsync(input, state);
+            TransitionResult result = await Reversi.ApplyToStateAsync(input, state);
 
             Assert.False(result.IsTerminal);
         }
@@ -125,9 +125,9 @@ namespace Rulealize.Tests
         [Fact]
         public void TheDocumentedTransitionShapeIsWhatComesOut()
         {
-            TransitionResult result = Othello.ApplyToState(
+            TransitionResult result = Reversi.ApplyToState(
                 """{ "input": "place", "args": { "at": "d3" } }""",
-                Othello.InitialState);
+                Reversi.InitialState);
 
             using JsonDocument document = JsonDocument.Parse(result.ToJson());
 
@@ -141,7 +141,7 @@ namespace Rulealize.Tests
         {
             // The sparse form is the grid plugin's choice, and nothing in the core or the
             // state plugin depends on it — but it is what the documents actually contain.
-            using JsonDocument document = JsonDocument.Parse(Othello.InitialState);
+            using JsonDocument document = JsonDocument.Parse(Reversi.InitialState);
             JsonElement board = document.RootElement.GetProperty("data").GetProperty("board");
 
             Assert.Equal(4, board.EnumerateObject().Count());
@@ -151,10 +151,10 @@ namespace Rulealize.Tests
         [Fact]
         public void CommentsAreAcceptedInStateDocumentsToo()
         {
-            ValidInputSet moves = Othello.GetValidInputs(
+            ValidInputSet moves = Reversi.GetValidInputs(
                 """
                 {
-                  "ruleSet": "othello@1.0.0",
+                  "ruleSet": "reversi@1.0.0",
                   "data": {
                     // the opening position
                     "board": { "d4": "white", "e4": "black", "d5": "black", "e5": "white" },

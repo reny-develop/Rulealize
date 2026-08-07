@@ -10,9 +10,9 @@
 
 `Number` に対する算術演算。
 
-オセロが使うのは `math.add` 1 箇所（パス回数の加算）だけであり、このプラグイン
+リバーシが使うのは `math.add` 1 箇所（パス回数の加算）だけであり、このプラグイン
 は分解の妥当性を測る良い例になっている。**`Rulealize.Plugin.Core` に同梱されて
-いたら、オセロの `requires` を読んだ人は「この RuleSet は算術を使うのか」を
+いたら、リバーシの `requires` を読んだ人は「この RuleSet は算術を使うのか」を
 判断できない。** 分けておけば、`requires` に `Arithmetic` があることが
 「どこかで数を数えている」という情報になる。
 
@@ -21,7 +21,7 @@
 
 ## 提供ノード
 
-| ノード | 種別 | オセロでの使用 |
+| ノード | 種別 | リバーシでの使用 |
 | --- | --- | --- |
 | `math.add` | 式 | ○ `inputs.pass.effects` |
 | `math.sub` / `math.mul` / `math.div` / `math.mod` | 式 | — |
@@ -64,7 +64,7 @@
 短絡しない。`math.mul` に `0` が含まれていても全要素を評価する（純粋なので
 観測上の差は性能のみだが、規則としては全評価と定める）。
 
-### 例（オセロ `inputs.pass.effects`）
+### 例（リバーシ `inputs.pass.effects`）
 
 ```jsonc
 { "op": "state.set", "path": "passes",

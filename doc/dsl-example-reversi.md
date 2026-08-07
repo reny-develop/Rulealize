@@ -1,7 +1,7 @@
-# JSON DSL 設計メモ — オセロを題材にした検討
+# JSON DSL 設計メモ — リバーシを題材にした検討
 
 `Rulealize.Abstraction` の API を設計する前段として、「どんな JSON が書けれ
-ば十分か」をオセロで具体化した検討メモ。ここで確定した DSL の形から、
+ば十分か」をリバーシで具体化した検討メモ。ここで確定した DSL の形から、
 Abstraction 側のインタフェースを逆算する。
 
 - 対象: RuleSet / State / InputRule の 3 文書
@@ -88,12 +88,12 @@ $schema / id / version / requires / state / definitions / inputs / terminal
 挙げた発見可能性を再び潰すので採らない。
 
 
-## 3. RuleSet JSON（オセロ）
+## 3. RuleSet JSON（リバーシ）
 
 ```jsonc
 {
   "$schema": "rulealize/ruleset/v1",
-  "id": "othello",
+  "id": "reversi",
   "version": "1.0.0",
 
   "requires": [
@@ -262,8 +262,8 @@ $schema / id / version / requires / state / definitions / inputs / terminal
 }
 ```
 
-**この RuleSet にオセロ専用プラグインは 1 つも登場しない。** 汎用語彙だけで
-オセロが記述できている点が、この設計の妥当性の主な根拠。将棋であれば、
+**この RuleSet にリバーシ専用プラグインは 1 つも登場しない。** 汎用語彙だけで
+リバーシが記述できている点が、この設計の妥当性の主な根拠。将棋であれば、
 `grid` に加えて「持ち駒」を表す汎用プラグイン（多重集合）を足す、という
 積み上げになるはず。
 
@@ -275,7 +275,7 @@ $schema / id / version / requires / state / definitions / inputs / terminal
 ```jsonc
 {
   "$schema": "rulealize/state/v1",
-  "ruleSet": "othello@1.0.0",
+  "ruleSet": "reversi@1.0.0",
   "data": {
     "board": { "d4": "white", "e4": "black", "d5": "black", "e5": "white" },
     "turn": "black",
@@ -292,7 +292,7 @@ $schema / id / version / requires / state / definitions / inputs / terminal
 ```jsonc
 {
   "$schema": "rulealize/input/v1",
-  "ruleSet": "othello@1.0.0",
+  "ruleSet": "reversi@1.0.0",
   "input": "place",
   "args": { "at": "d3" }
 }
@@ -328,7 +328,7 @@ $schema / id / version / requires / state / definitions / inputs / terminal
 ## 5. validationLimit の意味づけ
 
 候補は「各パラメータ domain の直積」で生成され、`when` で篩われる。
-オセロの場合は `place` が 64、`pass` が 1 で計 65 候補。
+リバーシの場合は `place` が 64、`pass` が 1 で計 65 候補。
 
 limit は **「`when` を評価する候補数の上限」** と定義するのが素直で、超過時は
 `Truncated = true` を返す。ただし将棋の `move(from, to, promote)` は
@@ -347,7 +347,7 @@ Sequence を参照すると分解の意味が失われるので、**Abstraction 
 を置く。最小構成は `null / bool / number / string / sequence / record / opaque`。
 `opaque` はプラグイン固有値（座標、方向など）の格納先で、コアは中身を見ない。
 
-null 伝播の規則も値モデルの責務。オセロの `flips1` はこれに依存している。
+null 伝播の規則も値モデルの責務。リバーシの `flips1` はこれに依存している。
 
 - `seq.elementAt` の範囲外 → `null`
 - `grid.at` に `null` 座標 → `null`
@@ -374,7 +374,7 @@ null 伝播の規則も値モデルの責務。オセロの `flips1` はこれ�
 
 ### 6.4 パスを明示入力にするか自動にするか
 
-本来のオセロは「打てる手がなければ自動的に手番が飛ぶ」。上記は明示入力モデル
+本来のリバーシは「打てる手がなければ自動的に手番が飛ぶ」。上記は明示入力モデル
 （`GetValidInputs` が `pass` だけを返す）を採っている。自動化するなら
 遷移後フック（`"after"` フェーズのようなもの）を RuleSet に足す必要があり、
 これは DSL の表現力に関わる分岐点。
@@ -382,7 +382,7 @@ null 伝播の規則も値モデルの責務。オセロの `flips1` はこれ�
 ### 6.5 `definitions` は再帰を許すか
 
 `params` を持たせた時点で実質は純粋関数。再帰を許すと停止性が保証できない。
-オセロ程度なら**非再帰に限定**で十分で、そのほうが `GetValidInputs` のコスト
+リバーシ程度なら**非再帰に限定**で十分で、そのほうが `GetValidInputs` のコスト
 見積もりも立つ。
 
 ### 6.6 `state.schema` は必須か
