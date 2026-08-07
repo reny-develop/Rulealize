@@ -16,7 +16,7 @@ Rulealize follows a typical plugin architecture with the following principles:
 ## JSON DSL
 The JSON DSL is designed to define generic rules.
 
-It is intended to describe the rules of systems such as board games (e.g. Othello, Shogi), simulations, and other rule-based applications.
+It is intended to describe the rules of systems such as board games (e.g. Reversi, Shogi), simulations, and other rule-based applications.
 
 The set of features available in the JSON DSL depends entirely on the plugins loaded by the library.
 
@@ -30,7 +30,9 @@ Create a `RuleRuntime` instance and load the required plugins into it.
 
 `RuleRuntime` provides a `CreateContext` method that creates a `RuleContext` instance from a RuleSet JSON document.
 
-`RuleContext` provides an `ApplyToStateAsync` method. This method accepts an InputRule JSON document and a State JSON document, applies the rule to the state, and performs the corresponding state transition.
+`RuleContext` provides an `ApplyToState` method. This method accepts an InputRule JSON document and a State JSON document, applies the rule to the state, and performs the corresponding state transition.
+
+Asynchrony belongs at the boundary only. Evaluation is pure computation over in-memory documents, so the `string` overloads are synchronous; the `Async` suffix is reserved for the `Stream` overloads, where reading a document genuinely is I/O (`CreateContextAsync`, `ApplyToStateAsync`).
 
 ### Retrieving Valid Inputs for a Given State
 

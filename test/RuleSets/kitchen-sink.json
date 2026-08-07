@@ -1,0 +1,124 @@
+{
+  "$schema": "rulealize/ruleset/v1",
+  "id": "kitchen-sink",
+  "version": "2.1.0",
+
+  "requires": [
+    { "plugin": "Rulealize.Plugin.Binding",    "version": "^1.0" },
+    { "plugin": "Rulealize.Plugin.Branch",     "version": ">=1.0" },
+    { "plugin": "Rulealize.Plugin.Definition", "version": "1.0.0" },
+    { "plugin": "Rulealize.Plugin.Logic" },
+    { "plugin": "Rulealize.Plugin.Comparison", "version": "^1.0" },
+    { "plugin": "Rulealize.Plugin.Arithmetic", "version": "^1.0" },
+    { "plugin": "Rulealize.Plugin.TypeSchema", "version": "^1.0" },
+    { "plugin": "Rulealize.Plugin.Sequence",   "version": "^1.0" },
+    { "plugin": "Rulealize.Plugin.State",      "version": "^1.0" },
+    { "plugin": "Rulealize.Plugin.Grid",       "version": "^1.0" }
+  ],
+
+  "state": {
+    "schema": {
+      "board":  { "op": "grid.board", "width": 3, "height": 3,
+                  "cell": { "op": "type.enum", "values": ["x", "o"], "nullable": true } },
+      "score":  { "op": "type.int", "min": -100, "max": 100 },
+      "label":  { "op": "type.string", "minLength": 1, "maxLength": 8 },
+      "active": { "op": "type.bool" },
+      "note":   { "op": "type.string", "nullable": true }
+    },
+    "initial": {
+      "board": { "0,0": "x", "2,2": "o" },
+      "score": 7,
+      "label": "start",
+      "active": true,
+      "note": null
+    }
+  },
+
+  "definitions": {
+    "half":      { "params": ["n"], "body": { "op": "math.div", "left": "@n", "right": 2 } },
+
+    "occupied":  { "op": "seq.where", "source": { "op": "grid.coords", "of": "$board" }, "as": "c",
+                   "predicate": { "op": "logic.not", "value": {
+                       "op": "cmp.isNull",
+                       "value": { "op": "grid.at", "grid": "$board", "coord": "@c" } } } },
+
+    "marks":     { "op": "seq.select", "source": "#occupied", "as": "c",
+                   "select": { "op": "grid.at", "grid": "$board", "coord": "@c" } },
+
+    "eastRuns":  { "op": "seq.select", "source": "#occupied", "as": "c",
+                   "select": { "op": "seq.count",
+                               "source": { "op": "grid.ray", "grid": "$board",
+                                           "from": "@c", "dir": "1,0" } } },
+
+    "orthCount": { "op": "seq.count",
+                   "source": { "op": "grid.directions", "of": "$board", "kind": "orthogonal" } },
+    "diagCount": { "op": "seq.count",
+                   "source": { "op": "grid.directions", "of": "$board", "kind": "diagonal" } },
+
+    "arith": {
+      "op": "math.add",
+      "of": [
+        { "op": "math.sub", "left": 10, "right": 3 },
+        { "op": "math.mul", "of": [2, 3] },
+        { "op": "math.mod", "left": 7, "right": 3 },
+        { "op": "math.abs", "value": -4 },
+        { "op": "math.min", "of": [5, 2, 9] },
+        { "op": "math.max", "of": [5, 2, 9] },
+        { "op": "def.call", "def": "half", "args": { "n": 5 } }
+      ]
+    },
+
+    "coalesced": { "op": "cmp.coalesce", "of": ["$note", "fallback"] },
+    "parity":    { "op": "logic.xor", "of": [true, false, true] },
+    "shortRay":  { "op": "seq.count",
+                   "source": { "op": "grid.ray", "grid": "$board", "from": "0,0",
+                               "dir": "1,1", "length": 1 } },
+    "verdict":   { "op": "branch.match", "value": "#arith",
+                   "cases": { "0": "zero" }, "default": "other" },
+    "ordering":  { "op": "cmp.compare", "left": "b", "right": "a" }
+  },
+
+  "inputs": {
+    "bump": {
+      "params": {
+        "by":   { "domain": "#eastRuns" },
+        "cell": { "domain": { "op": "grid.coords", "of": "$board" } }
+      },
+      "when": {
+        "op": "logic.and",
+        "all": [
+          { "op": "cmp.isNull", "value": { "op": "grid.at", "grid": "$board", "coord": "@cell" } },
+          { "op": "cmp.gt", "left": "@by", "right": 0 },
+          { "op": "cmp.lt", "left": "$score", "right": 100 },
+          { "op": "cmp.eq", "left": "#orthCount", "right": 4 },
+          { "op": "cmp.eq", "left": "#diagCount", "right": 4 },
+          { "op": "cmp.eq", "left": "#shortRay", "right": 1 },
+          { "op": "cmp.eq", "left": "#parity", "right": false },
+          { "op": "cmp.eq", "left": "#arith", "right": 31.5 },
+          { "op": "cmp.eq", "left": "#coalesced", "right": "fallback" },
+          { "op": "cmp.eq", "left": "#verdict", "right": "other" },
+          { "op": "cmp.eq", "left": "#ordering", "right": "gt" },
+          { "op": "cmp.eq", "left": { "op": "seq.count", "source": "#occupied" }, "right": 2 },
+          { "op": "seq.any", "source": "#marks", "as": "m",
+            "predicate": { "op": "cmp.eq", "left": "@m", "right": "o" } },
+          { "op": "cmp.lte", "left": { "op": "seq.elementAt", "source": "#eastRuns", "index": 1 }, "right": 0 },
+          { "op": "cmp.isNull", "value": { "op": "seq.elementAt", "source": "#eastRuns", "index": 99 } }
+        ]
+      },
+      "effects": [
+        { "op": "state.update", "path": "score", "as": "s",
+          "value": { "op": "math.add", "of": ["@s", "@by"] } },
+        { "op": "grid.set", "target": "$board", "coord": "@cell", "value": "x" },
+        { "op": "state.set", "path": "note", "value": "#coalesced" },
+        { "op": "state.set", "path": "label", "value": "#verdict" },
+        { "op": "state.set", "path": "active",
+          "value": { "op": "logic.not", "value": "$active" } }
+      ]
+    }
+  },
+
+  "terminal": {
+    "when": { "op": "cmp.gte", "left": "$score", "right": 100 },
+    "result": "capped"
+  }
+}

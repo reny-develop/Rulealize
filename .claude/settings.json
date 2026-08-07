@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git -C /c/Repos/Rulealize remote -v)",
+      "Bash(git -C /c/Repos/Rulealize status --short)",
+      "Bash(set -e)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(mkdir -p sample/Reversi)",
+      "Bash(git mv *)",
+      "Bash(rm -rf sample/bin sample/obj)",
+      "Bash(dotnet run *)",
+      "PowerShell(dotnet --version)",
+      "PowerShell(dotnet test c:\\\\Repos\\\\Rulealize --nologo -v q)",
+      "PowerShell(dotnet build c:\\\\Repos\\\\Rulealize\\\\sample\\\\Reversi --nologo -v q)",
+      "PowerShell(dotnet run --project c:\\\\Repos\\\\Rulealize\\\\sample\\\\Reversi --no-build -- --auto)",
+      "PowerShell(dotnet build c:\\\\Repos\\\\Rulealize\\\\Rulealize.slnx --nologo -v q)",
+      "PowerShell(dotnet test c:\\\\Repos\\\\Rulealize\\\\test\\\\Rulealize.Tests.csproj --nologo -v q --no-build)"
+    ]
+  }
+}
