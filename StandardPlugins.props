@@ -1,0 +1,51 @@
+<Project>
+
+  <!--
+    The ten standard plugins, for projects that need a working vocabulary: the tests and
+    the sample. Each lives in its own repository, so this assumes they are cloned beside
+    this one — the same assumption NuGet.config already makes about the package feed.
+
+    The references are deliberately not compile-time references. ReferenceOutputAssembly
+    is false, so a host cannot name a plugin type even by accident; all the reference does
+    is build the plugin and hand its DLL to the copy step below, which drops it into a
+    plugins folder for the runtime to discover. That is the arrangement a real deployment
+    has, and testing against anything else would leave the discovery path unexercised.
+  -->
+
+  <PropertyGroup>
+    <PluginRepositoryRoot Condition="'$(PluginRepositoryRoot)' == ''">$(MSBuildThisFileDirectory)..\</PluginRepositoryRoot>
+    <PluginOutputFolder Condition="'$(PluginOutputFolder)' == ''">plugins</PluginOutputFolder>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <RulealizePlugin Include="Binding" />
+    <RulealizePlugin Include="Branch" />
+    <RulealizePlugin Include="Definition" />
+    <RulealizePlugin Include="Logic" />
+    <RulealizePlugin Include="Comparison" />
+    <RulealizePlugin Include="Arithmetic" />
+    <RulealizePlugin Include="TypeSchema" />
+    <RulealizePlugin Include="Sequence" />
+    <RulealizePlugin Include="State" />
+    <RulealizePlugin Include="Grid" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference
+      Include="@(RulealizePlugin->'$(PluginRepositoryRoot)Rulealize.Plugin.%(Identity)\src\Rulealize.Plugin.%(Identity)\Rulealize.Plugin.%(Identity).csproj')"
+      ReferenceOutputAssembly="false"
+      OutputItemType="RulealizePluginAssembly"
+      Private="false" />
+  </ItemGroup>
+
+  <Target Name="CheckPluginRepositories" BeforeTargets="ResolveProjectReferences">
+    <Error
+      Condition="!Exists('$(PluginRepositoryRoot)Rulealize.Plugin.%(RulealizePlugin.Identity)')"
+      Text="Rulealize.Plugin.%(RulealizePlugin.Identity) was not found at $(PluginRepositoryRoot). The standard plugins live in their own repositories and are expected to be cloned beside this one; set PluginRepositoryRoot to point somewhere else." />
+  </Target>
+
+  <Target Name="CopyRulealizePlugins" AfterTargets="Build" Inputs="@(RulealizePluginAssembly)" Outputs="@(RulealizePluginAssembly->'$(OutDir)$(PluginOutputFolder)\%(Filename)%(Extension)')">
+    <Copy SourceFiles="@(RulealizePluginAssembly)" DestinationFolder="$(OutDir)$(PluginOutputFolder)" SkipUnchangedFiles="true" />
+  </Target>
+
+</Project>

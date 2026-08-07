@@ -1,6 +1,11 @@
 <Solution>
   <Folder Name="/Solution Items/">
     <File Path=".editorconfig" />
+    <File Path="NuGet.config" />
+    <File Path="StandardPlugins.props" />
+    <File Path="README.md" />
   </Folder>
   <Project Path="src/Rulealize.csproj" />
+  <Project Path="test/Rulealize.Tests.csproj" />
+  <Project Path="sample/Rulealize.Sample.Othello.csproj" />
 </Solution>

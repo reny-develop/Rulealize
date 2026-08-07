@@ -1,0 +1,162 @@
+{
+  "$schema": "rulealize/ruleset/v1",
+  "id": "othello",
+  "version": "1.0.0",
+
+  "requires": [
+    { "plugin": "Rulealize.Plugin.Binding",    "version": "^1.0" },
+    { "plugin": "Rulealize.Plugin.Branch",     "version": "^1.0" },
+    { "plugin": "Rulealize.Plugin.Definition", "version": "^1.0" },
+    { "plugin": "Rulealize.Plugin.Logic",      "version": "^1.0" },
+    { "plugin": "Rulealize.Plugin.Comparison", "version": "^1.0" },
+    { "plugin": "Rulealize.Plugin.Arithmetic", "version": "^1.0" },
+    { "plugin": "Rulealize.Plugin.TypeSchema", "version": "^1.0" },
+    { "plugin": "Rulealize.Plugin.Sequence",   "version": "^1.0" },
+    { "plugin": "Rulealize.Plugin.State",      "version": "^1.0" },
+    { "plugin": "Rulealize.Plugin.Grid",       "version": "^1.0" }
+  ],
+
+  "state": {
+    "schema": {
+      "board": {
+        "op": "grid.board",
+        "width": 8, "height": 8, "coord": "algebraic",
+        "cell": { "op": "type.enum", "values": ["black", "white"], "nullable": true }
+      },
+      "turn":   { "op": "type.enum", "values": ["black", "white"] },
+      "passes": { "op": "type.int", "min": 0, "max": 2 }
+    },
+    "initial": {
+      "board": { "d4": "white", "e4": "black", "d5": "black", "e5": "white" },
+      "turn": "black",
+      "passes": 0
+    }
+  },
+
+  "definitions": {
+    "me":       { "op": "state.get", "path": "turn" },
+    "opponent": {
+      "op": "branch.match",
+      "value": "#me",
+      "cases": { "black": "white", "white": "black" }
+    },
+
+    "flips1": {
+      "params": ["at", "dir"],
+      "body": {
+        "op": "bind.let",
+        "bind": {
+          "ray": { "op": "grid.ray", "grid": "$board", "from": "@at", "dir": "@dir" },
+          "run": {
+            "op": "seq.takeWhile", "source": "@ray", "as": "c",
+            "predicate": {
+              "op": "cmp.eq",
+              "left":  { "op": "grid.at", "grid": "$board", "coord": "@c" },
+              "right": "#opponent"
+            }
+          }
+        },
+        "in": {
+          "op": "branch.if",
+          "cond": {
+            "op": "cmp.eq",
+            "left": {
+              "op": "grid.at", "grid": "$board",
+              "coord": {
+                "op": "seq.elementAt", "source": "@ray",
+                "index": { "op": "seq.count", "source": "@run" }
+              }
+            },
+            "right": "#me"
+          },
+          "then": "@run",
+          "else": { "op": "seq.empty" }
+        }
+      }
+    },
+
+    "flips": {
+      "params": ["at"],
+      "body": {
+        "op": "seq.selectMany",
+        "source": { "op": "grid.directions", "of": "$board", "kind": "eight" },
+        "as": "d",
+        "select": { "op": "def.call", "def": "flips1", "args": { "at": "@at", "dir": "@d" } }
+      }
+    },
+
+    "canPlace": {
+      "params": ["at"],
+      "body": {
+        "op": "logic.and",
+        "all": [
+          { "op": "cmp.isNull", "value": { "op": "grid.at", "grid": "$board", "coord": "@at" } },
+          { "op": "seq.any", "source": { "op": "def.call", "def": "flips", "args": { "at": "@at" } } }
+        ]
+      }
+    },
+
+    "hasAnyMove": {
+      "body": {
+        "op": "seq.any", "source": { "op": "grid.coords", "of": "$board" }, "as": "c",
+        "predicate": { "op": "def.call", "def": "canPlace", "args": { "at": "@c" } }
+      }
+    }
+  },
+
+  "inputs": {
+    "place": {
+      "actor": "#me",
+      "params": {
+        "at": { "domain": { "op": "grid.coords", "of": "$board" } }
+      },
+      "when": { "op": "def.call", "def": "canPlace", "args": { "at": "@at" } },
+      "effects": [
+        { "op": "grid.set", "target": "$board", "coord": "@at", "value": "#me" },
+        { "op": "grid.setMany", "target": "$board",
+          "coords": { "op": "def.call", "def": "flips", "args": { "at": "@at" } },
+          "value": "#me" },
+        { "op": "state.set", "path": "passes", "value": 0 },
+        { "op": "state.set", "path": "turn", "value": "#opponent" }
+      ]
+    },
+
+    "pass": {
+      "actor": "#me",
+      "params": {},
+      "when": { "op": "logic.not", "value": "#hasAnyMove" },
+      "effects": [
+        { "op": "state.set", "path": "passes",
+          "value": { "op": "math.add", "of": ["$passes", 1] } },
+        { "op": "state.set", "path": "turn", "value": "#opponent" }
+      ]
+    }
+  },
+
+  "terminal": {
+    "when": {
+      "op": "logic.or",
+      "any": [
+        { "op": "cmp.gte", "left": "$passes", "right": 2 },
+        { "op": "logic.not", "value": {
+            "op": "seq.any", "source": { "op": "grid.coords", "of": "$board" }, "as": "c",
+            "predicate": { "op": "cmp.isNull",
+                           "value": { "op": "grid.at", "grid": "$board", "coord": "@c" } } } }
+      ]
+    },
+    "result": {
+      "op": "bind.let",
+      "bind": {
+        "b": { "op": "seq.count", "source": { "op": "grid.cells", "of": "$board" },
+               "as": "c", "where": { "op": "cmp.eq", "left": "@c", "right": "black" } },
+        "w": { "op": "seq.count", "source": { "op": "grid.cells", "of": "$board" },
+               "as": "c", "where": { "op": "cmp.eq", "left": "@c", "right": "white" } }
+      },
+      "in": {
+        "op": "branch.match",
+        "value": { "op": "cmp.compare", "left": "@b", "right": "@w" },
+        "cases": { "gt": "black", "lt": "white", "eq": "draw" }
+      }
+    }
+  }
+}
