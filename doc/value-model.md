@@ -33,7 +33,7 @@ Opaque 値は **型タグ**（例: `grid/coord`）を持ち、型タグが異な
 
 - `GetValidInputs` の戻り値に含まれる `args` は JSON 文書として外部へ出る
   （`{ "at": "d3" }`）。Opaque 座標をテキストへ落とせないと直列化できない。
-- 逆に `ApplyToStateAsync` に渡される InputRule の `args` は Text で届く。
+- 逆に `ApplyToState` に渡される InputRule の `args` は Text で届く。
   これを Opaque へ復元できないとパラメータとして使えない。
 
 したがって Opaque を受け取るノードは、**同じ型タグの Opaque と、そのテキスト

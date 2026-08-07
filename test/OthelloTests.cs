@@ -72,9 +72,9 @@ namespace Rulealize.Tests
             Assert.Throws<ArgumentOutOfRangeException>(() => Othello.GetValidInputs(Othello.InitialState, 0));
 
         [Fact]
-        public async Task PlacingAtD3CapturesExactlyOneStone()
+        public void PlacingAtD3CapturesExactlyOneStone()
         {
-            TransitionResult result = await Othello.ApplyToStateAsync(Place("d3"), Othello.InitialState);
+            TransitionResult result = Othello.ApplyToState(Place("d3"), Othello.InitialState);
             Board board = Board.Of(result.State);
 
             Assert.Equal("black", board["d3"]);
@@ -89,30 +89,30 @@ namespace Rulealize.Tests
         }
 
         [Fact]
-        public async Task TheCaptureIsComputedFromThePositionBeforeTheStoneWasPlayed()
+        public void TheCaptureIsComputedFromThePositionBeforeTheStoneWasPlayed()
         {
             // Two effects write the same board: one places the stone, one flips what it
             // captured. Under sequential semantics the second would rescan a board that
             // already had the new stone on it. Exactly one stone must flip here.
-            TransitionResult result = await Othello.ApplyToStateAsync(Place("d3"), Othello.InitialState);
+            TransitionResult result = Othello.ApplyToState(Place("d3"), Othello.InitialState);
 
             Assert.Equal(4, Board.Of(result.State).CountOf("black"));
             Assert.Equal(1, Board.Of(result.State).CountOf("white"));
         }
 
         [Fact]
-        public async Task AnIllegalPlacementIsRefused()
+        public void AnIllegalPlacementIsRefused()
         {
-            IllegalInputException exception = await Assert.ThrowsAsync<IllegalInputException>(
-                () => Othello.ApplyToStateAsync(Place("a1"), Othello.InitialState));
+            IllegalInputException exception = Assert.Throws<IllegalInputException>(
+                () => Othello.ApplyToState(Place("a1"), Othello.InitialState));
 
             Assert.Equal("place", exception.Input);
         }
 
         [Fact]
-        public async Task PassingIsRefusedWhileAMoveExists() =>
-            await Assert.ThrowsAsync<IllegalInputException>(
-                () => Othello.ApplyToStateAsync(
+        public void PassingIsRefusedWhileAMoveExists() =>
+            Assert.Throws<IllegalInputException>(
+                () => Othello.ApplyToState(
                     """{ "input": "pass", "args": {} }""",
                     Othello.InitialState));
 
@@ -121,12 +121,12 @@ namespace Rulealize.Tests
         [InlineData("d3")]
         [InlineData("e6")]
         [InlineData("f5")]
-        public async Task AMoveThatCameOutOfGetValidInputsCanBeFedStraightBackIn(string square)
+        public void AMoveThatCameOutOfGetValidInputsCanBeFedStraightBackIn(string square)
         {
             ValidInput move = Othello.GetValidInputs(Othello.InitialState, 128)
                 .Single(m => m.Arguments["at"] == square);
 
-            TransitionResult result = await Othello.ApplyToStateAsync(
+            TransitionResult result = Othello.ApplyToState(
                 move.ToInputDocument(Othello.RuleSet),
                 Othello.InitialState);
 
@@ -137,7 +137,7 @@ namespace Rulealize.Tests
         public void TheOpeningIsNotTerminal() => Assert.False(Othello.GetTerminalStatus(Othello.InitialState).IsTerminal);
 
         [Fact]
-        public async Task AGamePlayedToTheEndFillsTheBoardAndNamesAWinner()
+        public void AGamePlayedToTheEndFillsTheBoardAndNamesAWinner()
         {
             // Always taking the first legal move is enough to reach a real ending, and the
             // arithmetic is checkable: four stones to start, one placed per ply, sixty-four
@@ -151,7 +151,7 @@ namespace Rulealize.Tests
                 ValidInputSet moves = Othello.GetValidInputs(state, 128);
                 Assert.NotEmpty(moves);
 
-                TransitionResult step = await Othello.ApplyToStateAsync(
+                TransitionResult step = Othello.ApplyToState(
                     moves[0].ToInputDocument(Othello.RuleSet),
                     state);
 
@@ -182,9 +182,9 @@ namespace Rulealize.Tests
         }
 
         [Fact]
-        public async Task OnePassCountsUpAndTwoEndTheGame()
+        public void OnePassCountsUpAndTwoEndTheGame()
         {
-            TransitionResult first = await Othello.ApplyToStateAsync(
+            TransitionResult first = Othello.ApplyToState(
                 """{ "input": "pass", "args": {} }""",
                 StandardRuntime.Deadlocked());
 
@@ -192,7 +192,7 @@ namespace Rulealize.Tests
             Assert.Equal(1, Board.Of(first.State).Passes);
             Assert.Equal("black", Board.Of(first.State).Turn);
 
-            TransitionResult second = await Othello.ApplyToStateAsync(
+            TransitionResult second = Othello.ApplyToState(
                 """{ "input": "pass", "args": {} }""",
                 first.State);
 
@@ -202,9 +202,9 @@ namespace Rulealize.Tests
         }
 
         [Fact]
-        public async Task TheOutcomeIsReportedOnlyOnceTheGameIsOver()
+        public void TheOutcomeIsReportedOnlyOnceTheGameIsOver()
         {
-            TransitionResult ongoing = await Othello.ApplyToStateAsync(Place("d3"), Othello.InitialState);
+            TransitionResult ongoing = Othello.ApplyToState(Place("d3"), Othello.InitialState);
 
             Assert.Null(ongoing.Result);
         }

@@ -300,7 +300,7 @@ $schema / id / version / requires / state / definitions / inputs / terminal
 
 パスは `{ "input": "pass", "args": {} }`。
 
-### `ApplyToStateAsync` の戻り値
+### `ApplyToState` の戻り値
 
 ```jsonc
 {

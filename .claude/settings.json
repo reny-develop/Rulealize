@@ -10,7 +10,10 @@
       "Bash(git mv *)",
       "Bash(rm -rf sample/bin sample/obj)",
       "Bash(dotnet run *)",
-      "PowerShell(dotnet --version)"
+      "PowerShell(dotnet --version)",
+      "PowerShell(dotnet test c:\\\\Repos\\\\Rulealize --nologo -v q)",
+      "PowerShell(dotnet build c:\\\\Repos\\\\Rulealize\\\\sample\\\\Othello --nologo -v q)",
+      "PowerShell(dotnet run --project c:\\\\Repos\\\\Rulealize\\\\sample\\\\Othello --no-build -- --auto)"
     ]
   }
 }

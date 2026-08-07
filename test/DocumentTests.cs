@@ -77,30 +77,30 @@ namespace Rulealize.Tests
                 StringComparison.Ordinal);
 
         [Fact]
-        public async Task AnInputNamingSomethingThatDoesNotExistIsRefused() =>
+        public void AnInputNamingSomethingThatDoesNotExistIsRefused() =>
             Assert.Contains(
                 "'fly' is not an input",
-                (await Assert.ThrowsAsync<RuleDocumentException>(
-                    () => Othello.ApplyToStateAsync("""{ "input": "fly", "args": {} }""", Othello.InitialState)))
+                Assert.Throws<RuleDocumentException>(
+                    () => Othello.ApplyToState("""{ "input": "fly", "args": {} }""", Othello.InitialState))
                     .Message,
                 StringComparison.Ordinal);
 
         [Fact]
-        public async Task AMissingArgumentIsRefused() =>
-            await Assert.ThrowsAsync<RuleDocumentException>(
-                () => Othello.ApplyToStateAsync("""{ "input": "place", "args": {} }""", Othello.InitialState));
+        public void AMissingArgumentIsRefused() =>
+            Assert.Throws<RuleDocumentException>(
+                () => Othello.ApplyToState("""{ "input": "place", "args": {} }""", Othello.InitialState));
 
         [Fact]
-        public async Task AnArgumentTheInputDoesNotTakeIsRefused() =>
-            await Assert.ThrowsAsync<RuleDocumentException>(
-                () => Othello.ApplyToStateAsync(
+        public void AnArgumentTheInputDoesNotTakeIsRefused() =>
+            Assert.Throws<RuleDocumentException>(
+                () => Othello.ApplyToState(
                     """{ "input": "place", "args": { "at": "d3", "how": "hard" } }""",
                     Othello.InitialState));
 
         [Fact]
         public void AStateDocumentRoundTripsThroughItsOwnOutput()
         {
-            // What ApplyToStateAsync hands back has to be something the next call accepts.
+            // What ApplyToState hands back has to be something the next call accepts.
             string state = Othello.InitialState;
             ValidInputSet moves = Othello.GetValidInputs(state, 128);
 
@@ -123,9 +123,9 @@ namespace Rulealize.Tests
         }
 
         [Fact]
-        public async Task TheDocumentedTransitionShapeIsWhatComesOut()
+        public void TheDocumentedTransitionShapeIsWhatComesOut()
         {
-            TransitionResult result = await Othello.ApplyToStateAsync(
+            TransitionResult result = Othello.ApplyToState(
                 """{ "input": "place", "args": { "at": "d3" } }""",
                 Othello.InitialState);
 

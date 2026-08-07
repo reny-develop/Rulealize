@@ -13,7 +13,7 @@ namespace Rulealize
     /// <remarks>
     /// <para>
     /// Handing this straight back to
-    /// <see cref="RuleContext.ApplyToStateAsync(string, string, System.Threading.CancellationToken)"/>
+    /// <see cref="RuleContext.ApplyToState(string, string, System.Threading.CancellationToken)"/>
     /// has to produce the move it describes, and that requires each argument to survive the
     /// trip out through JSON and back. So an argument is written in its own JSON form: a
     /// number stays a number, a boolean stays a boolean.

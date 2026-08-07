@@ -60,7 +60,12 @@ namespace Rulealize
         /// <exception cref="RuleDocumentException">A document is malformed or does not match the schema.</exception>
         /// <exception cref="IllegalInputException">The rules do not allow this input in this state.</exception>
         /// <exception cref="RuleEvaluationException">An operation received values that make it meaningless.</exception>
-        public Task<TransitionResult> ApplyToStateAsync(
+        /// <remarks>
+        /// Synchronous, because nothing here is I/O: the documents are already in memory, and
+        /// what happens to them is node evaluation. The asynchronous overload exists for the
+        /// one case that genuinely is I/O — reading a document off a stream.
+        /// </remarks>
+        public TransitionResult ApplyToState(
             string inputDocument,
             string stateDocument,
             CancellationToken cancellationToken = default)
@@ -70,7 +75,7 @@ namespace Rulealize
 
             using JsonDocument input = Parse(inputDocument, "input");
             using JsonDocument state = Parse(stateDocument, "state");
-            return Task.FromResult(Apply(input.RootElement, state.RootElement, cancellationToken));
+            return Apply(input.RootElement, state.RootElement, cancellationToken);
         }
 
         /// <summary>Applies an input to a state, reading both from streams.</summary>
@@ -78,6 +83,9 @@ namespace Rulealize
         /// <param name="stateDocument">A <c>rulealize/state/v1</c> document.</param>
         /// <param name="cancellationToken">Cancels reading or a long evaluation.</param>
         /// <returns>Where the transition arrived.</returns>
+        /// <exception cref="RuleDocumentException">A document is malformed or does not match the schema.</exception>
+        /// <exception cref="IllegalInputException">The rules do not allow this input in this state.</exception>
+        /// <exception cref="RuleEvaluationException">An operation received values that make it meaningless.</exception>
         public async Task<TransitionResult> ApplyToStateAsync(
             Stream inputDocument,
             Stream stateDocument,
@@ -104,9 +112,10 @@ namespace Rulealize
         /// </returns>
         /// <remarks>
         /// <para>
-        /// Synchronous by design. This walks a domain and evaluates a guard against every
-        /// member of it — thousands of node evaluations for one call — and an asynchronous
-        /// signature over that hot path would cost more than it could buy.
+        /// Synchronous, and there is no asynchronous overload at all. This walks a domain and
+        /// evaluates a guard against every member of it — thousands of node evaluations for
+        /// one call — and an asynchronous signature over that hot path would cost more than it
+        /// could buy.
         /// </para>
         /// <para>
         /// Whether a state is terminal is a separate question, asked with

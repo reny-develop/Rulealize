@@ -46,41 +46,41 @@ namespace Rulealize.Tests
             Assert.All(Sink.GetValidInputs(Sink.InitialState, 64), static move => Assert.Null(move.Actor));
 
         [Fact]
-        public async Task StateUpdateReadsTheFieldItIsAboutToWrite()
+        public void StateUpdateReadsTheFieldItIsAboutToWrite()
         {
-            JsonElement data = await ApplyFirst();
+            JsonElement data = ApplyFirst();
 
             Assert.Equal(9, data.GetProperty("score").GetInt32());   // 7 + 2
         }
 
         [Fact]
-        public async Task CoalesceFallsThroughANullField()
+        public void CoalesceFallsThroughANullField()
         {
-            JsonElement data = await ApplyFirst();
+            JsonElement data = ApplyFirst();
 
             Assert.Equal("fallback", data.GetProperty("note").GetString());
         }
 
         [Fact]
-        public async Task MatchTakesItsDefaultWhenNoCaseApplies()
+        public void MatchTakesItsDefaultWhenNoCaseApplies()
         {
-            JsonElement data = await ApplyFirst();
+            JsonElement data = ApplyFirst();
 
             Assert.Equal("other", data.GetProperty("label").GetString());
         }
 
         [Fact]
-        public async Task ABooleanFieldRoundTrips()
+        public void ABooleanFieldRoundTrips()
         {
-            JsonElement data = await ApplyFirst();
+            JsonElement data = ApplyFirst();
 
             Assert.False(data.GetProperty("active").GetBoolean());
         }
 
         [Fact]
-        public async Task IndexNotationCoordinatesRoundTrip()
+        public void IndexNotationCoordinatesRoundTrip()
         {
-            JsonElement data = await ApplyFirst();
+            JsonElement data = ApplyFirst();
 
             Assert.Equal("x", data.GetProperty("board").GetProperty("0,0").GetString());
         }
@@ -102,11 +102,11 @@ namespace Rulealize.Tests
         }
 
         [Fact]
-        public async Task AnArgumentOfTheWrongKindFaultsRatherThanBeingCoerced()
+        public void AnArgumentOfTheWrongKindFaultsRatherThanBeingCoerced()
         {
             // "2" is not 2. Nothing converts it, and the guard's cmp.gt says so.
-            await Assert.ThrowsAsync<RuleEvaluationException>(
-                () => Sink.ApplyToStateAsync(
+            Assert.Throws<RuleEvaluationException>(
+                () => Sink.ApplyToState(
                     """{ "input": "bump", "args": { "by": "2", "cell": "1,1" } }""",
                     Sink.InitialState));
         }
@@ -199,7 +199,7 @@ namespace Rulealize.Tests
                 """));
 
         [Fact]
-        public async Task WritingOffTheBoardFaultsEvenThoughReadingDoesNot()
+        public void WritingOffTheBoardFaultsEvenThoughReadingDoesNot()
         {
             Assert.True(Evaluate("""
                 { "op": "cmp.isNull", "value": { "op": "grid.at", "grid": "$board", "coord": "z9" } }
@@ -216,14 +216,14 @@ namespace Rulealize.Tests
                 }
                 """);
 
-            await Assert.ThrowsAsync<RuleEvaluationException>(
-                () => context.ApplyToStateAsync("""{ "input": "go", "args": {} }""", context.InitialState));
+            Assert.Throws<RuleEvaluationException>(
+                () => context.ApplyToState("""{ "input": "go", "args": {} }""", context.InitialState));
         }
 
-        private async Task<JsonElement> ApplyFirst()
+        private JsonElement ApplyFirst()
         {
             ValidInput move = Sink.GetValidInputs(Sink.InitialState, 64)[0];
-            TransitionResult result = await Sink.ApplyToStateAsync(move.ToInputDocument(Sink.RuleSet), Sink.InitialState);
+            TransitionResult result = Sink.ApplyToState(move.ToInputDocument(Sink.RuleSet), Sink.InitialState);
 
             // Parsed and copied out, because the document is disposed with the scope.
             using JsonDocument document = JsonDocument.Parse(result.State);

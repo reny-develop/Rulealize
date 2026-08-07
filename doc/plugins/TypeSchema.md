@@ -33,7 +33,7 @@
 
 `state.schema` は 3 つの目的を持つ。
 
-1. **外部 State の検証** — `ApplyToStateAsync` に渡される State 文書が正しい
+1. **外部 State の検証** — `ApplyToState` に渡される State 文書が正しい
    形かを `CreateContext` 済みのコンテキストが検査する。手書きや外部システム
    由来の State を受け入れる以上、これは必須
 2. **初期状態の検証** — `state.initial` がスキーマに適合するかを
@@ -181,7 +181,7 @@
 | 対象 | タイミング |
 | --- | --- |
 | `state.initial` | `CreateContext` 時 |
-| 外部から渡された State | `ApplyToStateAsync` / `GetValidInputs` の入口 |
+| 外部から渡された State | `ApplyToState` / `GetValidInputs` の入口 |
 | `effects` 適用後の状態 | → 未確定事項 |
 
 失敗時は、どのパスのどの値がどの制約に反したかを含むエラーを返す。

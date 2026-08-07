@@ -14,7 +14,7 @@ RuleContext othello = runtime.CreateContext(File.ReadAllText("othello.json"));
 ValidInputSet moves = othello.GetValidInputs(othello.InitialState, validationLimit: 128);
 // place(at: d3), place(at: c4), place(at: f5), place(at: e6) — all black's
 
-TransitionResult next = await othello.ApplyToStateAsync(
+TransitionResult next = othello.ApplyToState(
     moves[0].ToInputDocument(othello.RuleSet),
     othello.InitialState);
 ```
@@ -105,12 +105,23 @@ real fix for a large domain is to narrow it before the guard runs, which is a jo
 plugin that owns the domain.
 
 The method is synchronous on purpose. It performs thousands of node evaluations per call,
-and an asynchronous signature over that path would cost more than it could buy. Asynchrony
-belongs at the boundary, where documents are read and plugins are loaded.
+and an asynchronous signature over that path would cost more than it could buy.
+
+## Where asynchrony belongs
+
+At the boundary, and nowhere else. Evaluation is pure computation over documents that are
+already in memory, so the methods that take a `string` are synchronous — `CreateContext`,
+`ApplyToState`, `GetValidInputs`, `GetTerminalStatus`. An `Async` suffix over a body that
+can only ever return an already-completed task tells the caller something untrue about
+where it may yield.
+
+Reading a document off a stream genuinely is I/O, and that is what the asynchronous
+overloads are for: `CreateContextAsync(Stream)` and `ApplyToStateAsync(Stream, Stream)`.
+They await the read and then run the same synchronous evaluation.
 
 ## Arguments have to survive the round trip
 
-`GetValidInputs` hands back moves; feeding one straight back to `ApplyToStateAsync` must
+`GetValidInputs` hands back moves; feeding one straight back to `ApplyToState` must
 produce the move it described. So an argument is written in its own JSON form — a number
 stays a number, a boolean stays a boolean.
 
@@ -156,7 +167,7 @@ of any size needs somewhere to say why a rule is the way it is.
 | `RuleRuntime.AddPlugin` / `LoadPlugins` / `LoadPluginsFrom` | build the vocabulary |
 | `RuleRuntime.CreateContext` / `CreateContextAsync` | compile a rule set |
 | `RuleContext.InitialState` | the opening position, as a state document |
-| `RuleContext.ApplyToStateAsync` | apply an input to a state |
+| `RuleContext.ApplyToState` / `ApplyToStateAsync` | apply an input to a state |
 | `RuleContext.GetValidInputs` | what is legal from here |
 | `RuleContext.GetTerminalStatus` | whether a state is final, and its outcome |
 

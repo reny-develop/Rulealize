@@ -84,7 +84,7 @@
 
 | 文脈 | 読む対象 |
 | --- | --- |
-| `inputs.*.when` | `GetValidInputs` / `ApplyToStateAsync` に渡された State |
+| `inputs.*.when` | `GetValidInputs` / `ApplyToState` に渡された State |
 | `inputs.*.effects` | **同上**（効果適用前の State） |
 | `definitions` の本体 | 呼び出し元の文脈に従う |
 | `terminal` | 判定対象の State |
@@ -204,7 +204,7 @@ State プラグインは盤面値を取り出すだけで、中身は見ない�
 
 ## 状態文書の形式
 
-`ApplyToStateAsync` が受け取り、返す JSON。
+`ApplyToState` が受け取り、返す JSON。
 
 ```jsonc
 {
@@ -240,7 +240,7 @@ State 文書の `ruleSet` が `RuleContext` の RuleSet と一致しない場合
 - **入れ子 Record へのパス** — ドット記法は予約済みだが、
   [TypeSchema](TypeSchema.md) が入れ子スキーマを持たないため現状使えない。
 - **効果適用後のスキーマ検証** — 上述。
-- **状態の差分表現** — `ApplyToStateAsync` が状態全体を返す設計。長い対局で
+- **状態の差分表現** — `ApplyToState` が状態全体を返す設計。長い対局で
   状態を積み上げる用途では差分が欲しくなるが、盤面が小さいオセロでは不要。
 - **読み取り専用の派生フィールド** — 石数のような値を状態に持たせるか、
   `definitions` で都度計算するか。現状は後者（`terminal.result` が

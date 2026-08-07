@@ -78,7 +78,7 @@ while (true)
     // A move that came out of GetValidInputs goes straight back in. That round trip is why
     // arguments are written in their own JSON form and why an opaque value such as a
     // coordinate has to have a text form.
-    TransitionResult result = await othello.ApplyToStateAsync(
+    TransitionResult result = othello.ApplyToState(
         chosen.ToInputDocument(othello.RuleSet),
         state);
 
