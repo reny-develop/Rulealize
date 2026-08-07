@@ -200,10 +200,10 @@ Grid.
 | --- | --- |
 | [`src/`](src/) | the runtime |
 | [`test/`](test/) | xUnit tests — `dotnet test` |
-| [`sample/`](sample/) | a playable Othello in the terminal — `dotnet run --project sample -- --auto` |
+| [`sample/`](sample/) | one directory per sample application — see [`sample/README.md`](sample/README.md) |
 | [`doc/`](doc/) | how the design was arrived at |
 
-Both the tests and the sample need the ten plugins, so both import
+Both the tests and the samples need the ten plugins, so both import
 [`StandardPlugins.props`](StandardPlugins.props). It builds each plugin from its own
 repository beside this one and drops the DLL into a `plugins` folder next to the
 executable. The references are not compile-time references — neither project can name a

@@ -2,7 +2,7 @@
 
   <!--
     The ten standard plugins, for projects that need a working vocabulary: the tests and
-    the sample. Each lives in its own repository, so this assumes they are cloned beside
+    the samples. Each lives in its own repository, so this assumes they are cloned beside
     this one — the same assumption NuGet.config already makes about the package feed.
 
     The references are deliberately not compile-time references. ReferenceOutputAssembly

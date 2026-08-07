@@ -7,5 +7,7 @@
   </Folder>
   <Project Path="src/Rulealize.csproj" />
   <Project Path="test/Rulealize.Tests.csproj" />
-  <Project Path="sample/Rulealize.Sample.Othello.csproj" />
+  <Folder Name="/sample/">
+    <Project Path="sample/Othello/Rulealize.Sample.Othello.csproj" />
+  </Folder>
 </Solution>

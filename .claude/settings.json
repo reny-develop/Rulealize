@@ -5,7 +5,12 @@
       "Bash(git -C /c/Repos/Rulealize status --short)",
       "Bash(set -e)",
       "Bash(git add *)",
-      "Bash(git commit *)"
+      "Bash(git commit *)",
+      "Bash(mkdir -p sample/Othello)",
+      "Bash(git mv *)",
+      "Bash(rm -rf sample/bin sample/obj)",
+      "Bash(dotnet run *)",
+      "PowerShell(dotnet --version)"
     ]
   }
 }
