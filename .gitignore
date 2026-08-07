@@ -364,3 +364,5 @@ FodyWeavers.xsd
 
 # vscode
 .vscode/
+# Claude Code, personal settings
+.claude/settings.local.json

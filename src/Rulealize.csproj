@@ -1,9 +1,10 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
@@ -16,9 +17,23 @@
     <WarningsAsErrors>$(WarningsAsErrors);NU1605;CS1591</WarningsAsErrors>
   </PropertyGroup>
 
+  <PropertyGroup>
+    <PackageId>Rulealize</PackageId>
+    <Version>0.1.0</Version>
+    <Authors>Reny</Authors>
+    <Description>Plugin-oriented state transition and rule execution runtime driven by declarative JSON DSL.</Description>
+    <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <RepositoryUrl>https://github.com/reny-develop/Rulealize</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+  </PropertyGroup>
+
   <ItemGroup>
-    <Folder Include="Internal\Utility\" />
-    <Folder Include="Internal\Node\" />
+    <None Include="..\README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Rulealize.Abstraction" Version="0.1.0" />
   </ItemGroup>
 
 </Project>

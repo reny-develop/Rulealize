@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git -C /c/Repos/Rulealize remote -v)",
+      "Bash(git -C /c/Repos/Rulealize status --short)",
+      "Bash(set -e)",
+      "Bash(git add *)",
+      "Bash(git commit *)"
+    ]
+  }
+}
