@@ -16,7 +16,7 @@ Rulealize follows a typical plugin architecture with the following principles:
 ## JSON DSL
 The JSON DSL is designed to define generic rules.
 
-It is intended to describe the rules of systems such as board games (e.g. Othello, Shogi), simulations, and other rule-based applications.
+It is intended to describe the rules of systems such as board games (e.g. Reversi, Shogi), simulations, and other rule-based applications.
 
 The set of features available in the JSON DSL depends entirely on the plugins loaded by the library.
 

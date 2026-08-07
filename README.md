@@ -9,14 +9,14 @@ which plugins are loaded — the core provides no operations at all, not even bo
 ```csharp
 RuleRuntime runtime = new RuleRuntime().LoadPluginsFrom("plugins");
 
-RuleContext othello = runtime.CreateContext(File.ReadAllText("othello.json"));
+RuleContext reversi = runtime.CreateContext(File.ReadAllText("reversi.json"));
 
-ValidInputSet moves = othello.GetValidInputs(othello.InitialState, validationLimit: 128);
+ValidInputSet moves = reversi.GetValidInputs(reversi.InitialState, validationLimit: 128);
 // place(at: d3), place(at: c4), place(at: f5), place(at: e6) — all black's
 
-TransitionResult next = othello.ApplyToState(
-    moves[0].ToInputDocument(othello.RuleSet),
-    othello.InitialState);
+TransitionResult next = reversi.ApplyToState(
+    moves[0].ToInputDocument(reversi.RuleSet),
+    reversi.InitialState);
 ```
 
 ## What the core knows
@@ -65,7 +65,7 @@ produce null, and rule sets are built on their doing so.
 Every expression an input's effects evaluate reads the state as it was when the input
 arrived. Writes accumulate in a draft and are committed together.
 
-This is what lets Othello's placement be written in the order a person would describe it —
+This is what lets Reversi's placement be written in the order a person would describe it —
 put the stone down, then flip what it captured — instead of hoisting the capture set into a
 binding to keep the second effect from rescanning a board that already has the new stone on
 it.
@@ -86,7 +86,7 @@ and nothing from wherever it was called. Arguments are the only way in.
 
 Bodies are also pure, so the runtime caches a result against the definition, its arguments,
 and the snapshot, for as long as that snapshot lasts. Over a whole `GetValidInputs` sweep
-that matters: Othello's capture computation is reached from a guard and again from the
+that matters: Reversi's capture computation is reached from a guard and again from the
 effect that follows it, with the same coordinate, for each of sixty-four candidates, and
 each evaluation walks eight rays.
 
@@ -95,7 +95,7 @@ graph fixed the cost of an evaluation has an upper bound that can be estimated.
 
 ## `GetValidInputs` and the limit
 
-Candidates are the product of an input's parameter domains, sifted by its guard. Othello
+Candidates are the product of an input's parameter domains, sifted by its guard. Reversi
 produces sixty-five — sixty-four squares and a pass — which is nothing. A shogi move
 written as `from`, `to` and a promotion flag produces thirteen thousand, which is not.
 
@@ -134,11 +134,11 @@ way back in.
 
 ```jsonc
 // rulealize/state/v1
-{ "$schema": "rulealize/state/v1", "ruleSet": "othello@1.0.0",
+{ "$schema": "rulealize/state/v1", "ruleSet": "reversi@1.0.0",
   "data": { "board": { "d4": "white", … }, "turn": "black", "passes": 0 } }
 
 // rulealize/input/v1
-{ "$schema": "rulealize/input/v1", "ruleSet": "othello@1.0.0",
+{ "$schema": "rulealize/input/v1", "ruleSet": "reversi@1.0.0",
   "input": "place", "args": { "at": "d3" } }
 ```
 
@@ -228,10 +228,10 @@ dotnet test -p:PluginRepositoryRoot=D:\somewhere\
 
 ## Design notes
 
-[`doc/`](doc/) works the design out on Othello: the [DSL](doc/dsl-example-othello.md), the
+[`doc/`](doc/) works the design out on Reversi: the [DSL](doc/dsl-example-reversi.md), the
 [value model](doc/value-model.md), and a [specification per plugin](doc/plugins/README.md).
-Othello is a good test of the boundary because the rule set that describes it contains no
-Othello-specific vocabulary at all.
+Reversi is a good test of the boundary because the rule set that describes it contains no
+Reversi-specific vocabulary at all.
 
 ## License
 

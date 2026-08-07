@@ -23,7 +23,7 @@ namespace Rulealize.Tests
         public StandardRuntime()
         {
             Runtime = new RuleRuntime().LoadPluginsFrom(PluginFolder);
-            Othello = Runtime.CreateContext(ReadRuleSet("othello.json"));
+            Reversi = Runtime.CreateContext(ReadRuleSet("reversi.json"));
             KitchenSink = Runtime.CreateContext(ReadRuleSet("kitchen-sink.json"));
         }
 
@@ -32,10 +32,10 @@ namespace Rulealize.Tests
 
         public RuleRuntime Runtime { get; }
 
-        /// <summary>Gets the Othello rule set, which the design was worked out on.</summary>
-        public RuleContext Othello { get; }
+        /// <summary>Gets the Reversi rule set, which the design was worked out on.</summary>
+        public RuleContext Reversi { get; }
 
-        /// <summary>Gets a rule set that reaches the operations Othello never does.</summary>
+        /// <summary>Gets a rule set that reaches the operations Reversi never does.</summary>
         public RuleContext KitchenSink { get; }
 
         /// <summary>Reads a rule set document the build copied beside the tests.</summary>
@@ -71,7 +71,7 @@ namespace Rulealize.Tests
             return $$"""
                 {
                   "$schema": "rulealize/state/v1",
-                  "ruleSet": "othello@1.0.0",
+                  "ruleSet": "reversi@1.0.0",
                   "data": {
                     "board": { {{string.Join(", ", squares)}} },
                     "turn": "{{turn}}",

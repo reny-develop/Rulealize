@@ -6,9 +6,9 @@ using Rulealize.Abstraction;
 
 namespace Rulealize.Tests
 {
-    /// <summary>The operations Othello never reaches, and the corners of the value model.</summary>
+    /// <summary>The operations Reversi never reaches, and the corners of the value model.</summary>
     /// <remarks>
-    /// Othello exercises about half the standard vocabulary. The rest is covered by a rule
+    /// Reversi exercises about half the standard vocabulary. The rest is covered by a rule
     /// set whose guard is a long conjunction of assertions: if any of them is wrong the
     /// candidate is not legal, and the count of surviving candidates gives it away.
     /// </remarks>
@@ -125,7 +125,7 @@ namespace Rulealize.Tests
 
         [Fact]
         public void EqualityAgainstNullDoesNot() =>
-            // The asymmetry that lets Othello's capture rule read past the end of a ray.
+            // The asymmetry that lets Reversi's capture rule read past the end of a ray.
             Assert.False(Evaluate("""{ "op": "cmp.eq", "left": null, "right": "black" }"""));
 
         [Fact]
@@ -160,7 +160,7 @@ namespace Rulealize.Tests
 
         [Fact]
         public void ASequenceCanBeWalkedTwice() =>
-            // Othello binds a ray once and consumes it from two places. A single-use
+            // Reversi binds a ray once and consumes it from two places. A single-use
             // iterator would quietly return nothing the second time.
             Assert.True(Evaluate("""
                 { "op": "bind.let",

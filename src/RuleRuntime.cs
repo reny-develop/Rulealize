@@ -30,8 +30,8 @@ namespace Rulealize
     /// RuleRuntime runtime = new RuleRuntime()
     ///     .LoadPluginsFrom("plugins");
     ///
-    /// RuleContext othello = runtime.CreateContext(File.ReadAllText("othello.json"));
-    /// ValidInputSet moves = othello.GetValidInputs(othello.InitialState, validationLimit: 128);
+    /// RuleContext reversi = runtime.CreateContext(File.ReadAllText("reversi.json"));
+    /// ValidInputSet moves = reversi.GetValidInputs(reversi.InitialState, validationLimit: 128);
     /// </code>
     /// </example>
     /// </remarks>

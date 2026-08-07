@@ -17,7 +17,7 @@ namespace Rulealize.Internal.Evaluation
     /// sweep.
     /// </para>
     /// <para>
-    /// That cache is what keeps Othello's flip computation from being repeated. It is
+    /// That cache is what keeps Reversi's flip computation from being repeated. It is
     /// reached from the placement guard and from the effect that follows, with the same
     /// coordinate, for each of sixty-four candidates — and each evaluation walks eight rays.
     /// </para>

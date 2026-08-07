@@ -1,6 +1,6 @@
 {
   "$schema": "rulealize/ruleset/v1",
-  "id": "othello",
+  "id": "reversi",
   "version": "1.0.0",
 
   "requires": [
