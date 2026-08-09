@@ -6,7 +6,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
-    <RootNamespace>Rulealize.Sample.Reversi</RootNamespace>
+    <RootNamespace>Rulealize.Sample.Shogi</RootNamespace>
   </PropertyGroup>
 
   <ItemGroup>

@@ -201,9 +201,9 @@ dotnet pack path\to\Rulealize.Abstraction\src\Rulealize.Abstraction -c Release -
 
 with `LocalNuGet` a sibling of this repository. Then `dotnet build`.
 
-The ten standard plugins live in their own repositories, one per vocabulary:
+The twelve standard plugins live in their own repositories, one per vocabulary:
 Binding, Branch, Definition, Logic, Comparison, Arithmetic, TypeSchema, Sequence, State,
-Grid.
+Grid, Tuple, Record.
 
 ## Repository layout
 
@@ -214,7 +214,7 @@ Grid.
 | [`sample/`](sample/) | one directory per sample application — see [`sample/README.md`](sample/README.md) |
 | [`doc/`](doc/) | how the design was arrived at |
 
-Both the tests and the samples need the ten plugins, so both import
+Both the tests and the samples need the twelve plugins, so both import
 [`StandardPlugins.props`](StandardPlugins.props). It builds each plugin from its own
 repository beside this one and drops the DLL into a `plugins` folder next to the
 executable. The references are not compile-time references — neither project can name a
@@ -232,6 +232,12 @@ dotnet test -p:PluginRepositoryRoot=D:\somewhere\
 [value model](doc/value-model.md), and a [specification per plugin](doc/plugins/README.md).
 Reversi is a good test of the boundary because the rule set that describes it contains no
 Reversi-specific vocabulary at all.
+
+What that design then had to survive is written up one subject at a time:
+[chess](doc/dsl-example-chess.md), where a move's destination depends on its origin;
+[shogi](doc/dsl-example-shogi.md), where captured pieces have to be held somewhere; and
+[a shift roster](doc/dsl-example-roster.md), which is not a game and never mentions a board.
+Each has a rule set in [`test/RuleSets/`](test/RuleSets/) and a sample that plays with it.
 
 ## License
 

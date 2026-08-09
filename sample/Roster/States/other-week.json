@@ -1,0 +1,22 @@
+{
+  "$schema": "rulealize/state/v1",
+  "ruleSet": "roster@1.0.0",
+
+  "data": {
+    "staff": [
+      { "name": "eve", "capacity": 2, "senior": true },
+      { "name": "fay", "capacity": 2, "senior": false },
+      { "name": "gus", "capacity": 2, "senior": false }
+    ],
+    "shifts": [
+      { "id": "mon-am", "day": "mon", "senior": true },
+      { "id": "mon-pm", "day": "mon", "senior": false },
+      { "id": "tue-am", "day": "tue", "senior": false },
+      { "id": "tue-pm", "day": "tue", "senior": false },
+      { "id": "wed-am", "day": "wed", "senior": false },
+      { "id": "wed-pm", "day": "wed", "senior": false }
+    ],
+    "assigned": [],
+    "log": []
+  }
+}

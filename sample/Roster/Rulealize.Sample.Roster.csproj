@@ -6,7 +6,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
-    <RootNamespace>Rulealize.Sample.Reversi</RootNamespace>
+    <RootNamespace>Rulealize.Sample.Roster</RootNamespace>
   </PropertyGroup>
 
   <ItemGroup>
@@ -22,6 +22,11 @@
 
   <ItemGroup>
     <Content Include="RuleSets\*.json" CopyToOutputDirectory="PreserveNewest" />
+    <!--
+      Two weeks, as state documents. The rule set is the domain and a week is an instance of
+      it, so a different roster is a different file here and not a different rule set.
+    -->
+    <Content Include="States\*.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>
