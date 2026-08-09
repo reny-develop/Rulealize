@@ -1,7 +1,7 @@
 <Project>
 
   <!--
-    The ten standard plugins, for projects that need a working vocabulary: the tests and
+    The twelve standard plugins, for projects that need a working vocabulary: the tests and
     the samples. Each lives in its own repository, so this assumes they are cloned beside
     this one — the same assumption NuGet.config already makes about the package feed.
 
@@ -28,6 +28,8 @@
     <RulealizePlugin Include="Sequence" />
     <RulealizePlugin Include="State" />
     <RulealizePlugin Include="Grid" />
+    <RulealizePlugin Include="Tuple" />
+    <RulealizePlugin Include="Record" />
   </ItemGroup>
 
   <ItemGroup>

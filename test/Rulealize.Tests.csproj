@@ -22,7 +22,7 @@
     <ProjectReference Include="..\src\Rulealize.csproj" />
   </ItemGroup>
 
-  <!-- Builds the ten standard plugins and drops their DLLs into a plugins folder. -->
+  <!-- Builds the standard plugins and drops their DLLs into a plugins folder. -->
   <Import Project="..\StandardPlugins.props" />
 
   <ItemGroup>

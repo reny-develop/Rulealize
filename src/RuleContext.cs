@@ -61,9 +61,18 @@ namespace Rulealize
         /// <exception cref="IllegalInputException">The rules do not allow this input in this state.</exception>
         /// <exception cref="RuleEvaluationException">An operation received values that make it meaningless.</exception>
         /// <remarks>
+        /// <para>
+        /// Refuses exactly what <see cref="GetValidInputs(string, int, CancellationToken)"/>
+        /// would not have listed. Each argument has to be a value its parameter's domain
+        /// produces, and then the guard has to accept it; a rule set may put a rule in either
+        /// place. Resolving the arguments costs a walk through each domain as far as the
+        /// argument, which is the price of the two methods answering the same question.
+        /// </para>
+        /// <para>
         /// Synchronous, because nothing here is I/O: the documents are already in memory, and
         /// what happens to them is node evaluation. The asynchronous overload exists for the
         /// one case that genuinely is I/O — reading a document off a stream.
+        /// </para>
         /// </remarks>
         public TransitionResult ApplyToState(
             string inputDocument,
@@ -111,6 +120,13 @@ namespace Rulealize
         /// result is a subset of what is legal, never a wrong entry.
         /// </returns>
         /// <remarks>
+        /// <para>
+        /// The candidates are the product of the parameter domains and the survivors are what
+        /// the guards accept, so both are part of what a rule set means by a legal input.
+        /// <see cref="ApplyToState(string, string, CancellationToken)"/> enforces both, and a
+        /// rule set is free to put a rule in whichever of the two suits it — in a domain when
+        /// stating it there is what keeps the candidate count down, in a guard otherwise.
+        /// </para>
         /// <para>
         /// Synchronous, and there is no asynchronous overload at all. This walks a domain and
         /// evaluates a guard against every member of it — thousands of node evaluations for
@@ -174,7 +190,7 @@ namespace Rulealize
             StateSnapshot snapshot = new(fields);
             EvaluationSession session = new(_ruleSet.Definitions, snapshot, cancellationToken);
             EvaluationContext context = session.CreateContext(declared.FrameSize);
-            BindArguments(declared, request, context);
+            BindArguments(session, declared, request, context, cancellationToken);
 
             if (declared.Guard is not null
                 && !declared.Guard.Evaluate(context).AsBoolean($"inputs.{declared.Name}.when"))
@@ -186,7 +202,7 @@ namespace Rulealize
 
             // Snapshot semantics: every expression below reads the position as it was, while
             // the writes pile up in the draft and land together.
-            StateDraft draft = new(snapshot, _ruleSet.Schema.FieldCount);
+            StateDraft draft = new(snapshot, _ruleSet.Schema.Fields);
             foreach (EffectNode effect in declared.Effects)
             {
                 cancellationToken.ThrowIfCancellationRequested();
@@ -198,8 +214,42 @@ namespace Rulealize
             return new TransitionResult(_ruleSet.Qualified, WriteData(next), terminal.IsTerminal, terminal.Result);
         }
 
-        private void BindArguments(CompiledInput declared, InputRequest request, EvaluationContext context)
+        /// <summary>Binds an input document's arguments to the parameters they name.</summary>
+        /// <remarks>
+        /// <para>
+        /// Every argument is resolved against its parameter's domain, and what gets bound is
+        /// the value the domain produced rather than the one the document carried. Both
+        /// halves of that matter.
+        /// </para>
+        /// <para>
+        /// Resolving at all is what makes this method and
+        /// <see cref="GetValidInputs(string, int, CancellationToken)"/> agree about what the
+        /// rules allow. A domain is not a search hint — it is where a rule set says what a
+        /// parameter may be, and a rule set that narrows a domain is stating a rule there. A
+        /// runtime that consulted the domain only while searching would accept moves it had
+        /// just declined to list, and the more work a rule set moved into its domains the
+        /// wider that gap would grow.
+        /// </para>
+        /// <para>
+        /// Binding the domain's value is what makes applying a move mean the same thing as
+        /// the candidate it came from. An argument arrives from a document as JSON, so an
+        /// opaque value arrives as the text it was written as; substituting the value it
+        /// matched leaves every expression downstream seeing exactly what the search saw.
+        /// </para>
+        /// </remarks>
+        private void BindArguments(
+            EvaluationSession session,
+            CompiledInput declared,
+            InputRequest request,
+            EvaluationContext context,
+            CancellationToken cancellationToken)
         {
+            // Domains are evaluated with no argument bound, as the candidate search does:
+            // a candidate is the product of the domains, so none may depend on another.
+            EvaluationContext domainContext = declared.Parameters.IsEmpty
+                ? context
+                : session.CreateContext(declared.FrameSize);
+
             foreach (CompiledParameter parameter in declared.Parameters)
             {
                 if (!request.Arguments.TryGetValue(parameter.Name, out RuleValue? value))
@@ -208,7 +258,7 @@ namespace Rulealize
                         $"'{declared.Name}' takes a '{parameter.Name}', and the input document does not give one.");
                 }
 
-                context.Seed(parameter.Slot, value);
+                context.Seed(parameter.Slot, Resolve(declared, parameter, value, domainContext, cancellationToken));
             }
 
             foreach (string supplied in request.Arguments.Keys)
@@ -219,6 +269,60 @@ namespace Rulealize
                 }
             }
         }
+
+        /// <summary>Finds the value in a parameter's domain that an argument names.</summary>
+        /// <remarks>
+        /// The domain is walked only as far as the match, and a domain is usually lazy, so
+        /// what this costs is the part of the domain before the argument rather than all of
+        /// it.
+        /// </remarks>
+        private static RuleValue Resolve(
+            CompiledInput declared,
+            CompiledParameter parameter,
+            RuleValue supplied,
+            EvaluationContext domainContext,
+            CancellationToken cancellationToken)
+        {
+            string origin = $"inputs.{declared.Name}.params.{parameter.Name}.domain";
+
+            foreach (RuleValue candidate in parameter.Domain.Evaluate(domainContext).AsSequence(origin))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                if (Matches(supplied, candidate))
+                {
+                    return candidate;
+                }
+            }
+
+            throw new IllegalInputException(
+                declared.Name,
+                $"{RuleValue.Describe(supplied)} is not among the values '{parameter.Name}' "
+                + $"may take in this state.");
+        }
+
+        /// <summary>Whether an argument read from a document names a value a domain produced.</summary>
+        /// <remarks>
+        /// <para>
+        /// Equal values match, and beyond that exactly one concession is made: text matches an
+        /// opaque value whose canonical text it is. That is the return leg of the trip
+        /// <see cref="ValidInput.ToInputDocument"/> opens, and it is as wide as that trip
+        /// needs and no wider. A number goes out as a number and comes back as one; only a
+        /// value JSON has no form for has to travel as text, so only such a value has to be
+        /// recognised in it.
+        /// </para>
+        /// <para>
+        /// In particular <c>"2"</c> still does not match <c>2</c>. Different kinds are unequal
+        /// in the value model, and a boundary that quietly disagreed with that would be a
+        /// worse place to disagree than most.
+        /// </para>
+        /// </remarks>
+        private static bool Matches(RuleValue supplied, RuleValue candidate) =>
+            supplied.Equals(candidate)
+            || (supplied is TextValue text
+                && candidate is OpaqueValue
+                && candidate.GetCanonicalText() is string canonical
+                && string.Equals(canonical, text.Value, StringComparison.Ordinal));
 
         private void Collect(
             EvaluationSession session,

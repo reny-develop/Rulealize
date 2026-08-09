@@ -13,10 +13,11 @@ namespace Rulealize.Internal.Documents
     /// <summary>Reads the <c>rulealize/input/v1</c> document.</summary>
     /// <remarks>
     /// <para>
-    /// Arguments arrive as JSON scalars, so a coordinate comes in as the text
-    /// <c>"d3"</c> rather than as the opaque value a parameter's domain produced. Nothing
-    /// here converts it; the plugin that owns coordinates accepts both forms, which is what
-    /// closes the round trip that <c>GetValidInputs</c> opens.
+    /// Arguments arrive as JSON scalars, so a coordinate comes in as the text <c>"d3"</c>
+    /// rather than as the opaque value a parameter's domain produced. Nothing here converts
+    /// it — this class only reads what the document says. Matching that against the domain,
+    /// and binding what it matched, is <c>RuleContext</c>'s part, and it is what closes the
+    /// round trip that <c>GetValidInputs</c> opens.
     /// </para>
     /// <para>
     /// Arrays are refused. The value model has no literal for a sequence, so an array in

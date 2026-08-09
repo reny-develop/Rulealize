@@ -330,6 +330,11 @@ $schema / id / version / requires / state / definitions / inputs / terminal
 候補は「各パラメータ domain の直積」で生成され、`when` で篩われる。
 リバーシの場合は `place` が 64、`pass` が 1 で計 65 候補。
 
+なお domain と `when` はどちらも規則であり、`ApplyToState` は両方を検査する
+（[値モデル §4.1](value-model.md)）。リバーシは規則をすべて `when` に置いて
+いるので、この RuleSet に限れば domain は実質ヒントとして働く。チェスは逆に
+規則の大半を domain に置いており、そちらが検査の必要性を出した。
+
 limit は **「`when` を評価する候補数の上限」** と定義するのが素直で、超過時は
 `Truncated = true` を返す。ただし将棋の `move(from, to, promote)` は
 81 × 81 × 2 ≒ 13k になるため、domain 側で事前に絞り込める仕組み

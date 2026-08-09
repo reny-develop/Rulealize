@@ -15,21 +15,25 @@ namespace Rulealize.Tests
     public class PluginLoadingTests
     {
         [Fact]
-        public void ScanningTheFolderFindsTheTenStandardPlugins()
+        public void ScanningTheFolderFindsTheStandardPlugins()
         {
             RuleRuntime runtime = new RuleRuntime().LoadPluginsFrom(StandardRuntime.PluginFolder);
 
-            Assert.Equal(10, runtime.Plugins.Length);
+            Assert.Equal(12, runtime.Plugins.Length);
             Assert.Equal(
-                ["bind", "branch", "cmp", "def", "grid", "logic", "math", "seq", "state", "type"],
+                ["bind", "branch", "cmp", "def", "grid", "logic", "math", "rec", "seq", "state", "tuple", "type"],
                 runtime.Plugins.Select(static plugin => plugin.Namespace).Order(StringComparer.Ordinal));
         }
 
         [Fact]
-        public void EveryStandardPluginDeclaresVersionOne() =>
+        public void EveryStandardPluginDeclaresAVersionInTheFirstMajor() =>
+            // Chess and shogi each needed vocabulary Othello never asked for — a sequence
+            // written out element by element, a board updated as a value, a list, a record —
+            // so several of these are past 1.0. All of it was addition, which is what the
+            // major staying at one says.
             Assert.All(
                 new RuleRuntime().LoadPluginsFrom(StandardRuntime.PluginFolder).Plugins,
-                static plugin => Assert.Equal(new Version(1, 0, 0), plugin.Version));
+                static plugin => Assert.Equal(1, plugin.Version.Major));
 
         [Fact]
         public void OnlyThreePluginsReserveAShorthand()

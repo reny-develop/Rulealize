@@ -36,9 +36,9 @@ namespace Rulealize.Internal.Evaluation
     /// Writes to the same field overwrite one another; the last one wins.
     /// </para>
     /// </remarks>
-    internal sealed class StateDraft(StateSnapshot snapshot, int fieldCount) : IStateDraft
+    internal sealed class StateDraft(StateSnapshot snapshot, ImmutableArray<StatePath> fields) : IStateDraft
     {
-        private readonly RuleValue?[] _writes = new RuleValue?[fieldCount];
+        private readonly RuleValue?[] _writes = new RuleValue?[fields.Length];
 
         /// <inheritdoc />
         public RuleValue Get(StatePath path)
@@ -58,12 +58,19 @@ namespace Rulealize.Internal.Evaluation
 
         /// <summary>Produces the state the transition arrives at.</summary>
         /// <returns>Every field, written or not.</returns>
+        /// <remarks>
+        /// A field that was written is handed to its schema to settle before it is stored.
+        /// Nothing is asked of a field nobody touched: it came out of a state document or out
+        /// of an earlier commit, and either way it has been settled once already.
+        /// </remarks>
         public ImmutableArray<RuleValue> Commit()
         {
-            ImmutableArray<RuleValue>.Builder committed = ImmutableArray.CreateBuilder<RuleValue>(fieldCount);
-            for (int i = 0; i < fieldCount; i++)
+            ImmutableArray<RuleValue>.Builder committed = ImmutableArray.CreateBuilder<RuleValue>(fields.Length);
+            for (int i = 0; i < fields.Length; i++)
             {
-                committed.Add(_writes[i] ?? snapshot[i]);
+                committed.Add(_writes[i] is RuleValue written
+                    ? fields[i].Schema.Normalize(written)
+                    : snapshot[i]);
             }
 
             return committed.MoveToImmutable();

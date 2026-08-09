@@ -4,7 +4,7 @@
 | --- | --- |
 | 識別子 | `Rulealize.Plugin.Grid` |
 | 名前空間 | `grid` |
-| バージョン | `1.0.0` |
+| バージョン | `1.1.0` |
 | 予約プレフィックス | なし |
 | 依存 | [値モデル](../value-model.md) のみ |
 
@@ -16,7 +16,8 @@ Grid には無く、それらは RuleSet 側が `grid.ray` と `seq.takeWhile` �
 なっている。
 
 同じ Grid で、五目並べ（`grid.ray` + 連続長）、チェッカー、ライフゲームなどが
-記述できるはず。将棋・チェスには持ち駒／成りを扱う別プラグインの追加が要る。
+記述できるはず。[チェスは 1.1 の追加で書けた](../dsl-example-chess.md)——成りも
+持ち駒も専用プラグインを必要とせず、盤面を値として更新する手段だけで足りた。
 
 **3 種類のノードをすべて提供する唯一のプラグイン。**
 
@@ -25,13 +26,52 @@ Grid には無く、それらは RuleSet 側が `grid.ray` と `seq.takeWhile` �
 | ノード | 種別 | リバーシでの使用 |
 | --- | --- | --- |
 | `grid.board` | スキーマ | ○ `state.schema.board` |
+| `grid.square` | スキーマ | — （1.1 で追加） |
 | `grid.at` | 式 | ○ `flips1`, `canPlace`, `terminal.when` |
 | `grid.coords` | 式 | ○ `hasAnyMove`, `inputs.place.params`, `terminal.when` |
 | `grid.cells` | 式 | ○ `terminal.result` |
 | `grid.ray` | 式 | ○ `flips1` |
 | `grid.directions` | 式 | ○ `flips` |
+| `grid.with` | 式 | — （1.1 で追加） |
+| `grid.withMany` | 式 | — （1.1 で追加） |
 | `grid.set` | 効果 | ○ `inputs.place` |
 | `grid.setMany` | 効果 | ○ `inputs.place` |
+
+## 1.1 で追加したもの
+
+### `grid.with` / `grid.withMany`
+
+```jsonc
+{ "op": "grid.with",     "grid": <式:盤面>, "coord": <式:座標>,    "value": <式> }
+{ "op": "grid.withMany", "grid": <式:盤面>, "coords": <式:Sequence>, "value": <式> }
+```
+
+`grid.set` / `grid.setMany` の**式版**。何も書き込まず、盤面を受け取って別の
+盤面を返す。座標の扱いは効果版と同じく厳格（盤外・`null` は評価時エラー）。
+
+**`when` が「その手を指した後の局面」を見られないために要る。** `when` は入力
+時の状態に対して評価され、`effects` は `when` を通ってから走る。リバーシの合法
+性は目の前の局面の性質なのでこの順序でよいが、チェスの合法性は「指した後に自玉
+が取られないこと」であり、後の局面を値として組み立てられなければ問えない。
+
+答えられるのは**盤面が 1 フィールドの 1 つの値だから**である。遷移後の状態全体
+（複数フィールド）に依存する規則は依然として書けず、それはこのプラグインでは
+なくランタイム側の問題になる。
+
+### `grid.square`
+
+```jsonc
+{ "op": "grid.square", "width": 8, "height": 8, "coord": "algebraic", "nullable": true }
+```
+
+**座標 1 つを保持する状態フィールドのスキーマ。** JSON 形は盤の記法（`"e3"`）。
+
+これが無いと状態は座標を持てない。`type.string` に入れれば `grid.at` は読める
+（[値モデル §1.1](../value-model.md) がテキスト正規形の受理を要求しているため）
+が、`grid.coords` が返した座標と `cmp.eq` で突き合わせられなくなる——Text と
+Opaque は種別が違い、種別が違えば非等価だからである。
+
+チェスで必要なフィールドはちょうど 1 つ、「直前にポーンが飛び越したマス」。
 
 ## 導入する Opaque 型
 

@@ -102,13 +102,63 @@ namespace Rulealize.Tests
         }
 
         [Fact]
-        public void AnArgumentOfTheWrongKindFaultsRatherThanBeingCoerced()
+        public void AnArgumentOfTheWrongKindIsRefusedRatherThanCoerced()
         {
-            // "2" is not 2. Nothing converts it, and the guard's cmp.gt says so.
-            Assert.Throws<RuleEvaluationException>(
+            // "2" is not 2, and the document boundary is no place to start pretending
+            // otherwise. The domain of 'by' holds numbers, text is not one of them, and the
+            // refusal names the parameter rather than faulting later inside whichever
+            // operation the guard happened to reach first.
+            IllegalInputException refused = Assert.Throws<IllegalInputException>(
                 () => Sink.ApplyToState(
                     """{ "input": "bump", "args": { "by": "2", "cell": "1,1" } }""",
                     Sink.InitialState));
+
+            Assert.Contains("'by'", refused.Message, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void AnOpaqueArgumentIsRecognisedInItsTextForm()
+        {
+            // The one concession, and the reason there is one: a coordinate has no JSON form
+            // of its own, so it leaves as "1,1" and has to be recognised coming back.
+            TransitionResult applied = Sink.ApplyToState(
+                """{ "input": "bump", "args": { "by": 2, "cell": "1,1" } }""",
+                Sink.InitialState);
+
+            Assert.False(applied.IsTerminal);
+        }
+
+        [Fact]
+        public void ADomainIsPartOfTheRulesAndNarrowsWithTheState()
+        {
+            // The two methods have to answer the same question. Here the whole rule is in the
+            // domain and there is no guard at all: only squares already marked may be picked.
+            RuleContext context = standard.Runtime.CreateContext("""
+                {
+                  "id": "probe", "version": "1.0.0",
+                  "state": {
+                    "schema": { "board": { "op": "grid.board", "width": 2, "height": 2, "coord": "algebraic",
+                                           "cell": { "op": "type.bool", "nullable": true } } },
+                    "initial": { "board": { "a1": true } }
+                  },
+                  "inputs": { "pick": {
+                    "params": { "c": { "domain": {
+                      "op": "seq.where", "source": { "op": "grid.coords", "of": "$board" }, "as": "c",
+                      "predicate": { "op": "cmp.eq", "right": true,
+                                     "left": { "op": "grid.at", "grid": "$board", "coord": "@c" } } } } },
+                    "effects": [ { "op": "grid.set", "target": "$board", "coord": "@c", "value": false } ] } }
+                }
+                """);
+
+            Assert.Equal(
+                ["a1"],
+                context.GetValidInputs(context.InitialState, 16).Select(static move => move.Arguments["c"]));
+
+            // a1 is offered and applies; b2 is a square of the board, is written the same way,
+            // and is refused — by the domain, because nothing else here would refuse anything.
+            context.ApplyToState("""{ "input": "pick", "args": { "c": "a1" } }""", context.InitialState);
+            Assert.Throws<IllegalInputException>(
+                () => context.ApplyToState("""{ "input": "pick", "args": { "c": "b2" } }""", context.InitialState));
         }
 
         [Fact]
@@ -218,6 +268,187 @@ namespace Rulealize.Tests
 
             Assert.Throws<RuleEvaluationException>(
                 () => context.ApplyToState("""{ "input": "go", "args": {} }""", context.InitialState));
+        }
+
+        [Fact]
+        public void ASequenceCanBeWrittenOut() =>
+            Assert.True(Evaluate("""
+                { "op": "cmp.eq",
+                  "left": { "op": "seq.elementAt", "index": 1,
+                            "source": { "op": "seq.of", "of": ["a", "b", "c"] } },
+                  "right": "b" }
+                """));
+
+        [Fact]
+        public void AnEmptySeqOfIsTheEmptySequence() =>
+            Assert.True(Evaluate("""
+                { "op": "logic.not", "value": { "op": "seq.any", "source": { "op": "seq.of", "of": [] } } }
+                """));
+
+        [Fact]
+        public void SeqOfAndSelectManyConcatenate() =>
+            // There is no seq.concat, and this is why one is not needed.
+            Assert.True(Evaluate("""
+                { "op": "cmp.eq", "right": 3,
+                  "left": { "op": "seq.count", "source": {
+                      "op": "seq.selectMany", "as": "part", "select": "@part",
+                      "source": { "op": "seq.of", "of": [
+                          { "op": "seq.of", "of": ["a", "b"] },
+                          { "op": "seq.of", "of": ["c"] } ] } } } }
+                """));
+
+        [Fact]
+        public void ATupleReadsBackWhatItWasBuiltFrom() =>
+            Assert.True(Evaluate("""
+                { "op": "cmp.eq", "right": "b",
+                  "left": { "op": "tuple.at", "index": 1,
+                            "tuple": { "op": "tuple.of", "of": ["a", "b", "c"] } } }
+                """));
+
+        [Fact]
+        public void ATupleReadsTheSameOutOfItsTextForm() =>
+            // Which is what makes ApplyToState reach the move GetValidInputs offered: the
+            // argument arrives as text, and tuple.at has to find the same component in it.
+            Assert.True(Evaluate("""
+                { "op": "cmp.eq", "right": "b", "left": { "op": "tuple.at", "tuple": "a|b|c", "index": 1 } }
+                """));
+
+        [Fact]
+        public void AComponentContainingTheSeparatorStillReadsBack() =>
+            // "a|b" and "c", written "a\|b|c". Without escaping this would come back as
+            // three components and every value anyone had happened to try would still work.
+            Assert.True(Evaluate("""
+                { "op": "logic.and", "all": [
+                  { "op": "cmp.eq", "right": "a|b",
+                    "left": { "op": "tuple.at", "index": 0,
+                              "tuple": { "op": "tuple.of", "of": ["a|b", "c"] } } },
+                  { "op": "cmp.eq", "right": "a|b", "left": { "op": "tuple.at", "tuple": "a\\|b|c", "index": 0 } },
+                  { "op": "cmp.eq", "right": "c", "left": { "op": "tuple.at", "tuple": "a\\|b|c", "index": 1 } } ] }
+                """));
+
+        [Fact]
+        public void ReadingAComponentOfNullIsNull() =>
+            Assert.True(Evaluate("""
+                { "op": "cmp.isNull", "value": { "op": "tuple.at", "tuple": null, "index": 0 } }
+                """));
+
+        [Fact]
+        public void ReadingPastTheEndOfATupleFaults() =>
+            // Unlike a sequence, whose length is a property of the position. A tuple's
+            // length is a property of the rule that built it, so this is a rule that is wrong.
+            Assert.Throws<RuleEvaluationException>(() => Evaluate("""
+                { "op": "cmp.isNull",
+                  "value": { "op": "tuple.at", "index": 5, "tuple": { "op": "tuple.of", "of": ["a"] } } }
+                """));
+
+        [Fact]
+        public void ATupleWithAnUnwritableComponentCannotBeAnArgument()
+        {
+            // A sequence has no text form, so neither does a tuple holding one, so it cannot
+            // make the trip out through GetValidInputs. The parameter is named.
+            RuleContext context = standard.Runtime.CreateContext("""
+                {
+                  "id": "probe", "version": "1.0.0",
+                  "state": { "schema": { "n": { "op": "type.int" } }, "initial": { "n": 0 } },
+                  "inputs": { "go": { "params": { "m": { "domain": { "op": "seq.of", "of": [
+                                { "op": "tuple.of", "of": ["a", { "op": "seq.of", "of": ["x"] }] } ] } } },
+                                      "effects": [] } }
+                }
+                """);
+
+            RuleEvaluationException error =
+                Assert.Throws<RuleEvaluationException>(() => context.GetValidInputs(context.InitialState, 8));
+
+            Assert.Contains("inputs.go.params.m", error.Message, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void UpdatingABoardAsAValueLeavesTheOriginalAlone() =>
+            // grid.with returns a board; it does not write one. The state is untouched, which
+            // is what lets a guard ask about the position a move would produce.
+            Assert.True(Evaluate("""
+                { "op": "logic.and", "all": [
+                  { "op": "cmp.eq", "right": true, "left": {
+                      "op": "grid.at", "coord": "a1",
+                      "grid": { "op": "grid.with", "grid": "$board", "coord": "a1", "value": true } } },
+                  { "op": "cmp.isNull", "value": { "op": "grid.at", "grid": "$board", "coord": "a1" } } ] }
+                """));
+
+        [Fact]
+        public void UpdatingSeveralSquaresAtOnceTakesAnEmptySequenceInItsStride() =>
+            Assert.True(Evaluate("""
+                { "op": "cmp.isNull", "value": {
+                    "op": "grid.at", "coord": "a1",
+                    "grid": { "op": "grid.withMany", "grid": "$board",
+                              "coords": { "op": "seq.empty" }, "value": true } } }
+                """));
+
+        [Fact]
+        public void UpdatingOffTheBoardFaultsTheWayWritingDoes() =>
+            Assert.Throws<RuleEvaluationException>(() => Evaluate("""
+                { "op": "cmp.isNull", "value": {
+                    "op": "grid.with", "grid": "$board", "coord": "z9", "value": true } }
+                """));
+
+        [Fact]
+        public void ASquareFieldKeepsACoordinateRatherThanItsSpelling()
+        {
+            // The reason grid.square exists. Both fields read "b2" in the document; only the
+            // one declared as a square comes back as something a coordinate compares equal to.
+            RuleContext context = standard.Runtime.CreateContext("""
+                {
+                  "id": "probe", "version": "1.0.0",
+                  "state": {
+                    "schema": {
+                      "board": { "op": "grid.board", "width": 2, "height": 2, "coord": "algebraic",
+                                 "cell": { "op": "type.bool", "nullable": true } },
+                      "mark": { "op": "grid.square", "width": 2, "height": 2, "coord": "algebraic" },
+                      "spelling": { "op": "type.string" }
+                    },
+                    "initial": { "board": {}, "mark": "b2", "spelling": "b2" }
+                  },
+                  "inputs": { "go": { "params": { "c": { "domain": { "op": "grid.coords", "of": "$board" } } },
+                                      "when": { "op": "cmp.eq", "left": "@c", "right": "$mark" },
+                                      "effects": [] },
+                              "no": { "params": { "c": { "domain": { "op": "grid.coords", "of": "$board" } } },
+                                      "when": { "op": "cmp.eq", "left": "@c", "right": "$spelling" },
+                                      "effects": [] } }
+                }
+                """);
+
+            ValidInputSet matches = context.GetValidInputs(context.InitialState, 16);
+
+            Assert.Equal(["go"], matches.Select(static match => match.Input));
+            Assert.Equal("b2", matches[0].Arguments["c"]);
+        }
+
+        [Fact]
+        public void ASquareFieldSurvivesAStateDocument()
+        {
+            RuleContext context = standard.Runtime.CreateContext("""
+                {
+                  "id": "probe", "version": "1.0.0",
+                  "state": {
+                    "schema": {
+                      "board": { "op": "grid.board", "width": 2, "height": 2, "coord": "algebraic",
+                                 "cell": { "op": "type.bool", "nullable": true } },
+                      "mark": { "op": "grid.square", "width": 2, "height": 2, "coord": "algebraic",
+                                "nullable": true }
+                    },
+                    "initial": { "board": {}, "mark": null }
+                  },
+                  "inputs": { "go": { "effects": [
+                    { "op": "state.set", "path": "mark",
+                      "value": { "op": "seq.elementAt", "index": 0,
+                                 "source": { "op": "grid.coords", "of": "$board" } } } ] } }
+                }
+                """);
+
+            TransitionResult after =
+                context.ApplyToState("""{ "input": "go", "args": {} }""", context.InitialState);
+
+            using JsonDocument document = JsonDocument.Parse(after.State);
+            Assert.Equal("a2", document.RootElement.GetProperty("data").GetProperty("mark").GetString());
         }
 
         private JsonElement ApplyFirst()

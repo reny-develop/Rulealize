@@ -110,6 +110,16 @@ seq.elementAt(範囲外) → null
 `params[].domain` に置かれるのは「`Sequence` を返す式ノード」であって、専用の
 種別ではない。`GetValidInputs` はこれを列挙して候補を作る。
 
+**domain は規則の一部であり、候補探索のためのヒントではない。** `ApplyToState`
+も引数を domain と突き合わせ、含まれない値を拒否する。したがって RuleSet は
+規則を domain と `when` のどちらに書いてもよく、組合せ爆発を避けるために
+domain 側へ寄せても、guard で同じことを二度書く必要はない。
+（→ [チェスでの検討 §3.2](dsl-example-chess.md)）
+
+突き合わせで束縛されるのは **domain 側の値**である。文書の引数は JSON なので
+Opaque はテキストで届くが、一致した Opaque に置き換えられてから評価に入る。
+`GetValidInputs` が提示した候補と、それを適用したときとで、式が見る値は一致する。
+
 
 ## 5. 効果の適用意味論
 

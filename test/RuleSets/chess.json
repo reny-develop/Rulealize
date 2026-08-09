@@ -1,0 +1,966 @@
+{
+  "$schema": "rulealize/ruleset/v1",
+  "id": "chess",
+  "version": "1.0.0",
+
+  // Chess, written to find out whether a rule set can carry a move whose destination
+  // depends on its origin.
+  //
+  // An input's parameter domains are evaluated independently of one another, so a move
+  // written as "from" and "to" has 64 x 64 candidates in every position. This one takes a
+  // single parameter holding a tuple, whose domain is free to compute destinations from
+  // origins, and enumerates the moves themselves — around twenty of them in the opening.
+  //
+  // A move is (from, to, tag). The tag carries what the squares cannot say:
+  //
+  //   "-"            an ordinary move
+  //   "2"            a pawn's opening double step
+  //   "ep"           a capture in passing
+  //   "q" "r" "b" "n"  a promotion, and to what
+  //   "0-0" "0-0-0"  castling
+  //
+  // Tagging is not only for the effects' benefit. It says what a move is without anything
+  // having to work it out by comparing squares, which keeps a whole class of question out
+  // of the guard.
+
+  "requires": [
+    { "plugin": "Rulealize.Plugin.Binding", "version": "^1.0" },
+    { "plugin": "Rulealize.Plugin.Branch", "version": "^1.0" },
+    { "plugin": "Rulealize.Plugin.Definition", "version": "^1.0" },
+    { "plugin": "Rulealize.Plugin.Logic", "version": "^1.0" },
+    { "plugin": "Rulealize.Plugin.Comparison", "version": "^1.0" },
+    { "plugin": "Rulealize.Plugin.Arithmetic", "version": "^1.0" },
+    { "plugin": "Rulealize.Plugin.TypeSchema", "version": "^1.0" },
+    { "plugin": "Rulealize.Plugin.Sequence", "version": "^1.1" },
+    { "plugin": "Rulealize.Plugin.State", "version": "^1.0" },
+    { "plugin": "Rulealize.Plugin.Grid", "version": "^1.1" },
+    { "plugin": "Rulealize.Plugin.Tuple", "version": "^1.0" }
+  ],
+
+  "state": {
+    "schema": {
+      "board": {
+        "op": "grid.board",
+        "width": 8, "height": 8, "coord": "algebraic",
+        "cell": {
+          "op": "type.enum",
+          "values": ["P", "N", "B", "R", "Q", "K", "p", "n", "b", "r", "q", "k"],
+          "nullable": true
+        }
+      },
+      "turn": { "op": "type.enum", "values": ["white", "black"] },
+
+      // Castling rights, one flag each, because state.schema is a flat map of scalars.
+      "wk": { "op": "type.bool" },
+      "wq": { "op": "type.bool" },
+      "bk": { "op": "type.bool" },
+      "bq": { "op": "type.bool" },
+
+      // The square a pawn skipped over last move, which the next move may capture on.
+      "ep": { "op": "grid.square", "width": 8, "height": 8, "coord": "algebraic", "nullable": true },
+
+      // Half-moves since the last capture or pawn move; a hundred of them is a draw.
+      "idle": { "op": "type.int", "min": 0 }
+    },
+    "initial": {
+      "board": {
+        "a8": "r", "b8": "n", "c8": "b", "d8": "q", "e8": "k", "f8": "b", "g8": "n", "h8": "r",
+        "a7": "p", "b7": "p", "c7": "p", "d7": "p", "e7": "p", "f7": "p", "g7": "p", "h7": "p",
+        "a2": "P", "b2": "P", "c2": "P", "d2": "P", "e2": "P", "f2": "P", "g2": "P", "h2": "P",
+        "a1": "R", "b1": "N", "c1": "B", "d1": "Q", "e1": "K", "f1": "B", "g1": "N", "h1": "R"
+      },
+      "turn": "white",
+      "wk": true, "wq": true, "bk": true, "bq": true,
+      "ep": null,
+      "idle": 0
+    }
+  },
+
+  "definitions": {
+
+    // ── Colours ────────────────────────────────────────────────────────────
+
+    "me": "$turn",
+    "foe": { "op": "branch.match", "value": "$turn", "cases": { "white": "black", "black": "white" } },
+
+    // The piece letter for a kind in a colour. Taken as parameters rather than read from
+    // the turn, because attack detection asks about both sides.
+    "code": {
+      "params": ["colour", "kind"],
+      "body": {
+        "op": "branch.match", "value": "@colour",
+        "cases": {
+          "white": {
+            "op": "branch.match", "value": "@kind",
+            "cases": { "pawn": "P", "knight": "N", "bishop": "B", "rook": "R", "queen": "Q", "king": "K" }
+          },
+          "black": {
+            "op": "branch.match", "value": "@kind",
+            "cases": { "pawn": "p", "knight": "n", "bishop": "b", "rook": "r", "queen": "q", "king": "k" }
+          }
+        }
+      }
+    },
+
+    "myPawn": { "op": "def.call", "def": "code", "args": { "colour": "#me", "kind": "pawn" } },
+    "myKnight": { "op": "def.call", "def": "code", "args": { "colour": "#me", "kind": "knight" } },
+    "myBishop": { "op": "def.call", "def": "code", "args": { "colour": "#me", "kind": "bishop" } },
+    "myRook": { "op": "def.call", "def": "code", "args": { "colour": "#me", "kind": "rook" } },
+    "myQueen": { "op": "def.call", "def": "code", "args": { "colour": "#me", "kind": "queen" } },
+    "myKing": { "op": "def.call", "def": "code", "args": { "colour": "#me", "kind": "king" } },
+
+    // ── Reading a square ───────────────────────────────────────────────────
+
+    // Null coalesces to "." so that a match always has a case: branch.match faults on a
+    // value with no text form, and an empty square and a square off the board are both
+    // null. Collapsing them is what lets everything below skip its bounds checks.
+    "pieceAt": {
+      "params": ["c"],
+      "body": {
+        "op": "cmp.coalesce",
+        "of": [{ "op": "grid.at", "grid": "$board", "coord": "@c" }, "."]
+      }
+    },
+
+    "colourAt": {
+      "params": ["c"],
+      "body": {
+        "op": "branch.match",
+        "value": { "op": "def.call", "def": "pieceAt", "args": { "c": "@c" } },
+        "cases": {
+          "P": "white", "N": "white", "B": "white", "R": "white", "Q": "white", "K": "white",
+          "p": "black", "n": "black", "b": "black", "r": "black", "q": "black", "k": "black",
+          ".": "none"
+        }
+      }
+    },
+
+    "kindAt": {
+      "params": ["c"],
+      "body": {
+        "op": "branch.match",
+        "value": { "op": "def.call", "def": "pieceAt", "args": { "c": "@c" } },
+        "cases": {
+          "P": "pawn", "p": "pawn",
+          "N": "knight", "n": "knight",
+          "B": "bishop", "b": "bishop",
+          "R": "rook", "r": "rook",
+          "Q": "queen", "q": "queen",
+          "K": "king", "k": "king",
+          ".": "none"
+        }
+      }
+    },
+
+    "isMine": {
+      "params": ["c"],
+      "body": {
+        "op": "cmp.eq",
+        "left": { "op": "def.call", "def": "colourAt", "args": { "c": "@c" } },
+        "right": "#me"
+      }
+    },
+
+    "isFoe": {
+      "params": ["c"],
+      "body": {
+        "op": "cmp.eq",
+        "left": { "op": "def.call", "def": "colourAt", "args": { "c": "@c" } },
+        "right": "#foe"
+      }
+    },
+
+    // An off-board square reads as null too, so emptiness has to exclude "not a square".
+    "isEmpty": {
+      "params": ["c"],
+      "body": {
+        "op": "logic.and",
+        "all": [
+          { "op": "logic.not", "value": { "op": "cmp.isNull", "value": "@c" } },
+          { "op": "cmp.isNull", "value": { "op": "grid.at", "grid": "$board", "coord": "@c" } }
+        ]
+      }
+    },
+
+    // ── Directions ─────────────────────────────────────────────────────────
+    //
+    // A board's internal axes have y increasing downwards whatever notation it was
+    // declared with, so on an algebraic board "up" — towards rank 8 — is dy of -1.
+
+    "fwd": { "op": "branch.match", "value": "#me", "cases": { "white": "0,-1", "black": "0,1" } },
+    "homeDir": { "op": "branch.match", "value": "#me", "cases": { "white": "0,1", "black": "0,-1" } },
+    "capDirs": {
+      "op": "branch.match", "value": "#me",
+      "cases": {
+        "white": { "op": "seq.of", "of": ["-1,-1", "1,-1"] },
+        "black": { "op": "seq.of", "of": ["-1,1", "1,1"] }
+      }
+    },
+
+    // Where a pawn of mine would have to stand to capture in passing on the marked square.
+    "epFromDirs": {
+      "op": "branch.match", "value": "#me",
+      "cases": {
+        "white": { "op": "seq.of", "of": ["-1,1", "1,1"] },
+        "black": { "op": "seq.of", "of": ["-1,-1", "1,-1"] }
+      }
+    },
+
+    "knightDirs": {
+      "op": "seq.of",
+      "of": ["1,2", "2,1", "2,-1", "1,-2", "-1,-2", "-2,-1", "-2,1", "-1,2"]
+    },
+
+    // ── Attack detection ───────────────────────────────────────────────────
+    //
+    // Asked of a board rather than of the state, because the only question that decides
+    // legality is about the position a move would produce.
+
+    "attacked": {
+      "params": ["b", "sq", "by"],
+      "body": {
+        "op": "logic.or",
+        "any": [
+          {
+            "op": "seq.any",
+            "source": {
+              "op": "seq.selectMany", "source": "#knightDirs", "as": "d",
+              "select": { "op": "grid.ray", "grid": "@b", "from": "@sq", "dir": "@d", "length": 1 }
+            },
+            "as": "c",
+            "predicate": {
+              "op": "cmp.eq",
+              "left": { "op": "grid.at", "grid": "@b", "coord": "@c" },
+              "right": { "op": "def.call", "def": "code", "args": { "colour": "@by", "kind": "knight" } }
+            }
+          },
+          {
+            "op": "seq.any",
+            "source": {
+              "op": "seq.selectMany",
+              "source": { "op": "grid.directions", "of": "@b", "kind": "eight" }, "as": "d",
+              "select": { "op": "grid.ray", "grid": "@b", "from": "@sq", "dir": "@d", "length": 1 }
+            },
+            "as": "c",
+            "predicate": {
+              "op": "cmp.eq",
+              "left": { "op": "grid.at", "grid": "@b", "coord": "@c" },
+              "right": { "op": "def.call", "def": "code", "args": { "colour": "@by", "kind": "king" } }
+            }
+          },
+          {
+            // A pawn attacks forwards, so it stands one step back-diagonally from what it
+            // attacks — the opposite of the direction it captures in.
+            "op": "seq.any",
+            "source": {
+              "op": "seq.selectMany",
+              "source": {
+                "op": "branch.match", "value": "@by",
+                "cases": {
+                  "white": { "op": "seq.of", "of": ["-1,1", "1,1"] },
+                  "black": { "op": "seq.of", "of": ["-1,-1", "1,-1"] }
+                }
+              },
+              "as": "d",
+              "select": { "op": "grid.ray", "grid": "@b", "from": "@sq", "dir": "@d", "length": 1 }
+            },
+            "as": "c",
+            "predicate": {
+              "op": "cmp.eq",
+              "left": { "op": "grid.at", "grid": "@b", "coord": "@c" },
+              "right": { "op": "def.call", "def": "code", "args": { "colour": "@by", "kind": "pawn" } }
+            }
+          },
+          {
+            "op": "seq.any",
+            "source": { "op": "grid.directions", "of": "@b", "kind": "orthogonal" }, "as": "d",
+            "predicate": {
+              "op": "def.call", "def": "sliderFound",
+              "args": { "b": "@b", "sq": "@sq", "dir": "@d", "by": "@by", "kind": "rook" }
+            }
+          },
+          {
+            "op": "seq.any",
+            "source": { "op": "grid.directions", "of": "@b", "kind": "diagonal" }, "as": "d",
+            "predicate": {
+              "op": "def.call", "def": "sliderFound",
+              "args": { "b": "@b", "sq": "@sq", "dir": "@d", "by": "@by", "kind": "bishop" }
+            }
+          }
+        ]
+      }
+    },
+
+    // Whether the first piece along one ray is a queen, or the given sliding kind.
+    "sliderFound": {
+      "params": ["b", "sq", "dir", "by", "kind"],
+      "body": {
+        "op": "bind.let",
+        "bind": {
+          "ray": { "op": "grid.ray", "grid": "@b", "from": "@sq", "dir": "@dir" },
+          "blocker": {
+            "op": "seq.elementAt",
+            "source": "@ray",
+            "index": {
+              "op": "seq.count",
+              "source": {
+                "op": "seq.takeWhile", "source": "@ray", "as": "c",
+                "predicate": { "op": "cmp.isNull", "value": { "op": "grid.at", "grid": "@b", "coord": "@c" } }
+              }
+            }
+          },
+          "piece": { "op": "grid.at", "grid": "@b", "coord": "@blocker" }
+        },
+        "in": {
+          "op": "logic.or",
+          "any": [
+            {
+              "op": "cmp.eq", "left": "@piece",
+              "right": { "op": "def.call", "def": "code", "args": { "colour": "@by", "kind": "@kind" } }
+            },
+            {
+              "op": "cmp.eq", "left": "@piece",
+              "right": { "op": "def.call", "def": "code", "args": { "colour": "@by", "kind": "queen" } }
+            }
+          ]
+        }
+      }
+    },
+
+    "kingSquare": {
+      "params": ["b", "colour"],
+      "body": {
+        "op": "seq.elementAt", "index": 0,
+        "source": {
+          "op": "seq.where", "source": { "op": "grid.coords", "of": "@b" }, "as": "c",
+          "predicate": {
+            "op": "cmp.eq",
+            "left": { "op": "grid.at", "grid": "@b", "coord": "@c" },
+            "right": { "op": "def.call", "def": "code", "args": { "colour": "@colour", "kind": "king" } }
+          }
+        }
+      }
+    },
+
+    "inCheck": {
+      "params": ["colour"],
+      "body": {
+        "op": "def.call", "def": "attacked",
+        "args": {
+          "b": "$board",
+          "sq": { "op": "def.call", "def": "kingSquare", "args": { "b": "$board", "colour": "@colour" } },
+          "by": { "op": "branch.match", "value": "@colour", "cases": { "white": "black", "black": "white" } }
+        }
+      }
+    },
+
+    "safe": {
+      "params": ["sq"],
+      "body": {
+        "op": "logic.not",
+        "value": { "op": "def.call", "def": "attacked", "args": { "b": "$board", "sq": "@sq", "by": "#foe" } }
+      }
+    },
+
+    // ── Move generation ────────────────────────────────────────────────────
+
+    // A sliding piece reaches every empty square along a ray, plus the first occupied one
+    // if an enemy stands there. The shape is Othello's capture walk, with the run kept
+    // rather than the closing stone.
+    "slide": {
+      "params": ["f", "dirs"],
+      "body": {
+        "op": "seq.selectMany", "source": "@dirs", "as": "d",
+        "select": {
+          "op": "bind.let",
+          "bind": {
+            "ray": { "op": "grid.ray", "grid": "$board", "from": "@f", "dir": "@d" },
+            "run": {
+              "op": "seq.takeWhile", "source": "@ray", "as": "c",
+              "predicate": { "op": "cmp.isNull", "value": { "op": "grid.at", "grid": "$board", "coord": "@c" } }
+            },
+            "next": {
+              "op": "seq.elementAt", "source": "@ray",
+              "index": { "op": "seq.count", "source": "@run" }
+            }
+          },
+          "in": {
+            "op": "seq.selectMany",
+            "source": {
+              "op": "seq.of",
+              "of": [
+                "@run",
+                {
+                  "op": "branch.if",
+                  "cond": { "op": "def.call", "def": "isFoe", "args": { "c": "@next" } },
+                  "then": { "op": "seq.of", "of": ["@next"] },
+                  "else": { "op": "seq.empty" }
+                }
+              ]
+            },
+            "as": "part", "select": "@part"
+          }
+        }
+      }
+    },
+
+    // A stepping piece reaches one square in each direction, unless its own piece is there.
+    "step": {
+      "params": ["f", "dirs"],
+      "body": {
+        "op": "seq.where",
+        "source": {
+          "op": "seq.selectMany", "source": "@dirs", "as": "d",
+          "select": { "op": "grid.ray", "grid": "$board", "from": "@f", "dir": "@d", "length": 1 }
+        },
+        "as": "c",
+        "predicate": { "op": "logic.not", "value": { "op": "def.call", "def": "isMine", "args": { "c": "@c" } } }
+      }
+    },
+
+    "plain": {
+      "params": ["f", "targets"],
+      "body": {
+        "op": "seq.select", "source": "@targets", "as": "t",
+        "select": { "op": "tuple.of", "of": ["@f", "@t", "-"] }
+      }
+    },
+
+    // A pawn on its own second rank has exactly one square behind it, which is how a rule
+    // set asks what rank something is on without any way to read a coordinate apart.
+    "atHome": {
+      "params": ["f"],
+      "body": {
+        "op": "cmp.eq",
+        "left": { "op": "seq.count", "source": { "op": "grid.ray", "grid": "$board", "from": "@f", "dir": "#homeDir" } },
+        "right": 1
+      }
+    },
+
+    // A pawn arriving where there is no square in front of it has reached the last rank.
+    "pawnStep": {
+      "params": ["f", "t"],
+      "body": {
+        "op": "branch.if",
+        "cond": {
+          "op": "logic.not",
+          "value": {
+            "op": "seq.any",
+            "source": { "op": "grid.ray", "grid": "$board", "from": "@t", "dir": "#fwd", "length": 1 }
+          }
+        },
+        "then": {
+          "op": "seq.of",
+          "of": [
+            { "op": "tuple.of", "of": ["@f", "@t", "q"] },
+            { "op": "tuple.of", "of": ["@f", "@t", "r"] },
+            { "op": "tuple.of", "of": ["@f", "@t", "b"] },
+            { "op": "tuple.of", "of": ["@f", "@t", "n"] }
+          ]
+        },
+        "else": { "op": "seq.of", "of": [{ "op": "tuple.of", "of": ["@f", "@t", "-"] }] }
+      }
+    },
+
+    "pawnMoves": {
+      "params": ["f"],
+      "body": {
+        "op": "bind.let",
+        "bind": {
+          "one": {
+            "op": "seq.elementAt", "index": 0,
+            "source": { "op": "grid.ray", "grid": "$board", "from": "@f", "dir": "#fwd", "length": 1 }
+          },
+          "two": {
+            "op": "seq.elementAt", "index": 1,
+            "source": { "op": "grid.ray", "grid": "$board", "from": "@f", "dir": "#fwd", "length": 2 }
+          }
+        },
+        "in": {
+          "op": "seq.selectMany",
+          "source": {
+            "op": "seq.of",
+            "of": [
+              {
+                "op": "branch.if",
+                "cond": { "op": "def.call", "def": "isEmpty", "args": { "c": "@one" } },
+                "then": { "op": "def.call", "def": "pawnStep", "args": { "f": "@f", "t": "@one" } },
+                "else": { "op": "seq.empty" }
+              },
+              {
+                "op": "branch.if",
+                "cond": {
+                  "op": "logic.and",
+                  "all": [
+                    { "op": "def.call", "def": "atHome", "args": { "f": "@f" } },
+                    { "op": "def.call", "def": "isEmpty", "args": { "c": "@one" } },
+                    { "op": "def.call", "def": "isEmpty", "args": { "c": "@two" } }
+                  ]
+                },
+                "then": { "op": "seq.of", "of": [{ "op": "tuple.of", "of": ["@f", "@two", "2"] }] },
+                "else": { "op": "seq.empty" }
+              },
+              {
+                "op": "seq.selectMany",
+                "source": {
+                  "op": "seq.where",
+                  "source": {
+                    "op": "seq.selectMany", "source": "#capDirs", "as": "d",
+                    "select": { "op": "grid.ray", "grid": "$board", "from": "@f", "dir": "@d", "length": 1 }
+                  },
+                  "as": "c",
+                  "predicate": { "op": "def.call", "def": "isFoe", "args": { "c": "@c" } }
+                },
+                "as": "t",
+                "select": { "op": "def.call", "def": "pawnStep", "args": { "f": "@f", "t": "@t" } }
+              }
+            ]
+          },
+          "as": "part", "select": "@part"
+        }
+      }
+    },
+
+    "movesFrom": {
+      "params": ["f"],
+      "body": {
+        "op": "branch.if",
+        "cond": { "op": "logic.not", "value": { "op": "def.call", "def": "isMine", "args": { "c": "@f" } } },
+        "then": { "op": "seq.empty" },
+        "else": {
+          "op": "branch.match",
+          "value": { "op": "def.call", "def": "kindAt", "args": { "c": "@f" } },
+          "cases": {
+            "pawn": { "op": "def.call", "def": "pawnMoves", "args": { "f": "@f" } },
+            "knight": {
+              "op": "def.call", "def": "plain",
+              "args": {
+                "f": "@f",
+                "targets": { "op": "def.call", "def": "step", "args": { "f": "@f", "dirs": "#knightDirs" } }
+              }
+            },
+            "king": {
+              "op": "def.call", "def": "plain",
+              "args": {
+                "f": "@f",
+                "targets": {
+                  "op": "def.call", "def": "step",
+                  "args": { "f": "@f", "dirs": { "op": "grid.directions", "of": "$board", "kind": "eight" } }
+                }
+              }
+            },
+            "bishop": {
+              "op": "def.call", "def": "plain",
+              "args": {
+                "f": "@f",
+                "targets": {
+                  "op": "def.call", "def": "slide",
+                  "args": { "f": "@f", "dirs": { "op": "grid.directions", "of": "$board", "kind": "diagonal" } }
+                }
+              }
+            },
+            "rook": {
+              "op": "def.call", "def": "plain",
+              "args": {
+                "f": "@f",
+                "targets": {
+                  "op": "def.call", "def": "slide",
+                  "args": { "f": "@f", "dirs": { "op": "grid.directions", "of": "$board", "kind": "orthogonal" } }
+                }
+              }
+            },
+            "queen": {
+              "op": "def.call", "def": "plain",
+              "args": {
+                "f": "@f",
+                "targets": {
+                  "op": "def.call", "def": "slide",
+                  "args": { "f": "@f", "dirs": { "op": "grid.directions", "of": "$board", "kind": "eight" } }
+                }
+              }
+            }
+          },
+          "default": { "op": "seq.empty" }
+        }
+      }
+    },
+
+    // Generated from the marked square outwards rather than from each pawn, so that no
+    // coordinate ever has to be compared with another. A ray out of a null square is empty,
+    // which disposes of the case where there is nothing to capture in passing.
+    "epMoves": {
+      "op": "seq.select",
+      "source": {
+        "op": "seq.where",
+        "source": {
+          "op": "seq.selectMany", "source": "#epFromDirs", "as": "d",
+          "select": { "op": "grid.ray", "grid": "$board", "from": "$ep", "dir": "@d", "length": 1 }
+        },
+        "as": "c",
+        "predicate": {
+          "op": "cmp.eq",
+          "left": { "op": "grid.at", "grid": "$board", "coord": "@c" },
+          "right": "#myPawn"
+        }
+      },
+      "as": "c",
+      "select": { "op": "tuple.of", "of": ["@c", "$ep", "ep"] }
+    },
+
+    // ── Castling ───────────────────────────────────────────────────────────
+    //
+    // The squares are named outright. Castling happens from one square to one of two
+    // others, and deriving them from rays would say less than writing them down.
+
+    "kingHome": { "op": "branch.match", "value": "#me", "cases": { "white": "e1", "black": "e8" } },
+    "kingToK": { "op": "branch.match", "value": "#me", "cases": { "white": "g1", "black": "g8" } },
+    "rookFromK": { "op": "branch.match", "value": "#me", "cases": { "white": "h1", "black": "h8" } },
+    "rookToK": { "op": "branch.match", "value": "#me", "cases": { "white": "f1", "black": "f8" } },
+    "kingToQ": { "op": "branch.match", "value": "#me", "cases": { "white": "c1", "black": "c8" } },
+    "rookFromQ": { "op": "branch.match", "value": "#me", "cases": { "white": "a1", "black": "a8" } },
+    "rookToQ": { "op": "branch.match", "value": "#me", "cases": { "white": "d1", "black": "d8" } },
+    "knightHomeQ": { "op": "branch.match", "value": "#me", "cases": { "white": "b1", "black": "b8" } },
+
+    "rightK": { "op": "branch.match", "value": "#me", "cases": { "white": "$wk", "black": "$bk" } },
+    "rightQ": { "op": "branch.match", "value": "#me", "cases": { "white": "$wq", "black": "$bq" } },
+
+    // The pieces are checked as well as the rights. The rights are maintained correctly by
+    // the effects below, but a state document can be written by hand, and castling with a
+    // king that is not there would be a strange thing to allow.
+    "castleMoves": {
+      "op": "seq.selectMany",
+      "source": {
+        "op": "seq.of",
+        "of": [
+          {
+            "op": "branch.if",
+            "cond": {
+              "op": "logic.and",
+              "all": [
+                "#rightK",
+                { "op": "cmp.eq", "left": { "op": "grid.at", "grid": "$board", "coord": "#kingHome" }, "right": "#myKing" },
+                { "op": "cmp.eq", "left": { "op": "grid.at", "grid": "$board", "coord": "#rookFromK" }, "right": "#myRook" },
+                { "op": "def.call", "def": "isEmpty", "args": { "c": "#rookToK" } },
+                { "op": "def.call", "def": "isEmpty", "args": { "c": "#kingToK" } },
+                { "op": "def.call", "def": "safe", "args": { "sq": "#kingHome" } },
+                { "op": "def.call", "def": "safe", "args": { "sq": "#rookToK" } },
+                { "op": "def.call", "def": "safe", "args": { "sq": "#kingToK" } }
+              ]
+            },
+            "then": { "op": "seq.of", "of": [{ "op": "tuple.of", "of": ["#kingHome", "#kingToK", "0-0"] }] },
+            "else": { "op": "seq.empty" }
+          },
+          {
+            "op": "branch.if",
+            "cond": {
+              "op": "logic.and",
+              "all": [
+                "#rightQ",
+                { "op": "cmp.eq", "left": { "op": "grid.at", "grid": "$board", "coord": "#kingHome" }, "right": "#myKing" },
+                { "op": "cmp.eq", "left": { "op": "grid.at", "grid": "$board", "coord": "#rookFromQ" }, "right": "#myRook" },
+                { "op": "def.call", "def": "isEmpty", "args": { "c": "#rookToQ" } },
+                { "op": "def.call", "def": "isEmpty", "args": { "c": "#kingToQ" } },
+                { "op": "def.call", "def": "isEmpty", "args": { "c": "#knightHomeQ" } },
+                { "op": "def.call", "def": "safe", "args": { "sq": "#kingHome" } },
+                { "op": "def.call", "def": "safe", "args": { "sq": "#rookToQ" } },
+                { "op": "def.call", "def": "safe", "args": { "sq": "#kingToQ" } }
+              ]
+            },
+            "then": { "op": "seq.of", "of": [{ "op": "tuple.of", "of": ["#kingHome", "#kingToQ", "0-0-0"] }] },
+            "else": { "op": "seq.empty" }
+          }
+        ]
+      },
+      "as": "part", "select": "@part"
+    },
+
+    // ── The candidate set ──────────────────────────────────────────────────
+
+    "pseudoMoves": {
+      "op": "seq.selectMany",
+      "source": {
+        "op": "seq.of",
+        "of": [
+          {
+            "op": "seq.selectMany", "source": { "op": "grid.coords", "of": "$board" }, "as": "f",
+            "select": { "op": "def.call", "def": "movesFrom", "args": { "f": "@f" } }
+          },
+          "#epMoves",
+          "#castleMoves"
+        ]
+      },
+      "as": "part", "select": "@part"
+    },
+
+    // ── Taking a move apart ────────────────────────────────────────────────
+
+    "from": { "params": ["m"], "body": { "op": "tuple.at", "tuple": "@m", "index": 0 } },
+    "to": { "params": ["m"], "body": { "op": "tuple.at", "tuple": "@m", "index": 1 } },
+    "tag": { "params": ["m"], "body": { "op": "tuple.at", "tuple": "@m", "index": 2 } },
+
+    // ── The position a move would produce ──────────────────────────────────
+
+    "boardAfter": {
+      "params": ["m"],
+      "body": {
+        "op": "bind.let",
+        "bind": {
+          "f": { "op": "def.call", "def": "from", "args": { "m": "@m" } },
+          "t": { "op": "def.call", "def": "to", "args": { "m": "@m" } },
+          "tag": { "op": "def.call", "def": "tag", "args": { "m": "@m" } },
+
+          // The origin, the pawn taken in passing, and the rook's old corner.
+          "cleared": {
+            "op": "seq.selectMany",
+            "source": {
+              "op": "seq.of",
+              "of": [
+                { "op": "seq.of", "of": ["@f"] },
+                {
+                  "op": "branch.if",
+                  "cond": { "op": "cmp.eq", "left": "@tag", "right": "ep" },
+                  "then": { "op": "grid.ray", "grid": "$board", "from": "@t", "dir": "#homeDir", "length": 1 },
+                  "else": { "op": "seq.empty" }
+                },
+                {
+                  "op": "branch.match", "value": "@tag",
+                  "cases": {
+                    "0-0": { "op": "seq.of", "of": ["#rookFromK"] },
+                    "0-0-0": { "op": "seq.of", "of": ["#rookFromQ"] }
+                  },
+                  "default": { "op": "seq.empty" }
+                }
+              ]
+            },
+            "as": "part", "select": "@part"
+          },
+
+          "rookTo": {
+            "op": "branch.match", "value": "@tag",
+            "cases": {
+              "0-0": { "op": "seq.of", "of": ["#rookToK"] },
+              "0-0-0": { "op": "seq.of", "of": ["#rookToQ"] }
+            },
+            "default": { "op": "seq.empty" }
+          },
+
+          "placed": {
+            "op": "branch.match", "value": "@tag",
+            "cases": { "q": "#myQueen", "r": "#myRook", "b": "#myBishop", "n": "#myKnight" },
+            "default": { "op": "grid.at", "grid": "$board", "coord": "@f" }
+          }
+        },
+        "in": {
+          "op": "grid.withMany",
+          "grid": {
+            "op": "grid.with",
+            "grid": { "op": "grid.withMany", "grid": "$board", "coords": "@cleared", "value": null },
+            "coord": "@t", "value": "@placed"
+          },
+          "coords": "@rookTo", "value": "#myRook"
+        }
+      }
+    },
+
+    // A move is legal when it does not leave its own king attacked. Nothing else about the
+    // position after the move matters, which is fortunate: the board is the only part of
+    // the state a rule set can build a copy of.
+    "legal": {
+      "params": ["m"],
+      "body": {
+        "op": "bind.let",
+        "bind": { "b": { "op": "def.call", "def": "boardAfter", "args": { "m": "@m" } } },
+        "in": {
+          "op": "logic.not",
+          "value": {
+            "op": "def.call", "def": "attacked",
+            "args": {
+              "b": "@b",
+              "sq": { "op": "def.call", "def": "kingSquare", "args": { "b": "@b", "colour": "#me" } },
+              "by": "#foe"
+            }
+          }
+        }
+      }
+    },
+
+    "hasLegalMove": {
+      "op": "seq.any", "source": "#pseudoMoves", "as": "m",
+      "predicate": { "op": "def.call", "def": "legal", "args": { "m": "@m" } }
+    },
+
+    // ── Bookkeeping ────────────────────────────────────────────────────────
+
+    "isPawnMove": {
+      "params": ["m"],
+      "body": {
+        "op": "cmp.eq",
+        "left": { "op": "grid.at", "grid": "$board", "coord": { "op": "def.call", "def": "from", "args": { "m": "@m" } } },
+        "right": "#myPawn"
+      }
+    },
+
+    "isCapture": {
+      "params": ["m"],
+      "body": {
+        "op": "logic.or",
+        "any": [
+          { "op": "cmp.eq", "left": { "op": "def.call", "def": "tag", "args": { "m": "@m" } }, "right": "ep" },
+          {
+            "op": "logic.not",
+            "value": {
+              "op": "cmp.isNull",
+              "value": { "op": "grid.at", "grid": "$board", "coord": { "op": "def.call", "def": "to", "args": { "m": "@m" } } }
+            }
+          }
+        ]
+      }
+    },
+
+    // The name of a square, for the six squares whose names this rule set cares about.
+    //
+    // A move's squares are not all the same kind of value. Most come out of grid.coords and
+    // are opaque coordinates; the castling moves are built from written squares and are
+    // text. Comparing either with "e1" directly would answer for one and not the other.
+    // branch.match matches on canonical text, so it answers for both, and what comes back is
+    // always text.
+    "corner": {
+      "params": ["c"],
+      "body": {
+        "op": "branch.match", "value": "@c",
+        "cases": { "a1": "a1", "e1": "e1", "h1": "h1", "a8": "a8", "e8": "e8", "h8": "h8" },
+        "default": "-"
+      }
+    },
+
+    // A right survives a move that touches neither its king's square nor its rook's corner.
+    "keeps": {
+      "params": ["m", "kingSq", "rookSq"],
+      "body": {
+        "op": "bind.let",
+        "bind": {
+          "f": {
+            "op": "def.call", "def": "corner",
+            "args": { "c": { "op": "def.call", "def": "from", "args": { "m": "@m" } } }
+          },
+          "t": {
+            "op": "def.call", "def": "corner",
+            "args": { "c": { "op": "def.call", "def": "to", "args": { "m": "@m" } } }
+          }
+        },
+        "in": {
+          "op": "logic.and",
+          "all": [
+            { "op": "cmp.ne", "left": "@f", "right": "@kingSq" },
+            { "op": "cmp.ne", "left": "@f", "right": "@rookSq" },
+            { "op": "cmp.ne", "left": "@t", "right": "@rookSq" }
+          ]
+        }
+      }
+    }
+  },
+
+  "inputs": {
+    "move": {
+      "actor": "#me",
+
+      // The whole point of the exercise. One parameter, one domain, and the domain is an
+      // expression free to work out each origin's destinations for itself.
+      "params": {
+        "m": { "domain": "#pseudoMoves" }
+      },
+
+      "when": { "op": "def.call", "def": "legal", "args": { "m": "@m" } },
+
+      "effects": [
+        { "op": "state.set", "path": "board", "value": { "op": "def.call", "def": "boardAfter", "args": { "m": "@m" } } },
+        { "op": "state.set", "path": "turn", "value": "#foe" },
+
+        {
+          "op": "state.set", "path": "ep",
+          "value": {
+            "op": "branch.if",
+            "cond": { "op": "cmp.eq", "left": { "op": "def.call", "def": "tag", "args": { "m": "@m" } }, "right": "2" },
+            "then": {
+              "op": "seq.elementAt", "index": 0,
+              "source": {
+                "op": "grid.ray", "grid": "$board",
+                "from": { "op": "def.call", "def": "to", "args": { "m": "@m" } },
+                "dir": "#homeDir", "length": 1
+              }
+            },
+            "else": null
+          }
+        },
+
+        {
+          "op": "state.set", "path": "idle",
+          "value": {
+            "op": "branch.if",
+            "cond": {
+              "op": "logic.or",
+              "any": [
+                { "op": "def.call", "def": "isPawnMove", "args": { "m": "@m" } },
+                { "op": "def.call", "def": "isCapture", "args": { "m": "@m" } }
+              ]
+            },
+            "then": 0,
+            "else": { "op": "math.add", "of": ["$idle", 1] }
+          }
+        },
+
+        {
+          "op": "state.set", "path": "wk",
+          "value": {
+            "op": "logic.and",
+            "all": ["$wk", { "op": "def.call", "def": "keeps", "args": { "m": "@m", "kingSq": "e1", "rookSq": "h1" } }]
+          }
+        },
+        {
+          "op": "state.set", "path": "wq",
+          "value": {
+            "op": "logic.and",
+            "all": ["$wq", { "op": "def.call", "def": "keeps", "args": { "m": "@m", "kingSq": "e1", "rookSq": "a1" } }]
+          }
+        },
+        {
+          "op": "state.set", "path": "bk",
+          "value": {
+            "op": "logic.and",
+            "all": ["$bk", { "op": "def.call", "def": "keeps", "args": { "m": "@m", "kingSq": "e8", "rookSq": "h8" } }]
+          }
+        },
+        {
+          "op": "state.set", "path": "bq",
+          "value": {
+            "op": "logic.and",
+            "all": ["$bq", { "op": "def.call", "def": "keeps", "args": { "m": "@m", "kingSq": "e8", "rookSq": "a8" } }]
+          }
+        }
+      ]
+    }
+  },
+
+  // Checkmate, stalemate and the fifty-move rule. Threefold repetition is not here and
+  // cannot be: the state is a position, and repetition is a property of a game's history.
+  "terminal": {
+    "when": {
+      "op": "logic.or",
+      "any": [
+        { "op": "cmp.gte", "left": "$idle", "right": 100 },
+        { "op": "logic.not", "value": "#hasLegalMove" }
+      ]
+    },
+    "result": {
+      "op": "branch.if",
+      "cond": { "op": "logic.not", "value": "#hasLegalMove" },
+      "then": {
+        "op": "branch.if",
+        "cond": { "op": "def.call", "def": "inCheck", "args": { "colour": "#me" } },
+        "then": "#foe",
+        "else": "draw"
+      },
+      "else": "draw"
+    }
+  }
+}

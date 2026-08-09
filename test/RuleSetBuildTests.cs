@@ -179,11 +179,14 @@ namespace Rulealize.Tests
 
         [Fact]
         public void AVersionConstraintIsEnforced() =>
-            Assert.Contains("1.0.0 is loaded", Rejects($$"""
+            Assert.Contains("needs Rulealize.Plugin.Grid ^2.0", Rejects($$"""
                 { {{Preamble}} "requires": [ { "plugin": "Rulealize.Plugin.Grid", "version": "^2.0" } ],
                   "inputs": { "go": { "effects": [] } } }
                 """), StringComparison.Ordinal);
 
+        // Written against Logic rather than Grid, which the rest of this file leans on:
+        // an exact-version constraint has to name a version, and pinning one to a plugin
+        // whose vocabulary is still growing means editing this test every time it does.
         [Theory]
         [InlineData("^1.0")]
         [InlineData("^1.0.0")]
@@ -192,7 +195,7 @@ namespace Rulealize.Tests
         public void SatisfiableConstraintsAreAccepted(string constraint)
         {
             RuleContext context = standard.Runtime.CreateContext($$"""
-                { {{Preamble}} "requires": [ { "plugin": "Rulealize.Plugin.Grid", "version": "{{constraint}}" } ],
+                { {{Preamble}} "requires": [ { "plugin": "Rulealize.Plugin.Logic", "version": "{{constraint}}" } ],
                   "inputs": { "go": { "effects": [] } } }
                 """);
 

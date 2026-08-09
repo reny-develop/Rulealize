@@ -15,7 +15,15 @@
       "PowerShell(dotnet build c:\\\\Repos\\\\Rulealize\\\\sample\\\\Reversi --nologo -v q)",
       "PowerShell(dotnet run --project c:\\\\Repos\\\\Rulealize\\\\sample\\\\Reversi --no-build -- --auto)",
       "PowerShell(dotnet build c:\\\\Repos\\\\Rulealize\\\\Rulealize.slnx --nologo -v q)",
-      "PowerShell(dotnet test c:\\\\Repos\\\\Rulealize\\\\test\\\\Rulealize.Tests.csproj --nologo -v q --no-build)"
+      "PowerShell(dotnet test c:\\\\Repos\\\\Rulealize\\\\test\\\\Rulealize.Tests.csproj --nologo -v q --no-build)",
+      "PowerShell(dotnet test c:\\\\Repos\\\\Rulealize\\\\test\\\\Rulealize.Tests.csproj --nologo -v q 2>&1)",
+      "PowerShell(dotnet build c:\\\\Repos\\\\Rulealize.Plugin.Tuple\\\\src\\\\Rulealize.Plugin.Tuple\\\\Rulealize.Plugin.Tuple.csproj --nologo 2>&1)",
+      "Bash(grep -n \"seq.empty\\\\|^| \\\\`seq\" README.md)",
+      "Bash(sed -i 's|<Version>1.0.0</Version>|<Version>1.1.0</Version>|' src/Rulealize.Plugin.Sequence/Rulealize.Plugin.Sequence.csproj)",
+      "Bash(sed -i 's|Generation, transformation and aggregation over Rulealize sequences: seq.any, seq.count, seq.takeWhile, seq.selectMany and friends.|Generation, transformation and aggregation over Rulealize sequences: seq.of, seq.any, seq.count, seq.takeWhile, seq.selectMany and friends.|' src/Rulealize.Plugin.Sequence/Rulealize.Plugin.Sequence.csproj)",
+      "Bash(grep -n \"grid.set\\\\`\\\\|grid.at\\\\`\\\\|^| \\\\`grid\" README.md)",
+      "Bash(sed -i 's|<Version>1.0.0</Version>|<Version>1.1.0</Version>|' src/Rulealize.Plugin.Grid/Rulealize.Plugin.Grid.csproj)",
+      "Bash(sed -i 's|Two-dimensional boards, coordinates, directions and ray traversal for Rulealize rule sets.|Two-dimensional boards, coordinates, directions, ray traversal and functional board update for Rulealize rule sets.|' src/Rulealize.Plugin.Grid/Rulealize.Plugin.Grid.csproj)"
     ]
   }
 }

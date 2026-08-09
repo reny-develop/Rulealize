@@ -4,7 +4,7 @@
 | --- | --- |
 | 識別子 | `Rulealize.Plugin.Sequence` |
 | 名前空間 | `seq` |
-| バージョン | `1.0.0` |
+| バージョン | `1.2.0` |
 | 予約プレフィックス | なし |
 | 依存 | [値モデル](../value-model.md) のみ |
 
@@ -24,6 +24,7 @@
 | ノード | 種別 | リバーシでの使用 |
 | --- | --- | --- |
 | `seq.empty` | 式 | ○ `flips1` |
+| `seq.of` | 式 | — （1.1 で追加） |
 | `seq.any` | 式 | ○ `canPlace`, `hasAnyMove`, `terminal.when` |
 | `seq.count` | 式 | ○ `flips1`, `terminal.result` |
 | `seq.elementAt` | 式 | ○ `flips1` |
@@ -31,6 +32,9 @@
 | `seq.selectMany` | 式 | ○ `flips` |
 | `seq.where` | 式 | — |
 | `seq.select` | 式 | — |
+| `seq.concat` | 式 | — （1.2 で追加） |
+| `seq.take` | 式 | — （1.2 で追加） |
+| `seq.skip` | 式 | — （1.2 で追加） |
 
 ---
 
@@ -124,6 +128,49 @@
 リバーシの `flips1` で「この方向には裏返せる石が無い」を表す。
 `seq.selectMany`（`flips`）が空列を素通りさせるため、8 方向のうち成立しない
 方向は自然に消える。
+
+---
+
+## `seq.of`
+
+### 形式
+
+```jsonc
+{ "op": "seq.of", "of": [ <式>, … ] }
+```
+
+要素を書き並べた列を返す。空配列は空列。
+
+### 列を書き下す唯一の手段
+
+値モデルは `Sequence` に JSON リテラルを与えていない（[§1](../value-model.md)）。
+したがってこのノードが無いと、**RuleSet 中のすべての列は他プラグイン由来でしか
+作れない**。リバーシは列がすべて `grid.*` から出てくるので気づかなかったが、
+これは「Sequence だけをロードして意味が通るか」という[分解の基準 A](../dsl-example-reversi.md)
+を Sequence 自身が満たしていなかったということでもある。
+
+チェスのナイトで露見した。8 つのオフセットは `grid.directions` のどの `kind`
+にも該当せず、単に 8 つの方向であって、RuleSet がそう言えなければならない。
+
+```jsonc
+"knightDirs": { "op": "seq.of",
+  "of": ["1,2","2,1","2,-1","1,-2","-1,-2","-2,-1","-2,1","-1,2"] }
+```
+
+`seq.selectMany` と組み合わせると連結にもなる。`seq.concat` を別に置かないのは
+このため。
+
+```jsonc
+// run ++ [next]
+{ "op": "seq.selectMany",
+  "source": { "op": "seq.of", "of": ["@run", { "op": "seq.of", "of": ["@next"] }] },
+  "as": "part", "select": "@part" }
+```
+
+### 評価
+
+要素の式は**列挙のたびに**評価する。再列挙可能性が構成上満たされ、全ノードが
+純粋なので結果は変わらない。
 
 ---
 
@@ -346,6 +393,30 @@ seq.elementAt(範囲外) → null → grid.at(null) → null → cmp.eq(null, "b
 
 リバーシでは使用しない。`seq.count` の `where` と `seq.any` の `predicate` で
 足りているため。汎用語彙として提供する。
+
+---
+
+## `seq.concat` / `seq.take` / `seq.skip`（1.2）
+
+```jsonc
+{ "op": "seq.concat", "of": [ <式:Sequence>, … ] }
+{ "op": "seq.take", "source": <式:Sequence>, "count": <式:Number> }
+{ "op": "seq.skip", "source": <式:Sequence>, "count": <式:Number> }
+```
+
+`seq.concat` は「`seq.of` + `seq.selectMany` で書けるから不要」として一度見送った。
+実際に書けるが、**列に対する最も普通の操作がいちばん読みにくくなる**のは、置かない
+理由ではなく置く理由だった。[`type.list`](TypeSchema.md) への追記がこれを要求した。
+
+```jsonc
+{ "op": "state.set", "path": "history",
+  "value": { "op": "seq.concat", "of": ["$history", { "op": "seq.of", "of": ["@position"] }] } }
+```
+
+`take` / `skip` は上限のある履歴を保つため。範囲を超える `count` はエラーにしない
+（列の長さは局面次第であり、3 個しかない列に 10 個求めるのは妥当な問いである）。
+負の `count` は評価時エラー——`seq.elementAt` の負インデックスと同じ扱いで、
+「範囲外」ではなく「個数として不正」。
 
 ---
 

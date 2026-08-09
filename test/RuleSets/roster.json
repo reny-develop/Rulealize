@@ -1,0 +1,372 @@
+{
+  "$schema": "rulealize/ruleset/v1",
+  "id": "roster",
+  "version": "1.0.0",
+
+  // A shift roster, written to find out whether the DSL is shaped like a board — and then
+  // rewritten, because the first attempt was shaped like one anyway.
+  //
+  // That first version declared the staff as a type.enum of four names and the shifts as
+  // the keys of a rec.map, which made the document describe one particular week. This one
+  // declares nothing about who or what: staff, shifts and assignments are all lists, and
+  // which people and which shifts exist arrives in the state document.
+  //
+  // The rule set is the domain. The state is the instance. A board game hides the
+  // difference because a chess board is always the same eight by eight, and taking the
+  // rules of one as a guide is what produced the first version.
+  //
+  // The grid plugin is deliberately absent: a week by two slots is a rectangle and using a
+  // board for it would have proved nothing.
+
+  "requires": [
+    { "plugin": "Rulealize.Plugin.Binding", "version": "^1.0" },
+    { "plugin": "Rulealize.Plugin.Branch", "version": "^1.0" },
+    { "plugin": "Rulealize.Plugin.Definition", "version": "^1.0" },
+    { "plugin": "Rulealize.Plugin.Logic", "version": "^1.0" },
+    { "plugin": "Rulealize.Plugin.Comparison", "version": "^1.0" },
+    { "plugin": "Rulealize.Plugin.Arithmetic", "version": "^1.0" },
+    { "plugin": "Rulealize.Plugin.TypeSchema", "version": "^1.1" },
+    { "plugin": "Rulealize.Plugin.Sequence", "version": "^1.2" },
+    { "plugin": "Rulealize.Plugin.State", "version": "^1.0" },
+    { "plugin": "Rulealize.Plugin.Record", "version": "^1.0" }
+  ],
+
+  "state": {
+    "schema": {
+      // Who is available, and how much of them there is.
+      "staff": {
+        "op": "type.list",
+        "element": {
+          "op": "rec.of",
+          "fields": {
+            "name": { "op": "type.string", "minLength": 1 },
+            "capacity": { "op": "type.int", "min": 0 },
+            "senior": { "op": "type.bool" }
+          }
+        }
+      },
+
+      // What needs covering. `day` groups the shifts that one person may not both take;
+      // it is a field rather than something read out of the id, because an id is a name
+      // and a name has no parts.
+      "shifts": {
+        "op": "type.list",
+        "element": {
+          "op": "rec.of",
+          "fields": {
+            "id": { "op": "type.string", "minLength": 1 },
+            "day": { "op": "type.string", "minLength": 1 },
+            "senior": { "op": "type.bool" }
+          }
+        }
+      },
+
+      "assigned": {
+        "op": "type.list",
+        "element": {
+          "op": "rec.of",
+          "fields": {
+            "shift": { "op": "type.string", "minLength": 1 },
+            "who": { "op": "type.string", "minLength": 1 }
+          }
+        }
+      },
+
+      // The last five things that happened.
+      "log": {
+        "op": "type.list",
+        "maxLength": 5,
+        "element": {
+          "op": "rec.of",
+          "fields": {
+            "action": { "op": "type.enum", "values": ["assign", "release"] },
+            "who": { "op": "type.string", "minLength": 1 },
+            "shift": { "op": "type.string", "minLength": 1 }
+          }
+        }
+      }
+    },
+
+    // One week. Another week is another state document against this same rule set.
+    "initial": {
+      "staff": [
+        { "name": "ann", "capacity": 3, "senior": true },
+        { "name": "bo", "capacity": 3, "senior": false },
+        { "name": "cy", "capacity": 2, "senior": true },
+        { "name": "di", "capacity": 2, "senior": false }
+      ],
+      "shifts": [
+        { "id": "mon-am", "day": "mon", "senior": true },
+        { "id": "mon-pm", "day": "mon", "senior": false },
+        { "id": "tue-am", "day": "tue", "senior": false },
+        { "id": "tue-pm", "day": "tue", "senior": false },
+        { "id": "wed-am", "day": "wed", "senior": true },
+        { "id": "wed-pm", "day": "wed", "senior": false },
+        { "id": "thu-am", "day": "thu", "senior": false },
+        { "id": "thu-pm", "day": "thu", "senior": false },
+        { "id": "fri-am", "day": "fri", "senior": true },
+        { "id": "fri-pm", "day": "fri", "senior": false }
+      ],
+      "assigned": [],
+      "log": []
+    }
+  },
+
+  "definitions": {
+
+    // ── Looking things up ──────────────────────────────────────────────────
+    //
+    // A list is scanned where the first version indexed a record by key. That is the price
+    // of not knowing the names in advance, and for a roster it is a scan of a handful.
+
+    "names": {
+      "op": "seq.select", "source": "$staff", "as": "s",
+      "select": { "op": "rec.at", "record": "@s", "key": "name" }
+    },
+
+    "shiftIds": {
+      "op": "seq.select", "source": "$shifts", "as": "s",
+      "select": { "op": "rec.at", "record": "@s", "key": "id" }
+    },
+
+    "person": {
+      "params": ["who"],
+      "body": {
+        "op": "seq.elementAt", "index": 0,
+        "source": {
+          "op": "seq.where", "source": "$staff", "as": "s",
+          "predicate": { "op": "cmp.eq", "left": { "op": "rec.at", "record": "@s", "key": "name" }, "right": "@who" }
+        }
+      }
+    },
+
+    "shift": {
+      "params": ["id"],
+      "body": {
+        "op": "seq.elementAt", "index": 0,
+        "source": {
+          "op": "seq.where", "source": "$shifts", "as": "s",
+          "predicate": { "op": "cmp.eq", "left": { "op": "rec.at", "record": "@s", "key": "id" }, "right": "@id" }
+        }
+      }
+    },
+
+    "dayOf": {
+      "params": ["id"],
+      "body": {
+        "op": "rec.at", "key": "day",
+        "record": { "op": "def.call", "def": "shift", "args": { "id": "@id" } }
+      }
+    },
+
+    // ── Reading the roster ─────────────────────────────────────────────────
+
+    "on": {
+      "params": ["id"],
+      "body": {
+        "op": "seq.elementAt", "index": 0,
+        "source": {
+          "op": "seq.select", "as": "a",
+          "select": { "op": "rec.at", "record": "@a", "key": "who" },
+          "source": {
+            "op": "seq.where", "source": "$assigned", "as": "a",
+            "predicate": {
+              "op": "cmp.eq", "left": { "op": "rec.at", "record": "@a", "key": "shift" }, "right": "@id"
+            }
+          }
+        }
+      }
+    },
+
+    "free": {
+      "params": ["id"],
+      "body": { "op": "cmp.isNull", "value": { "op": "def.call", "def": "on", "args": { "id": "@id" } } }
+    },
+
+    "openShifts": {
+      "op": "seq.where", "source": "#shiftIds", "as": "s",
+      "predicate": { "op": "def.call", "def": "free", "args": { "id": "@s" } }
+    },
+
+    "takenShifts": {
+      "op": "seq.where", "source": "#shiftIds", "as": "s",
+      "predicate": { "op": "logic.not", "value": { "op": "def.call", "def": "free", "args": { "id": "@s" } } }
+    },
+
+    "load": {
+      "params": ["who"],
+      "body": {
+        "op": "seq.count", "source": "$assigned", "as": "a",
+        "where": { "op": "cmp.eq", "left": { "op": "rec.at", "record": "@a", "key": "who" }, "right": "@who" }
+      }
+    },
+
+    "worksThatDay": {
+      "params": ["who", "id"],
+      "body": {
+        "op": "seq.any", "source": "$assigned", "as": "a",
+        "predicate": {
+          "op": "logic.and",
+          "all": [
+            { "op": "cmp.eq", "left": { "op": "rec.at", "record": "@a", "key": "who" }, "right": "@who" },
+            {
+              "op": "cmp.eq",
+              "left": {
+                "op": "def.call", "def": "dayOf",
+                "args": { "id": { "op": "rec.at", "record": "@a", "key": "shift" } }
+              },
+              "right": { "op": "def.call", "def": "dayOf", "args": { "id": "@id" } }
+            }
+          ]
+        }
+      }
+    },
+
+    // ── The rules ──────────────────────────────────────────────────────────
+
+    "mayWork": {
+      "params": ["who", "id"],
+      "body": {
+        "op": "logic.and",
+        "all": [
+          {
+            "op": "cmp.lt",
+            "left": { "op": "def.call", "def": "load", "args": { "who": "@who" } },
+            "right": {
+              "op": "rec.at", "key": "capacity",
+              "record": { "op": "def.call", "def": "person", "args": { "who": "@who" } }
+            }
+          },
+          {
+            "op": "logic.or",
+            "any": [
+              {
+                "op": "logic.not",
+                "value": {
+                  "op": "rec.at", "key": "senior",
+                  "record": { "op": "def.call", "def": "shift", "args": { "id": "@id" } }
+                }
+              },
+              {
+                "op": "rec.at", "key": "senior",
+                "record": { "op": "def.call", "def": "person", "args": { "who": "@who" } }
+              }
+            ]
+          },
+          {
+            "op": "logic.not",
+            "value": { "op": "def.call", "def": "worksThatDay", "args": { "who": "@who", "id": "@id" } }
+          }
+        ]
+      }
+    },
+
+    "anyoneCanBePlaced": {
+      "op": "seq.any", "source": "#openShifts", "as": "s",
+      "predicate": {
+        "op": "seq.any", "source": "#names", "as": "p",
+        "predicate": { "op": "def.call", "def": "mayWork", "args": { "who": "@p", "id": "@s" } }
+      }
+    },
+
+    "unfilled": { "op": "seq.count", "source": "#openShifts" },
+
+    // ── The audit trail ────────────────────────────────────────────────────
+
+    "recent": {
+      "params": ["entry"],
+      "body": {
+        "op": "bind.let",
+        "bind": { "all": { "op": "seq.concat", "of": ["$log", { "op": "seq.of", "of": ["@entry"] }] } },
+        "in": {
+          "op": "seq.skip", "source": "@all",
+          "count": {
+            "op": "math.max",
+            "of": [0, { "op": "math.sub", "left": { "op": "seq.count", "source": "@all" }, "right": 5 }]
+          }
+        }
+      }
+    }
+  },
+
+  "inputs": {
+    // Two parameters whose domains do not depend on one another, and both are read out of
+    // the state rather than written down here. A week with different people is a different
+    // state document and the same rule set.
+    "assign": {
+      "params": {
+        "who": { "domain": "#names" },
+        "shift": { "domain": "#openShifts" }
+      },
+      "when": { "op": "def.call", "def": "mayWork", "args": { "who": "@who", "id": "@shift" } },
+      "effects": [
+        {
+          "op": "state.set", "path": "assigned",
+          "value": {
+            "op": "seq.concat",
+            "of": ["$assigned", { "op": "seq.of", "of": [{ "shift": "@shift", "who": "@who" }] }]
+          }
+        },
+        {
+          "op": "state.set", "path": "log",
+          "value": {
+            "op": "def.call", "def": "recent",
+            "args": { "entry": { "action": "assign", "who": "@who", "shift": "@shift" } }
+          }
+        }
+      ]
+    },
+
+    "release": {
+      "params": {
+        "shift": { "domain": "#takenShifts" }
+      },
+      "effects": [
+        {
+          "op": "state.set", "path": "assigned",
+          "value": {
+            "op": "seq.where", "source": "$assigned", "as": "a",
+            "predicate": {
+              "op": "cmp.ne", "left": { "op": "rec.at", "record": "@a", "key": "shift" }, "right": "@shift"
+            }
+          }
+        },
+        {
+          "op": "state.set", "path": "log",
+          "value": {
+            "op": "def.call", "def": "recent",
+            "args": {
+              "entry": {
+                "action": "release",
+                "who": { "op": "def.call", "def": "on", "args": { "id": "@shift" } },
+                "shift": "@shift"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+
+  // Not a winner. Either every shift is covered, or nobody left can be placed anywhere and
+  // the roster is stuck with holes in it.
+  //
+  // Releasing stays available in a stuck position, which is what makes this usable as a
+  // search: GetValidInputs does not consult terminal, so a caller that has painted itself
+  // into a corner can still back out of it.
+  "terminal": {
+    "when": {
+      "op": "logic.or",
+      "any": [
+        { "op": "cmp.eq", "left": "#unfilled", "right": 0 },
+        { "op": "logic.not", "value": "#anyoneCanBePlaced" }
+      ]
+    },
+    "result": {
+      "op": "branch.if",
+      "cond": { "op": "cmp.eq", "left": "#unfilled", "right": 0 },
+      "then": "complete",
+      "else": "stuck"
+    }
+  }
+}

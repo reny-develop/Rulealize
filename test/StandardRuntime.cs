@@ -25,6 +25,9 @@ namespace Rulealize.Tests
             Runtime = new RuleRuntime().LoadPluginsFrom(PluginFolder);
             Reversi = Runtime.CreateContext(ReadRuleSet("reversi.json"));
             KitchenSink = Runtime.CreateContext(ReadRuleSet("kitchen-sink.json"));
+            Chess = Runtime.CreateContext(ReadRuleSet("chess.json"));
+            Shogi = Runtime.CreateContext(ReadRuleSet("shogi.json"));
+            Roster = Runtime.CreateContext(ReadRuleSet("roster.json"));
         }
 
         /// <summary>Gets where the build put the plugin assemblies.</summary>
@@ -37,6 +40,32 @@ namespace Rulealize.Tests
 
         /// <summary>Gets a rule set that reaches the operations Reversi never does.</summary>
         public RuleContext KitchenSink { get; }
+
+        /// <summary>Gets the chess rule set, which the design was tested against.</summary>
+        /// <remarks>
+        /// Reversi showed the vocabulary was enough to write a game with. Chess asks harder
+        /// questions of it: a move whose destination depends on its origin, and a legality
+        /// rule about the position the move would produce rather than the one in front of it.
+        /// </remarks>
+        public RuleContext Chess { get; }
+
+        /// <summary>Gets the shogi rule set, which the compound parameter was measured against.</summary>
+        /// <remarks>
+        /// Chess showed a compound parameter works. Shogi was written to find where it stops
+        /// working: a hand that the state has no shape for, and a rule — a pawn may not be
+        /// dropped to give mate — that asks what the opponent could do in a position that
+        /// does not exist.
+        /// </remarks>
+        public RuleContext Shogi { get; }
+
+        /// <summary>Gets a rule set that is not a game at all.</summary>
+        /// <remarks>
+        /// A week's shift roster. No turn, no opponent, no board — the grid plugin is not
+        /// loaded into it — and an outcome that is whether the constraints are satisfied. It
+        /// is here because three board games in a row is not evidence that the vocabulary is
+        /// general, and because the state of a roster is the shape collections were added for.
+        /// </remarks>
+        public RuleContext Roster { get; }
 
         /// <summary>Reads a rule set document the build copied beside the tests.</summary>
         /// <param name="name">The file name.</param>

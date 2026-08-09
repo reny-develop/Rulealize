@@ -20,9 +20,10 @@ namespace Rulealize
     /// </para>
     /// <para>
     /// Only a value with no JSON form of its own — a coordinate, a direction, anything
-    /// opaque — is written as text, and comes back as text. That is what the canonical text
-    /// form in the value model is for, and why a plugin whose values can be input arguments
-    /// has to accept both its own type and that text.
+    /// opaque — is written as text. That is what the canonical text form in the value model
+    /// is for. Coming back it is matched against the domain by that same text and the
+    /// domain's value is what gets bound, so a rule reading the argument sees the coordinate
+    /// and not its spelling, whichever way the move arrived.
     /// </para>
     /// <para>
     /// <see cref="Arguments"/> is the readable view, everything rendered as text. What

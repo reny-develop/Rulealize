@@ -7,10 +7,18 @@ namespace Rulealize
     /// Thrown when an input is applied to a state whose rules do not allow it.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// Distinct from a malformed document and from an evaluation fault: the document was
     /// well formed and everything evaluated cleanly, and the answer was that this move is
     /// not available. Callers that drive a game loop want to tell those apart, because only
     /// this one is the user's fault.
+    /// </para>
+    /// <para>
+    /// Raised for either way a rule set can say no — an argument that is not among the
+    /// values its parameter's domain allows, or a guard that rejects the input. They are not
+    /// distinguished, because from the caller's side they are the same answer: this is not
+    /// one of the inputs available here.
+    /// </para>
     /// </remarks>
     public class IllegalInputException : Exception
     {

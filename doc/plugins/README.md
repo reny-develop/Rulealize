@@ -1,7 +1,10 @@
 # プラグイン仕様書
 
 リバーシの RuleSet（[../dsl-example-reversi.md](../dsl-example-reversi.md)）を
-記述するために必要なプラグインの詳細仕様。
+記述するために必要なプラグインの詳細仕様。11 番目の Tuple と Sequence / Grid の
+1.1 は[チェス](../dsl-example-chess.md)が、12 番目の Record と `type.list` /
+Sequence 1.2 は[将棋](../dsl-example-shogi.md)が足りないと示したもの
+（→ [コレクション設計案](../collections.md)）。
 
 全プラグインが [値モデルとノード種別](../value-model.md) を前提とする。
 先にそちらを読むこと。
@@ -18,6 +21,8 @@
 | [Sequence](Sequence.md) | `seq` | 列の生成・変換・集約 |
 | [State](State.md) | `state` | 状態の読み取りと書き込み |
 | [Grid](Grid.md) | `grid` | 二次元盤面・座標・方向 |
+| [Tuple](Tuple.md) | `tuple` | 正規テキストを持つ複合値 |
+| [Record](Record.md) | `rec` | 状態のレコードと、計算されたキーでの読み書き |
 
 ## 共通事項
 
