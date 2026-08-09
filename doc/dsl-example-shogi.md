@@ -9,7 +9,7 @@
 **破綻しなかった。予測が間違っていた。** そして将棋が実際に突きつけたのは、
 まったく別の場所だった。
 
-- 対象: [test/RuleSets/shogi.json](../test/RuleSets/shogi.json)
+- 対象: [rulesets/shogi.json](../rulesets/shogi.json)
 - 検証: [test/ShogiTests.cs](../test/ShogiTests.cs)
 
 

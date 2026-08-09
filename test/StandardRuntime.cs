@@ -2,6 +2,7 @@
 // Licensed under the Apache License, Version 2.0.
 
 using Rulealize;
+using Rulealize.Sample.Deploy;
 
 namespace Rulealize.Tests
 {
@@ -28,7 +29,34 @@ namespace Rulealize.Tests
             Chess = Runtime.CreateContext(ReadRuleSet("chess.json"));
             Shogi = Runtime.CreateContext(ReadRuleSet("shogi.json"));
             Roster = Runtime.CreateContext(ReadRuleSet("roster.json"));
+
+            // The one rule set here whose vocabulary is not entirely on disk. Its own
+            // runtime, because AddPlugin adds to the runtime it is called on and the other
+            // four have no business seeing acme.* — a context captures the operations
+            // available when it was created, and keeping them apart is what proves it.
+            DeployRuntime = new RuleRuntime()
+                .LoadPluginsFrom(PluginFolder)
+                .AddPlugin(new DeployVocabulary(StandardPolicy));
+
+            Deploy = DeployRuntime.CreateContext(ReadRuleSet("deploy.json"));
         }
+
+        /// <summary>Gets the policy the deploy tests are written against.</summary>
+        /// <remarks>
+        /// Built here rather than read from the sample's Policy folder, because this is the
+        /// arrangement the tests are about: the vocabulary's data is a constructor argument,
+        /// so a test can state it outright instead of arranging a file to say it. Freezing
+        /// Fridays and the whole of December is what the sample's acme.json says.
+        /// </remarks>
+        public static DeployPolicy StandardPolicy { get; } = new(
+            [DayOfWeek.Friday, DayOfWeek.Saturday, DayOfWeek.Sunday],
+            [new FreezeWindow(new DateOnly(2026, 12, 19), new DateOnly(2027, 1, 4), "year-end change freeze")],
+            new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal)
+            {
+                ["billing"] = ["ann", "bo", "cy"],
+                ["search"] = ["ann", "di"],
+                ["web"] = ["bo", "di"],
+            });
 
         /// <summary>Gets where the build put the plugin assemblies.</summary>
         public static string PluginFolder => Path.Combine(AppContext.BaseDirectory, "plugins");
@@ -66,6 +94,18 @@ namespace Rulealize.Tests
         /// general, and because the state of a roster is the shape collections were added for.
         /// </remarks>
         public RuleContext Roster { get; }
+
+        /// <summary>Gets a runtime whose vocabulary is twelve plugins and one local class.</summary>
+        public RuleRuntime DeployRuntime { get; }
+
+        /// <summary>Gets the rule set that draws on a vocabulary nobody publishes.</summary>
+        /// <remarks>
+        /// A deployment pipeline. It is here because every other rule set in this suite is
+        /// written against plugins alone, which is not the shape a project using the library
+        /// for its own rules will be in: it will have operations worth writing and not worth
+        /// packaging. This one has four of them.
+        /// </remarks>
+        public RuleContext Deploy { get; }
 
         /// <summary>Reads a rule set document the build copied beside the tests.</summary>
         /// <param name="name">The file name.</param>

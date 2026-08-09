@@ -43,7 +43,7 @@
 }
 ```
 
-[チェスの RuleSet](../../test/RuleSets/chess.json) はこの形を採り、初期局面で
+[チェスの RuleSet](../../rulesets/chess.json) はこの形を採り、初期局面で
 候補 20 個・`Evaluated` 20（[ChessTests](../../test/ChessTests.cs)）。
 
 ## 提供ノード

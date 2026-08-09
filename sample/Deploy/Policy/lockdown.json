@@ -1,0 +1,20 @@
+{
+  // The same shape, a stricter organisation: August is closed and one person is on call.
+  //
+  // Nothing in deploy.json knows this file exists. Running the sample with --policy
+  // lockdown changes which inputs are legal, and it changes the size of a parameter domain
+  // — `by` ranges over everyone in `approvers`, so a skeleton crew is a smaller candidate
+  // space and a visibly smaller `Evaluated` count.
+  "freeze": {
+    "days": ["Friday", "Saturday", "Sunday"],
+    "windows": [
+      { "from": "2026-08-01", "to": "2026-08-31", "why": "incident lockdown" }
+    ]
+  },
+
+  "approvers": {
+    "billing": ["ann"],
+    "search": ["ann"],
+    "web": ["ann"]
+  }
+}

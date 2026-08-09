@@ -1,0 +1,46 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <RootNamespace>Rulealize.Sample.Deploy</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Rulealize.csproj" />
+  </ItemGroup>
+
+  <!--
+    Builds the twelve standard plugins and drops their DLLs into a plugins folder beside the
+    executable, exactly as the other samples do. This one then adds a thirteenth vocabulary
+    that is not in that folder and never will be: DeployVocabulary is a class in this
+    project, handed to the runtime with AddPlugin. See sample/README.md.
+
+    Rulealize.Abstraction arrives transitively through the reference above, which is what
+    lets this project implement IRulealizePlugin. Nothing else about the arrangement
+    changes.
+  -->
+  <Import Project="..\..\StandardPlugins.props" />
+
+  <!-- The document the test suite compiles, not a copy of it. -->
+  <ItemGroup>
+    <RulealizeRuleSet Include="deploy" />
+  </ItemGroup>
+
+  <Import Project="..\..\RuleSets.props" />
+
+  <ItemGroup>
+    <!--
+      The organisation's tables. Not state documents and not part of the rule set: they are
+      read at startup and handed to the vocabulary's constructor.
+    -->
+    <Content Include="Policy\*.json" CopyToOutputDirectory="PreserveNewest" />
+
+    <!-- A different day, as a state document. -->
+    <Content Include="States\*.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

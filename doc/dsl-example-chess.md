@@ -10,7 +10,7 @@
 チェスの手を `from` / `to` の 2 パラメータで書けば、**どの局面でも候補は
 64 × 64 = 4096 個**になる。実際の合法手は 20〜40 個である。
 
-- 対象: [test/RuleSets/chess.json](../test/RuleSets/chess.json)
+- 対象: [rulesets/chess.json](../rulesets/chess.json)
 - 検証: [test/ChessTests.cs](../test/ChessTests.cs)
 - 結論: **書けた。コアの変更は無し。** 足りなかったのは語彙だけで、しかもその
   すべてが特定の RuleSet を参照せずに仕様を書ける汎用ノードだった。
@@ -176,7 +176,7 @@ Text だった。チェスはこれを**手の種別をタグに持たせる**�
 「**要素の種別が揃う**」ことは保証しない。チェスの手の座標は、通常手では
 `grid.coords` 由来の Opaque、キャスリングでは書き下した Text である。これは
 RuleSet 自身の作りであって入口の問題ではない。突き合わせには `branch.match`
-（正規テキストで一致を見る）を使う——[`corner` 定義](../test/RuleSets/chess.json)が
+（正規テキストで一致を見る）を使う——[`corner` 定義](../rulesets/chess.json)が
 キャスリング権の更新でこれをやっている。
 
 

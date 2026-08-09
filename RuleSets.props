@@ -1,0 +1,40 @@
+<Project>
+
+  <!--
+    The rule sets, which live in one place and are consumed from two: the test suite runs
+    them, and a sample demonstrates them.
+
+    They used to be copied into each project. That made "the sample runs the document the
+    tests pin down" a matter of discipline, and discipline is what had already slipped —
+    the copies had drifted to different line endings without anyone noticing, which is what
+    a rule nothing enforces looks like a year in.
+
+    A project lists what it needs and imports this file:
+
+      <ItemGroup>
+        <RulealizeRuleSet Include="reversi" />
+      </ItemGroup>
+      <Import Project="..\..\RuleSets.props" />
+
+    The link keeps the output layout the hosts already expect, so each still reads its
+    documents from a RuleSets folder beside the executable.
+  -->
+
+  <PropertyGroup>
+    <RuleSetFolder Condition="'$(RuleSetFolder)' == ''">$(MSBuildThisFileDirectory)rulesets\</RuleSetFolder>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Content
+      Include="@(RulealizeRuleSet->'$(RuleSetFolder)%(Identity).json')"
+      Link="RuleSets\%(Filename)%(Extension)"
+      CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <Target Name="CheckRuleSets" BeforeTargets="PrepareForBuild">
+    <Error
+      Condition="!Exists('$(RuleSetFolder)%(RulealizeRuleSet.Identity).json')"
+      Text="The rule set '%(RulealizeRuleSet.Identity)' was not found in $(RuleSetFolder)." />
+  </Target>
+
+</Project>

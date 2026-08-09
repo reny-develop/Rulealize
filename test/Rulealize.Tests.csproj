@@ -20,13 +20,36 @@
 
   <ItemGroup>
     <ProjectReference Include="..\src\Rulealize.csproj" />
+
+    <!--
+      deploy.json is written against a vocabulary that is not a plugin assembly and never
+      will be: it is a class in the Deploy sample, handed to a runtime with AddPlugin. A
+      compile-time reference is exactly right here and would be wrong for the twelve — the
+      whole point of an in-process vocabulary is that the host names its type.
+    -->
+    <ProjectReference Include="..\sample\Deploy\Rulealize.Sample.Deploy.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The sample's policy documents, so the reader that parses them is exercised too. -->
+    <Content Include="..\sample\Deploy\Policy\*.json" Link="Policy\%(Filename)%(Extension)"
+             CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <!-- Builds the standard plugins and drops their DLLs into a plugins folder. -->
   <Import Project="..\StandardPlugins.props" />
 
+  <!-- Every rule set the repository ships. A document nothing here compiles is a document
+       that is only claimed to work. -->
   <ItemGroup>
-    <Content Include="RuleSets\*.json" CopyToOutputDirectory="PreserveNewest" />
+    <RulealizeRuleSet Include="reversi" />
+    <RulealizeRuleSet Include="chess" />
+    <RulealizeRuleSet Include="shogi" />
+    <RulealizeRuleSet Include="roster" />
+    <RulealizeRuleSet Include="deploy" />
+    <RulealizeRuleSet Include="kitchen-sink" />
   </ItemGroup>
+
+  <Import Project="..\RuleSets.props" />
 
 </Project>

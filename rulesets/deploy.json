@@ -1,0 +1,617 @@
+{
+  "$schema": "rulealize/ruleset/v1",
+  "id": "deploy",
+  "version": "1.0.0",
+
+  // A deployment pipeline: services move a version up through dev, staging and prod, and
+  // the question a caller asks is "what may I ship right now".
+  //
+  // This is the one rule set in the repository that draws on a vocabulary nobody publishes.
+  // Four of the operations it uses come from Acme.Deploy.Rules, which is a class inside the
+  // sample host rather than a plugin assembly on disk — see sample/Deploy/. The three
+  // things it asks that vocabulary for are things the standard set genuinely cannot answer:
+  //
+  //   acme.newer      is "2.4.0-rc.1" older than "2.4.0"? That is an algorithm, not data.
+  //                   cmp.lt would compare the text and get it backwards.
+  //   acme.frozen     is that date inside a change freeze? The freeze calendar belongs to
+  //                   the organisation, changes on its own schedule, and is not part of any
+  //                   one deployment's state.
+  //   acme.approvers  who may sign off on this service? Same again — an ownership map.
+  //   acme.people     everyone in that map, which is where the `by` domain comes from.
+  //
+  // Note what does not come from it. The date is a state field, and acme.frozen is handed
+  // that field. An operation that read the clock itself would be quicker to write and would
+  // break the runtime: GetValidInputs evaluates a guard against every candidate in a
+  // domain, so the answer has to be the same every time it is asked.
+  //
+  // Nothing else changes. The twelve standard plugins are loaded by scanning a folder, this
+  // document names its vocabularies in `requires` exactly as the others do, and a missing
+  // one fails the same way.
+
+  "requires": [
+    { "plugin": "Rulealize.Plugin.Binding", "version": "^1.0" },
+    { "plugin": "Rulealize.Plugin.Branch", "version": "^1.0" },
+    { "plugin": "Rulealize.Plugin.Definition", "version": "^1.0" },
+    { "plugin": "Rulealize.Plugin.Logic", "version": "^1.0" },
+    { "plugin": "Rulealize.Plugin.Comparison", "version": "^1.0" },
+    { "plugin": "Rulealize.Plugin.Arithmetic", "version": "^1.0" },
+    { "plugin": "Rulealize.Plugin.TypeSchema", "version": "^1.1" },
+    { "plugin": "Rulealize.Plugin.Sequence", "version": "^1.2" },
+    { "plugin": "Rulealize.Plugin.State", "version": "^1.0" },
+    { "plugin": "Rulealize.Plugin.Record", "version": "^1.0" },
+
+    // Not on any feed. It is named here for the same reason the others are: so that a
+    // runtime without it refuses this document instead of failing somewhere in the middle
+    // of a guard.
+    { "plugin": "Acme.Deploy.Rules", "version": "^1.0" }
+  ],
+
+  "state": {
+    "schema": {
+      // The version the train is heading for. Reaching it everywhere is what "shipped"
+      // means, and it is a state field because the next train wants a different number.
+      "target": { "op": "type.string", "minLength": 1 },
+
+      // The date the pipeline is being asked about. Deliberately data: see the note above.
+      "today": { "op": "type.string", "minLength": 1 },
+
+      "services": { "op": "type.list", "element": { "op": "type.string", "minLength": 1 } },
+
+      // Ranks are 0..n-1 and contiguous; promotion is always to rank+1, and `lastRank`
+      // below counts on it. `approvalsNeeded` and `freezeApplies` are per stage rather
+      // than written into the rules, so a pipeline that guards staging too is a different
+      // state document and not a different rule set.
+      "stages": {
+        "op": "type.list",
+        "element": {
+          "op": "rec.of",
+          "fields": {
+            "id": { "op": "type.string", "minLength": 1 },
+            "rank": { "op": "type.int", "min": 0 },
+            "approvalsNeeded": { "op": "type.int", "min": 0 },
+            "freezeApplies": { "op": "type.bool" }
+          }
+        }
+      },
+
+      // What CI has produced and is available to put on the first stage. One list for all
+      // services, because a release train builds every service at every version in it.
+      "building": { "op": "type.list", "element": { "op": "type.string", "minLength": 1 } },
+
+      // At most one entry per service and stage; `placed` below maintains that.
+      "deployed": {
+        "op": "type.list",
+        "element": {
+          "op": "rec.of",
+          "fields": {
+            "service": { "op": "type.string", "minLength": 1 },
+            "stage": { "op": "type.string", "minLength": 1 },
+            "version": { "op": "type.string", "minLength": 1 }
+          }
+        }
+      },
+
+      // Keyed on the artifact rather than on the stage it was sitting on when signed off,
+      // so an approval survives promotion. Approving is approving a build.
+      "approvals": {
+        "op": "type.list",
+        "element": {
+          "op": "rec.of",
+          "fields": {
+            "service": { "op": "type.string", "minLength": 1 },
+            "version": { "op": "type.string", "minLength": 1 },
+            "by": { "op": "type.string", "minLength": 1 }
+          }
+        }
+      },
+
+      "log": {
+        "op": "type.list",
+        "maxLength": 5,
+        "element": {
+          "op": "rec.of",
+          "fields": {
+            "action": { "op": "type.enum", "values": ["deploy", "promote", "approve"] },
+            "service": { "op": "type.string", "minLength": 1 },
+            "stage": { "op": "type.string", "minLength": 1 },
+            "version": { "op": "type.string", "minLength": 1 },
+
+            // Who signed, where an entry records a signature. No minLength, because the
+            // two actions that are not signatures have nobody to name — there is no actor
+            // in this rule set, so `ValidInput.Actor` is null throughout.
+            "by": { "op": "type.string" }
+          }
+        }
+      }
+    },
+
+    // A Wednesday in the middle of a release train. Search is staged and half signed off,
+    // billing has a release candidate sitting on dev, web has not started.
+    "initial": {
+      "target": "2.4.0",
+      "today": "2026-08-12",
+      "services": ["billing", "search", "web"],
+      "stages": [
+        { "id": "dev", "rank": 0, "approvalsNeeded": 0, "freezeApplies": false },
+        { "id": "staging", "rank": 1, "approvalsNeeded": 0, "freezeApplies": false },
+        { "id": "prod", "rank": 2, "approvalsNeeded": 2, "freezeApplies": true }
+      ],
+      "building": ["2.3.5", "2.4.0-rc.1", "2.4.0"],
+      "deployed": [
+        { "service": "billing", "stage": "dev", "version": "2.4.0-rc.1" },
+        { "service": "billing", "stage": "staging", "version": "2.3.4" },
+        { "service": "billing", "stage": "prod", "version": "2.3.4" },
+        { "service": "search", "stage": "dev", "version": "2.4.0" },
+        { "service": "search", "stage": "staging", "version": "2.4.0" },
+        { "service": "search", "stage": "prod", "version": "2.3.4" },
+        { "service": "web", "stage": "prod", "version": "2.3.4" }
+      ],
+      // Search is signed off and staged: the one service standing ready to go to prod, and
+      // therefore the one a change freeze can visibly stop.
+      "approvals": [
+        { "service": "search", "version": "2.4.0", "by": "ann" },
+        { "service": "search", "version": "2.4.0", "by": "di" }
+      ],
+      "log": []
+    }
+  },
+
+  "definitions": {
+
+    // ── The pipeline's shape ───────────────────────────────────────────────
+    //
+    // Lists scanned rather than records indexed, for the reason the roster gives: the ids
+    // are not known when the document is written.
+
+    "stageIds": {
+      "op": "seq.select", "source": "$stages", "as": "s",
+      "select": { "op": "rec.at", "record": "@s", "key": "id" }
+    },
+
+    "stage": {
+      "params": ["id"],
+      "body": {
+        "op": "seq.elementAt", "index": 0,
+        "source": {
+          "op": "seq.where", "source": "$stages", "as": "s",
+          "predicate": { "op": "cmp.eq", "left": { "op": "rec.at", "record": "@s", "key": "id" }, "right": "@id" }
+        }
+      }
+    },
+
+    "stageAtRank": {
+      "params": ["rank"],
+      "body": {
+        "op": "seq.elementAt", "index": 0,
+        "source": {
+          "op": "seq.where", "source": "$stages", "as": "s",
+          "predicate": { "op": "cmp.eq", "left": { "op": "rec.at", "record": "@s", "key": "rank" }, "right": "@rank" }
+        }
+      }
+    },
+
+    "lastRank": { "op": "math.sub", "left": { "op": "seq.count", "source": "$stages" }, "right": 1 },
+
+    "firstStageId": {
+      "op": "rec.at", "key": "id",
+      "record": { "op": "def.call", "def": "stageAtRank", "args": { "rank": 0 } }
+    },
+
+    "lastStageId": {
+      "op": "rec.at", "key": "id",
+      "record": { "op": "def.call", "def": "stageAtRank", "args": { "rank": "#lastRank" } }
+    },
+
+    // The stage a promotion into `to` draws from. Null when `to` is the first stage, which
+    // is what makes `promote` refuse it — getting a build onto rank 0 is `deploy`'s job.
+    "sourceStage": {
+      "params": ["to"],
+      "body": {
+        "op": "def.call", "def": "stageAtRank",
+        "args": {
+          "rank": {
+            "op": "math.sub",
+            "left": { "op": "rec.at", "key": "rank", "record": { "op": "def.call", "def": "stage", "args": { "id": "@to" } } },
+            "right": 1
+          }
+        }
+      }
+    },
+
+    // ── Reading the pipeline ───────────────────────────────────────────────
+
+    // Null when nothing is on that stage yet, and null when `stage` is itself null —
+    // equality is null-safe, so the scan simply matches nothing. Both callers below rely
+    // on it.
+    "versionOn": {
+      "params": ["service", "stage"],
+      "body": {
+        "op": "seq.elementAt", "index": 0,
+        "source": {
+          "op": "seq.select", "as": "d",
+          "select": { "op": "rec.at", "record": "@d", "key": "version" },
+          "source": {
+            "op": "seq.where", "source": "$deployed", "as": "d",
+            "predicate": {
+              "op": "logic.and",
+              "all": [
+                { "op": "cmp.eq", "left": { "op": "rec.at", "record": "@d", "key": "service" }, "right": "@service" },
+                { "op": "cmp.eq", "left": { "op": "rec.at", "record": "@d", "key": "stage" }, "right": "@stage" }
+              ]
+            }
+          }
+        }
+      }
+    },
+
+    "approvalCount": {
+      "params": ["service", "version"],
+      "body": {
+        "op": "seq.count", "source": "$approvals", "as": "a",
+        "where": {
+          "op": "logic.and",
+          "all": [
+            { "op": "cmp.eq", "left": { "op": "rec.at", "record": "@a", "key": "service" }, "right": "@service" },
+            { "op": "cmp.eq", "left": { "op": "rec.at", "record": "@a", "key": "version" }, "right": "@version" }
+          ]
+        }
+      }
+    },
+
+    "approvedBy": {
+      "params": ["service", "version", "who"],
+      "body": {
+        "op": "seq.any", "source": "$approvals", "as": "a",
+        "predicate": {
+          "op": "logic.and",
+          "all": [
+            { "op": "cmp.eq", "left": { "op": "rec.at", "record": "@a", "key": "service" }, "right": "@service" },
+            { "op": "cmp.eq", "left": { "op": "rec.at", "record": "@a", "key": "version" }, "right": "@version" },
+            { "op": "cmp.eq", "left": { "op": "rec.at", "record": "@a", "key": "by" }, "right": "@who" }
+          ]
+        }
+      }
+    },
+
+    // ── The rules ──────────────────────────────────────────────────────────
+
+    // A build may go onto the first stage if it is an upgrade on what is already there.
+    // acme.newer is what decides that, and it is the reason 2.4.0-rc.1 does not shadow
+    // 2.4.0: text ordering puts the release candidate second.
+    "canDeploy": {
+      "params": ["service", "version"],
+      "body": {
+        "op": "acme.newer",
+        "left": "@version",
+        "right": { "op": "def.call", "def": "versionOn", "args": { "service": "@service", "stage": "#firstStageId" } }
+      }
+    },
+
+    // Everything a promotion has to satisfy, in the order it is cheapest to find out.
+    // Written once because `terminal` asks the same question of every service and stage to
+    // decide whether the pipeline has stalled.
+    "canPromote": {
+      "params": ["service", "to"],
+      "body": {
+        "op": "bind.let",
+        "bind": {
+          "toStage": { "op": "def.call", "def": "stage", "args": { "id": "@to" } },
+          "from": { "op": "def.call", "def": "sourceStage", "args": { "to": "@to" } },
+          "moving": {
+            "op": "def.call", "def": "versionOn",
+            "args": {
+              "service": "@service",
+              "stage": { "op": "rec.at", "record": { "op": "def.call", "def": "sourceStage", "args": { "to": "@to" } }, "key": "id" }
+            }
+          }
+        },
+        "in": {
+          "op": "logic.and",
+          "all": [
+            // There is a stage below this one, and something is sitting on it.
+            { "op": "logic.not", "value": { "op": "cmp.isNull", "value": "@from" } },
+            { "op": "logic.not", "value": { "op": "cmp.isNull", "value": "@moving" } },
+
+            // Forward only. An empty target counts as older than anything.
+            {
+              "op": "acme.newer",
+              "left": "@moving",
+              "right": { "op": "def.call", "def": "versionOn", "args": { "service": "@service", "stage": "@to" } }
+            },
+
+            // Signed off enough times. Trivially true where nothing is required, which is
+            // why there is no branch here.
+            {
+              "op": "cmp.gte",
+              "left": { "op": "def.call", "def": "approvalCount", "args": { "service": "@service", "version": "@moving" } },
+              "right": { "op": "rec.at", "record": "@toStage", "key": "approvalsNeeded" }
+            },
+
+            // Not into a guarded stage during a change freeze. The calendar is not in this
+            // document and not in the state; `today` is, and that is the whole arrangement.
+            {
+              "op": "logic.not",
+              "value": {
+                "op": "logic.and",
+                "all": [
+                  { "op": "rec.at", "record": "@toStage", "key": "freezeApplies" },
+                  { "op": "acme.frozen", "date": "$today" }
+                ]
+              }
+            }
+          ]
+        }
+      }
+    },
+
+    "canApprove": {
+      "params": ["service", "stage", "who"],
+      "body": {
+        "op": "bind.let",
+        "bind": {
+          "version": { "op": "def.call", "def": "versionOn", "args": { "service": "@service", "stage": "@stage" } }
+        },
+        "in": {
+          "op": "logic.and",
+          "all": [
+            { "op": "logic.not", "value": { "op": "cmp.isNull", "value": "@version" } },
+
+            // Who may sign off comes out of the ownership map, which is neither in this
+            // document nor in the state. The `by` parameter's domain is everyone in that
+            // map; this narrows it to the ones who own this service.
+            {
+              "op": "seq.any", "source": { "op": "acme.approvers", "service": "@service" }, "as": "p",
+              "predicate": { "op": "cmp.eq", "left": "@p", "right": "@who" }
+            },
+
+            // One signature each.
+            {
+              "op": "logic.not",
+              "value": {
+                "op": "def.call", "def": "approvedBy",
+                "args": { "service": "@service", "version": "@version", "who": "@who" }
+              }
+            }
+          ]
+        }
+      }
+    },
+
+    // ── Writing to the pipeline ────────────────────────────────────────────
+
+    // At most one version per service and stage: drop the old entry, add the new one.
+    "placed": {
+      "params": ["service", "stage", "version"],
+      "body": {
+        "op": "seq.concat",
+        "of": [
+          {
+            "op": "seq.where", "source": "$deployed", "as": "d",
+            "predicate": {
+              "op": "logic.not",
+              "value": {
+                "op": "logic.and",
+                "all": [
+                  { "op": "cmp.eq", "left": { "op": "rec.at", "record": "@d", "key": "service" }, "right": "@service" },
+                  { "op": "cmp.eq", "left": { "op": "rec.at", "record": "@d", "key": "stage" }, "right": "@stage" }
+                ]
+              }
+            }
+          },
+          { "op": "seq.of", "of": [{ "service": "@service", "stage": "@stage", "version": "@version" }] }
+        ]
+      }
+    },
+
+    "recent": {
+      "params": ["entry"],
+      "body": {
+        "op": "bind.let",
+        "bind": { "all": { "op": "seq.concat", "of": ["$log", { "op": "seq.of", "of": ["@entry"] }] } },
+        "in": {
+          "op": "seq.skip", "source": "@all",
+          "count": {
+            "op": "math.max",
+            "of": [0, { "op": "math.sub", "left": { "op": "seq.count", "source": "@all" }, "right": 5 }]
+          }
+        }
+      }
+    },
+
+    // ── Whether there is anything left to do ───────────────────────────────
+
+    "onTarget": {
+      "params": ["service"],
+      "body": {
+        "op": "cmp.eq",
+        "left": { "op": "def.call", "def": "versionOn", "args": { "service": "@service", "stage": "#lastStageId" } },
+        "right": "$target"
+      }
+    },
+
+    "shipped": {
+      "op": "logic.not",
+      "value": {
+        "op": "seq.any", "source": "$services", "as": "s",
+        "predicate": { "op": "logic.not", "value": { "op": "def.call", "def": "onTarget", "args": { "service": "@s" } } }
+      }
+    },
+
+    "anythingToDo": {
+      "op": "seq.any", "source": "$services", "as": "s",
+      "predicate": {
+        "op": "logic.or",
+        "any": [
+          {
+            "op": "seq.any", "source": "$building", "as": "v",
+            "predicate": { "op": "def.call", "def": "canDeploy", "args": { "service": "@s", "version": "@v" } }
+          },
+          {
+            "op": "seq.any", "source": "#stageIds", "as": "g",
+            "predicate": { "op": "def.call", "def": "canPromote", "args": { "service": "@s", "to": "@g" } }
+          },
+          {
+            "op": "seq.any", "source": "#stageIds", "as": "g",
+            "predicate": {
+              "op": "seq.any", "source": { "op": "acme.people" }, "as": "p",
+              "predicate": { "op": "def.call", "def": "canApprove", "args": { "service": "@s", "stage": "@g", "who": "@p" } }
+            }
+          }
+        ]
+      }
+    }
+  },
+
+  "inputs": {
+
+    // Put a build onto the first stage. The version domain is every build in flight, and
+    // the guard is what says which of them is an upgrade for this particular service.
+    "deploy": {
+      "params": {
+        "service": { "domain": "$services" },
+        "version": { "domain": "$building" }
+      },
+      "when": { "op": "def.call", "def": "canDeploy", "args": { "service": "@service", "version": "@version" } },
+      "effects": [
+        {
+          "op": "state.set", "path": "deployed",
+          "value": {
+            "op": "def.call", "def": "placed",
+            "args": { "service": "@service", "stage": "#firstStageId", "version": "@version" }
+          }
+        },
+        {
+          "op": "state.set", "path": "log",
+          "value": {
+            "op": "def.call", "def": "recent",
+            "args": {
+              "entry": {
+                "action": "deploy", "service": "@service", "stage": "#firstStageId",
+                "version": "@version", "by": ""
+              }
+            }
+          }
+        }
+      ]
+    },
+
+    // Move whatever is on the stage below up one. The version is not a parameter because
+    // there is nothing to choose: a promotion carries what is there.
+    "promote": {
+      "params": {
+        "service": { "domain": "$services" },
+        "to": { "domain": "#stageIds" }
+      },
+      "when": { "op": "def.call", "def": "canPromote", "args": { "service": "@service", "to": "@to" } },
+      "effects": [
+        {
+          "op": "state.set", "path": "deployed",
+          "value": {
+            "op": "def.call", "def": "placed",
+            "args": {
+              "service": "@service",
+              "stage": "@to",
+              "version": {
+                "op": "def.call", "def": "versionOn",
+                "args": {
+                  "service": "@service",
+                  "stage": { "op": "rec.at", "key": "id", "record": { "op": "def.call", "def": "sourceStage", "args": { "to": "@to" } } }
+                }
+              }
+            }
+          }
+        },
+        {
+          "op": "state.set", "path": "log",
+          "value": {
+            "op": "def.call", "def": "recent",
+            "args": {
+              "entry": {
+                "action": "promote",
+                "service": "@service",
+                "stage": "@to",
+                "by": "",
+                // Reads the state as it was when the input arrived, not the draft the effect
+                // above just wrote — so this is the version that moved, and not the one it
+                // replaced.
+                "version": {
+                  "op": "def.call", "def": "versionOn",
+                  "args": {
+                    "service": "@service",
+                    "stage": { "op": "rec.at", "key": "id", "record": { "op": "def.call", "def": "sourceStage", "args": { "to": "@to" } } }
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+
+    // Sign off on the build sitting on a stage. Recorded against the build, so the
+    // signature travels with it the rest of the way up.
+    "approve": {
+      "params": {
+        "service": { "domain": "$services" },
+        "stage": { "domain": "#stageIds" },
+        "by": { "domain": { "op": "acme.people" } }
+      },
+      "when": {
+        "op": "def.call", "def": "canApprove",
+        "args": { "service": "@service", "stage": "@stage", "who": "@by" }
+      },
+      "effects": [
+        {
+          "op": "state.set", "path": "approvals",
+          "value": {
+            "op": "seq.concat",
+            "of": [
+              "$approvals",
+              {
+                "op": "seq.of",
+                "of": [
+                  {
+                    "service": "@service",
+                    "version": { "op": "def.call", "def": "versionOn", "args": { "service": "@service", "stage": "@stage" } },
+                    "by": "@by"
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "op": "state.set", "path": "log",
+          "value": {
+            "op": "def.call", "def": "recent",
+            "args": {
+              "entry": {
+                "action": "approve",
+                "service": "@service",
+                "stage": "@stage",
+                "by": "@by",
+                "version": { "op": "def.call", "def": "versionOn", "args": { "service": "@service", "stage": "@stage" } }
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+
+  // Either the train is in, or it is not going anywhere. "blocked" is the interesting one:
+  // a pipeline where every service is signed off and staged, and the only thing standing in
+  // the way is a date in a table that this document has never seen.
+  "terminal": {
+    "when": {
+      "op": "logic.or",
+      "any": ["#shipped", { "op": "logic.not", "value": "#anythingToDo" }]
+    },
+    "result": {
+      "op": "branch.if",
+      "cond": "#shipped",
+      "then": "shipped",
+      "else": "blocked"
+    }
+  }
+}

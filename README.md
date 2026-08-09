@@ -190,6 +190,42 @@ pointing it at an application's own output folder is harmless. Two plugins claim
 namespace, or one shorthand character, are refused when they are loaded rather than when a
 rule set first touches the contested name.
 
+### Vocabulary an application keeps to itself
+
+`AddPlugin` takes an instance, so a vocabulary does not have to be an assembly on disk to
+be one. A project using this library for its own rules will have operations worth writing
+and not worth publishing, and it reaches them by implementing `IRulealizePlugin` in its own
+code:
+
+```csharp
+RuleRuntime runtime = new RuleRuntime()
+    .LoadPluginsFrom("plugins")
+    .AddPlugin(new DeployVocabulary(freezeCalendar, ownershipMap));
+```
+
+Same interface, same manifest, same namespace claim, same `requires` line in the rule set.
+What changes is the constructor: a plugin found by scanning is built through a parameterless
+one and has nowhere to receive anything, while this one can be handed a snapshot of data the
+rule set has no business carrying.
+
+Two conventions and one rule make it safe.
+
+- **Vendor-qualify the identifier and the namespace.** `Acme.Deploy.Rules` and `acme`, not
+  `Rules` and `deploy`. A private vocabulary that squats on a plain name will collide with a
+  published plugin eventually, and by then rule sets are in production.
+- **Claim no shorthand character.** There is one per plugin and only a handful that can ever
+  be used. A vocabulary with an audience of one should leave them.
+- **Operations must be pure.** `GetValidInputs` evaluates a guard once per candidate in a
+  parameter's domain, so an operation that reads a clock or a database turns a domain into a
+  query storm and answers one question two ways inside a single call. External data belongs
+  in an immutable snapshot taken before the runtime is built, or in the state document. The
+  current date is a state field; it is not something an operation goes and finds out.
+
+`requires` keeps working throughout, and that is the point of doing it this way rather than
+inventing a lighter registration path. A rule set naming `Acme.Deploy.Rules` is refused by a
+runtime without it, with the name in the message — the same failure as for a plugin that was
+not on the feed. [`sample/Deploy/`](sample/Deploy/) is the worked example.
+
 ## Building
 
 `Rulealize.Abstraction` is not on nuget.org yet, so `NuGet.config` points at a folder feed.
@@ -212,7 +248,14 @@ Grid, Tuple, Record.
 | [`src/`](src/) | the runtime |
 | [`test/`](test/) | xUnit tests — `dotnet test` |
 | [`sample/`](sample/) | one directory per sample application — see [`sample/README.md`](sample/README.md) |
+| [`rulesets/`](rulesets/) | the rule set documents, one copy of each |
 | [`doc/`](doc/) | how the design was arrived at |
+
+A rule set lives in one place and is consumed from two: the test suite compiles every
+document in `rulesets/`, and a sample links the one it demonstrates. They used to be copies
+kept in step by hand, which is why [`RuleSets.props`](RuleSets.props) now exists — "the
+sample runs the document the tests pin down" is worth more as a build fact than as a rule
+somebody remembers.
 
 Both the tests and the samples need the twelve plugins, so both import
 [`StandardPlugins.props`](StandardPlugins.props). It builds each plugin from its own
@@ -235,9 +278,11 @@ Reversi-specific vocabulary at all.
 
 What that design then had to survive is written up one subject at a time:
 [chess](doc/dsl-example-chess.md), where a move's destination depends on its origin;
-[shogi](doc/dsl-example-shogi.md), where captured pieces have to be held somewhere; and
-[a shift roster](doc/dsl-example-roster.md), which is not a game and never mentions a board.
-Each has a rule set in [`test/RuleSets/`](test/RuleSets/) and a sample that plays with it.
+[shogi](doc/dsl-example-shogi.md), where captured pieces have to be held somewhere;
+[a shift roster](doc/dsl-example-roster.md), which is not a game and never mentions a board;
+and [a deployment pipeline](doc/dsl-example-deploy.md), which is the first one whose
+vocabulary is not entirely made of plugins. Each has a rule set in
+[`rulesets/`](rulesets/) and a sample that plays with it.
 
 ## License
 

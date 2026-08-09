@@ -20,8 +20,11 @@
   -->
   <Import Project="..\..\StandardPlugins.props" />
 
+  <!-- The document the test suite compiles, not a copy of it. -->
   <ItemGroup>
-    <Content Include="RuleSets\*.json" CopyToOutputDirectory="PreserveNewest" />
+    <RulealizeRuleSet Include="shogi" />
   </ItemGroup>
+
+  <Import Project="..\..\RuleSets.props" />
 
 </Project>

@@ -62,6 +62,39 @@ namespace Rulealize
         /// <exception cref="PluginLoadException">
         /// Its identifier, its namespace, or the character it reserves is already claimed.
         /// </exception>
+        /// <remarks>
+        /// <para>
+        /// This takes an instance, which is how an application adds vocabulary of its own
+        /// without publishing it. A project using this library for its own rules will have
+        /// operations worth writing and not worth packaging; implementing
+        /// <see cref="IRulealizePlugin"/> in its own code and passing one here is the
+        /// supported way to reach them, and it is the same contract a plugin on a feed
+        /// signs — manifest, namespace claim, and a line in a rule set's <c>requires</c>.
+        /// </para>
+        /// <para>
+        /// What an instance can do that <see cref="LoadPluginsFrom"/> cannot is arrive with
+        /// something in it. A plugin discovered by scanning is built through its
+        /// parameterless constructor, so a vocabulary that answers from a calendar, a rate
+        /// table or an ownership map has nowhere to receive one; constructed here, it takes
+        /// it as an argument.
+        /// </para>
+        /// <para>
+        /// Whatever it carries must be an immutable snapshot, and every operation it
+        /// registers must be a pure function of its arguments and that snapshot.
+        /// <see cref="RuleContext.GetValidInputs(string, int)"/> evaluates a guard once per
+        /// candidate in a parameter's domain: an operation that reads a clock or a database
+        /// turns a domain into a storm of queries and answers one question two ways inside a
+        /// single call. Values that change belong in the state document — the current date
+        /// is a state field passed to an operation, not something the operation finds out.
+        /// </para>
+        /// <para>
+        /// Two conventions apply to a vocabulary that is never published. Vendor-qualify the
+        /// identifier and the namespace, so a plugin released later cannot collide with it.
+        /// And claim no reserved character: there is one per plugin and few that can ever be
+        /// used, which makes them the wrong thing for a vocabulary with one consumer to
+        /// spend.
+        /// </para>
+        /// </remarks>
         public RuleRuntime AddPlugin(IRulealizePlugin plugin)
         {
             ArgumentNullException.ThrowIfNull(plugin);

@@ -1,0 +1,14 @@
+{
+  "freeze": {
+    "days": ["Friday", "Saturday", "Sunday"],
+    "windows": [
+      { "from": "2026-12-19", "to": "2027-01-04", "why": "year-end change freeze" }
+    ]
+  },
+
+  "approvers": {
+    "billing": ["ann", "bo", "cy"],
+    "search": ["ann", "di"],
+    "web": ["bo", "di"]
+  }
+}

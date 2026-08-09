@@ -7,7 +7,7 @@
 題材はシフト表／リソース割り当て。**`grid` プラグインを意図的に一切使わない**こと
 で、DSL が盤の形をしていないかを確かめる。
 
-- 対象: [test/RuleSets/roster.json](../test/RuleSets/roster.json)
+- 対象: [rulesets/roster.json](../rulesets/roster.json)
 - 検証: [test/RosterTests.cs](../test/RosterTests.cs)（17 件）
 - 結論: **書けた。** `grid.` の出現回数は 0。
 

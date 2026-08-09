@@ -3,12 +3,14 @@
     <File Path=".editorconfig" />
     <File Path="NuGet.config" />
     <File Path="StandardPlugins.props" />
+    <File Path="RuleSets.props" />
     <File Path="README.md" />
   </Folder>
   <Project Path="src/Rulealize.csproj" />
   <Project Path="test/Rulealize.Tests.csproj" />
   <Folder Name="/sample/">
     <Project Path="sample/Chess/Rulealize.Sample.Chess.csproj" />
+    <Project Path="sample/Deploy/Rulealize.Sample.Deploy.csproj" />
     <Project Path="sample/Reversi/Rulealize.Sample.Reversi.csproj" />
     <Project Path="sample/Roster/Rulealize.Sample.Roster.csproj" />
     <Project Path="sample/Shogi/Rulealize.Sample.Shogi.csproj" />

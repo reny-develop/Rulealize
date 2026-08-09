@@ -1,12 +1,16 @@
 # Samples
 
 One directory per sample application. Each is a self-contained host: it builds the twelve
-standard plugins into a `plugins` folder beside its executable, loads them by scanning
-that folder, and compiles a rule set from its own `RuleSets` directory. None of them names
-a plugin type, so each shows the same discovery path a deployed application takes.
+standard plugins into a `plugins` folder beside its executable, loads them by scanning that
+folder, and compiles a rule set.
 
-The rule sets are the ones the test suite works on, so anything a sample does can be read
-next to the tests that pin it down and the notes in [`doc/`](../doc/).
+The first four name no plugin type at all, so each shows the same discovery path a deployed
+application takes. **Deploy** is the exception, and deliberately: twelve vocabularies found
+by scanning, and a thirteenth that is a class in the sample itself.
+
+The rule sets are not copies. Every one of them lives in [`rulesets/`](../rulesets/) and is
+linked into both the sample that demonstrates it and the test suite that pins it down, so
+anything a sample does can be read next to its tests and the notes in [`doc/`](../doc/).
 
 | | | |
 | --- | --- | --- |
@@ -14,6 +18,7 @@ next to the tests that pin it down and the notes in [`doc/`](../doc/).
 | [`Chess/`](Chess/) | chess, and `--perft` to count the legal move tree against the published numbers | `dotnet run --project sample/Chess -- --perft 3` |
 | [`Shogi/`](Shogi/) | shogi, including drops — two inputs of different shapes in one rule set | `dotnet run --project sample/Shogi -- --auto` |
 | [`Roster/`](Roster/) | a shift roster, which is not a game at all: no turn, no opponent, no board | `dotnet run --project sample/Roster -- --solve` |
+| [`Deploy/`](Deploy/) | a deployment pipeline, with four operations the host provides itself | `dotnet run --project sample/Deploy -- --auto` |
 
 Each runs interactively when given no arguments.
 
@@ -44,17 +49,42 @@ through the same rule set, because the people were never in the rule set. That d
 is easy to miss after writing three board games: a chess board really is always eight by
 eight, so baking the instance into the schema costs nothing there and everything here.
 
+**Deploy** is the one that does not get its whole vocabulary from a folder. `deploy.json`
+uses four `acme.` operations that come from `DeployVocabulary`, a class in this project,
+reaching the runtime through `AddPlugin`. The reason they are not a plugin is the
+constructor: three of them answer from the organisation's freeze calendar and ownership map,
+and a plugin discovered by scanning is built through a parameterless constructor with
+nowhere to receive either. The fourth, `acme.newer`, is an algorithm — semantic version
+precedence, which `cmp.lt` gets backwards because text ordering puts `2.4.0-rc.1` after
+`2.4.0` — and no arrangement of the standard vocabulary computes it.
+
+`--policy lockdown` and `--state friday` are the two axes, and they are worth running
+together. Neither changes a character of `deploy.json`; one is a field in the state
+document and the other is a table the rule set has never seen, and both end with everything
+staged, everything signed off, and `blocked`.
+
+What the sample does not do is let the vocabulary reach outside. Today's date is a state
+field handed to `acme.frozen` as an argument rather than a clock read, because
+`GetValidInputs` evaluates a guard once per candidate in a parameter's domain and needs the
+same answer every time. The conventions this follows are in the root
+[README](../README.md#vocabulary-an-application-keeps-to-itself).
+
 ## Adding a sample
 
-Create `sample/<Name>/` with a `Rulealize.Sample.<Name>.csproj` alongside a `RuleSets`
-directory, then add it to [`Rulealize.slnx`](../Rulealize.slnx) under the `sample` folder
-and to the table above. The project file needs three things beyond the usual:
+Create `sample/<Name>/` with a `Rulealize.Sample.<Name>.csproj`, put the rule set in
+[`rulesets/`](../rulesets/), then add the project to [`Rulealize.slnx`](../Rulealize.slnx)
+under the `sample` folder, to the table above, and to the test project's
+`RulealizeRuleSet` list. The project file needs three things beyond the usual:
 
 ```xml
 <ProjectReference Include="..\..\src\Rulealize.csproj" />
 <Import Project="..\..\StandardPlugins.props" />
-<Content Include="RuleSets\*.json" CopyToOutputDirectory="PreserveNewest" />
+
+<ItemGroup>
+  <RulealizeRuleSet Include="<name>" />
+</ItemGroup>
+<Import Project="..\..\RuleSets.props" />
 ```
 
-`StandardPlugins.props` locates the plugin repositories relative to itself, so it needs no
-adjusting for the extra directory level.
+Both props files locate what they need relative to themselves, so neither needs adjusting
+for the extra directory level.
