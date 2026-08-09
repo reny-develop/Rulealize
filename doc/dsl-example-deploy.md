@@ -8,7 +8,7 @@
 題材はデプロイパイプライン。3 サービス × 3 ステージを昇格させ、`GetValidInputs` に
 「いま何を出せるか」を答えさせる。
 
-- 対象: [rulesets/deploy.json](../rulesets/deploy.json)
+- 対象: [ruleset/deploy.json](../ruleset/deploy.json)
 - 語彙: [sample/Deploy/DeployVocabulary.cs](../sample/Deploy/DeployVocabulary.cs)（`acme` 名前空間、4 op）
 - 検証: [test/DeployTests.cs](../test/DeployTests.cs)（12 件）
 - 結論: **コア・ランタイムの変更は不要だった。** `AddPlugin` は最初から public で、
@@ -104,7 +104,7 @@ registry.AddExpression("frozen", context => new FrozenNode(_policy, context.Requ
 
 > 配布プラグインの作者より、**「ちょっとした業務ルールだから」とアプリ内に書く人**の
 > ほうがこれをやる。公式な経路として文書化する以上、この契約は
-> [プラグイン仕様書の「配布しない語彙」](plugins/README.md) と
+> [プラグイン仕様書の「配布しない語彙」](plugin/README.md) と
 > `AddPlugin` の XML doc の両方に明記した。
 
 `DeployPolicy` が不変なのも同じ理由による。ノードはコンパイル時にこのインスタンスを
@@ -177,7 +177,7 @@ RuleSetBuildException: ... Acme.Deploy.Rules ...
 
 - 4 文書 × 2 箇所 = 約 2,400 行の手動同期。改行コードが既に食い違っており、
   **コピー以降誰も機械的に比較していなかった**
-- [rulesets/](../rulesets/) に 1 つ置き、[RuleSets.props](../RuleSets.props) が
+- [ruleset/](../ruleset/) に 1 つ置き、[RuleSets.props](../RuleSets.props) が
   テストとサンプルの双方へリンクする形に変更
 
 規則自体は目的の形に言い直した：

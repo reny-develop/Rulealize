@@ -55,7 +55,7 @@ Sequence 1.2 は[将棋](../dsl-example-shogi.md)が足りないと示したも�
 
 ```csharp
 RuleRuntime runtime = new RuleRuntime()
-    .LoadPluginsFrom("plugins")
+    .LoadPluginsFrom("plugin")
     .AddPlugin(new DeployVocabulary(freezeCalendar, ownershipMap));
 ```
 

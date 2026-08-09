@@ -4,11 +4,11 @@
 using System.Collections.Immutable;
 using System.Text.Json;
 using Rulealize.Abstraction.Building;
-using Rulealize.Abstraction.Values;
+using Rulealize.Abstraction.Value;
 using Rulealize.Internal.Building;
 using Rulealize.Internal.RuleSet;
 
-namespace Rulealize.Internal.Documents
+namespace Rulealize.Internal.Document
 {
     /// <summary>Reads and writes the <c>rulealize/state/v1</c> document.</summary>
     /// <remarks>

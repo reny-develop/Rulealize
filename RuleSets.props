@@ -17,17 +17,17 @@
       <Import Project="..\..\RuleSets.props" />
 
     The link keeps the output layout the hosts already expect, so each still reads its
-    documents from a RuleSets folder beside the executable.
+    documents from a RuleSet folder beside the executable.
   -->
 
   <PropertyGroup>
-    <RuleSetFolder Condition="'$(RuleSetFolder)' == ''">$(MSBuildThisFileDirectory)rulesets\</RuleSetFolder>
+    <RuleSetFolder Condition="'$(RuleSetFolder)' == ''">$(MSBuildThisFileDirectory)ruleset\</RuleSetFolder>
   </PropertyGroup>
 
   <ItemGroup>
     <Content
       Include="@(RulealizeRuleSet->'$(RuleSetFolder)%(Identity).json')"
-      Link="RuleSets\%(Filename)%(Extension)"
+      Link="RuleSet\%(Filename)%(Extension)"
       CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 

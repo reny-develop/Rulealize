@@ -3,8 +3,8 @@
 
 using System.Collections.Immutable;
 using Rulealize.Abstraction.Building;
-using Rulealize.Abstraction.Nodes;
-using Rulealize.Abstraction.Values;
+using Rulealize.Abstraction.Node;
+using Rulealize.Abstraction.Value;
 using Rulealize.Internal.Building;
 
 namespace Rulealize.Internal.RuleSet

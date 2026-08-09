@@ -59,7 +59,7 @@ namespace Rulealize.Tests
             });
 
         /// <summary>Gets where the build put the plugin assemblies.</summary>
-        public static string PluginFolder => Path.Combine(AppContext.BaseDirectory, "plugins");
+        public static string PluginFolder => Path.Combine(AppContext.BaseDirectory, "plugin");
 
         public RuleRuntime Runtime { get; }
 
@@ -111,7 +111,7 @@ namespace Rulealize.Tests
         /// <param name="name">The file name.</param>
         /// <returns>The document.</returns>
         public static string ReadRuleSet(string name) =>
-            File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "RuleSets", name));
+            File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "RuleSet", name));
 
         /// <summary>Builds a position in which neither player can move.</summary>
         /// <remarks>

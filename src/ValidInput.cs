@@ -5,7 +5,7 @@ using System.Collections;
 using System.Collections.Immutable;
 using System.Text;
 using System.Text.Json;
-using Rulealize.Abstraction.Values;
+using Rulealize.Abstraction.Value;
 
 namespace Rulealize
 {
@@ -68,7 +68,7 @@ namespace Rulealize
             using (Utf8JsonWriter writer = new(buffer, new JsonWriterOptions { Indented = true }))
             {
                 writer.WriteStartObject();
-                writer.WriteString("$schema", Internal.Documents.InputDocument.SchemaId);
+                writer.WriteString("$schema", Internal.Document.InputDocument.SchemaId);
                 writer.WriteString("ruleSet", ruleSet);
                 writer.WriteString("input", Input);
                 writer.WritePropertyName("args");

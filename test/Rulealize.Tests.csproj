@@ -36,7 +36,7 @@
              CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
-  <!-- Builds the standard plugins and drops their DLLs into a plugins folder. -->
+  <!-- Builds the standard plugins and drops their DLLs into a plugin folder. -->
   <Import Project="..\StandardPlugins.props" />
 
   <!-- Every rule set the repository ships. A document nothing here compiles is a document

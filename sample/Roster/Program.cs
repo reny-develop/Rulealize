@@ -34,7 +34,7 @@ string? week = Named(args, "--state");
 // ── 1. Build the vocabulary ────────────────────────────────────────────────────────
 // A runtime starts with no operations at all. Everything a rule set is allowed to say
 // comes from a plugin, and plugins are found by scanning a folder for assemblies.
-string pluginFolder = Path.Combine(AppContext.BaseDirectory, "plugins");
+string pluginFolder = Path.Combine(AppContext.BaseDirectory, "plugin");
 RuleRuntime runtime = new RuleRuntime().LoadPluginsFrom(pluginFolder);
 
 Console.WriteLine($"Loaded {runtime.Plugins.Length} plugins:");
@@ -48,7 +48,7 @@ foreach (var manifest in runtime.Plugins.OrderBy(p => p.Namespace, StringCompare
 // Everything decidable from the document is decided here. What is not decidable here is
 // who the people are: that arrives with the state.
 RuleContext roster = runtime.CreateContext(
-    File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "RuleSets", "roster.json")));
+    File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "RuleSet", "roster.json")));
 
 Console.WriteLine($"\nRule set: {roster.RuleSet}   inputs: {string.Join(", ", roster.Inputs)}");
 
@@ -219,7 +219,7 @@ static string ReadWeek(string name)
 {
     string path = File.Exists(name)
         ? name
-        : Path.Combine(AppContext.BaseDirectory, "States", Path.HasExtension(name) ? name : $"{name}.json");
+        : Path.Combine(AppContext.BaseDirectory, "State", Path.HasExtension(name) ? name : $"{name}.json");
 
     return File.ReadAllText(path);
 }

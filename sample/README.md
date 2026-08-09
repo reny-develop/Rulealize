@@ -1,14 +1,14 @@
 # Samples
 
 One directory per sample application. Each is a self-contained host: it builds the twelve
-standard plugins into a `plugins` folder beside its executable, loads them by scanning that
+standard plugins into a `plugin` folder beside its executable, loads them by scanning that
 folder, and compiles a rule set.
 
 The first four name no plugin type at all, so each shows the same discovery path a deployed
 application takes. **Deploy** is the exception, and deliberately: twelve vocabularies found
 by scanning, and a thirteenth that is a class in the sample itself.
 
-The rule sets are not copies. Every one of them lives in [`rulesets/`](../rulesets/) and is
+The rule sets are not copies. Every one of them lives in [`ruleset/`](../ruleset/) and is
 linked into both the sample that demonstrates it and the test suite that pins it down, so
 anything a sample does can be read next to its tests and the notes in [`doc/`](../doc/).
 
@@ -72,7 +72,7 @@ same answer every time. The conventions this follows are in the root
 ## Adding a sample
 
 Create `sample/<Name>/` with a `Rulealize.Sample.<Name>.csproj`, put the rule set in
-[`rulesets/`](../rulesets/), then add the project to [`Rulealize.slnx`](../Rulealize.slnx)
+[`ruleset/`](../ruleset/), then add the project to [`Rulealize.slnx`](../Rulealize.slnx)
 under the `sample` folder, to the table above, and to the test project's
 `RulealizeRuleSet` list. The project file needs three things beyond the usual:
 

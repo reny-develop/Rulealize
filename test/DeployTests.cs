@@ -2,7 +2,7 @@
 // Licensed under the Apache License, Version 2.0.
 
 using Rulealize.Abstraction;
-using Rulealize.Abstraction.Plugins;
+using Rulealize.Abstraction.Plugin;
 using Rulealize.Sample.Deploy;
 
 namespace Rulealize.Tests

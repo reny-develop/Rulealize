@@ -2,9 +2,9 @@
 // Licensed under the Apache License, Version 2.0.
 
 using System.Reflection;
-using Rulealize.Abstraction.Plugins;
+using Rulealize.Abstraction.Plugin;
 
-namespace Rulealize.Internal.Plugins
+namespace Rulealize.Internal.Plugin
 {
     /// <summary>Finds the plugins in an assembly or a folder of assemblies.</summary>
     /// <remarks>

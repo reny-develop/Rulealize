@@ -3,7 +3,7 @@
 
 using System.Collections.Immutable;
 using Rulealize.Abstraction.Building;
-using Rulealize.Abstraction.Values;
+using Rulealize.Abstraction.Value;
 using Rulealize.Internal.RuleSet;
 
 namespace Rulealize.Internal.Evaluation

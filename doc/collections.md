@@ -3,11 +3,11 @@
 [将棋](dsl-example-shogi.md)が突きつけた穴への回答。`state.schema` はスカラの
 フラットなマップであり、多重集合も列も置けない。
 
-**実装済み。** [`type.list`](plugins/TypeSchema.md)（TypeSchema 1.1）、
-[`Rulealize.Plugin.Record`](plugins/Record.md)、[Sequence 1.2](plugins/Sequence.md)、
+**実装済み。** [`type.list`](plugin/TypeSchema.md)（TypeSchema 1.1）、
+[`Rulealize.Plugin.Record`](plugin/Record.md)、[Sequence 1.2](plugin/Sequence.md)、
 `SchemaNode.Normalize`（Abstraction 0.2.0）。将棋を書き直して perft は変わっていない。
 
-- 前提: [値モデル](value-model.md)、[State プラグイン](plugins/State.md)
+- 前提: [値モデル](value-model.md)、[State プラグイン](plugin/State.md)
 
 
 ## 1. いま払っているもの
@@ -29,7 +29,7 @@
 
 ## 2. 設計原理 — パスはリテラルのままにする
 
-**`state.set` に `"hand.P"` を書けるようにはしない。** [State プラグイン](plugins/State.md)
+**`state.set` に `"hand.P"` を書けるようにはしない。** [State プラグイン](plugin/State.md)
 が挙げる 3 つの利点（全パスの事前検査、どのフィールドを書くかが文書から読める、
 スキーマ検証を実行時に持ち越さない）を手放すことになるためである。
 
@@ -57,7 +57,7 @@
 
 したがって、
 
-- **`type.list` は [TypeSchema](plugins/TypeSchema.md) に置く。** 式ノードを
+- **`type.list` は [TypeSchema](plugin/TypeSchema.md) に置く。** 式ノードを
   持たない純粋なスキーマノードであり、TypeSchema の性格（「提供するのは式ノード
   ではなくスキーマノード」）を壊さない。「スカラの語彙」という説明文だけ改める。
 - **レコードは新プラグイン `Rulealize.Plugin.Record`（名前空間 `rec`）。**
@@ -281,7 +281,7 @@ public virtual RuleValue Normalize(RuleValue value) => value;
    を捕まえたままになる。現在の実装では遷移のたびに文書へ直列化されるので
    実害は出ないが、**誰も書き留めていない性質に依存している。**
 2. **`maxLength` のような制約を書き込み時に検査する余地。** 現状スキーマ検証は
-   読み込み時にしか走らず（[TypeSchema の未確定事項](plugins/TypeSchema.md)）、
+   読み込み時にしか走らず（[TypeSchema の未確定事項](plugin/TypeSchema.md)）、
    壊れた状態は呼び出し側に返ってから次の読み込みで初めて露見する。
 
 既定実装は恒等なので、**既存プラグインは無改修**。`StateDraft.Commit` が書かれた

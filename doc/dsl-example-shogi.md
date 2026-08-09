@@ -9,7 +9,7 @@
 **破綻しなかった。予測が間違っていた。** そして将棋が実際に突きつけたのは、
 まったく別の場所だった。
 
-- 対象: [rulesets/shogi.json](../rulesets/shogi.json)
+- 対象: [ruleset/shogi.json](../ruleset/shogi.json)
 - 検証: [test/ShogiTests.cs](../test/ShogiTests.cs)
 
 
@@ -58,7 +58,7 @@
 **状態がコレクションを持てない。** これが本当の痛点だった。
 
 > **解決済み。** この節が[コレクション設計](collections.md)を生み、
-> [`rec.map` / `rec.update`](plugins/Record.md) になった。以下は発見時の記述で、
+> [`rec.map` / `rec.update`](plugin/Record.md) になった。以下は発見時の記述で、
 > 現在の `shogi.json` は `hand` 1 フィールドである。実測 925 行 → 880 行。
 
 ```jsonc
@@ -72,7 +72,7 @@
 
 ### 3.1 effects が 14 行 × 2 入力
 
-`state.set` の `path` はリテラルである（[State プラグイン](plugins/State.md)）。
+`state.set` の `path` はリテラルである（[State プラグイン](plugin/State.md)）。
 「駒種 K のカウンタを増やす」とは書けないので、14 個すべてを列挙する。
 
 ```jsonc
@@ -96,7 +96,7 @@
 ```
 
 14 個の静的な状態参照を、パスを計算できない代わりに `branch.match` で選ぶ。
-**動的なパスの禁止**（[State プラグイン](plugins/State.md)が挙げる 3 つの利点の
+**動的なパスの禁止**（[State プラグイン](plugin/State.md)が挙げる 3 つの利点の
 代償）が、ここで最も高くつく。
 
 ### 3.3 スキーマが不変条件を言えない

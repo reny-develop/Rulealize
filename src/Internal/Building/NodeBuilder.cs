@@ -4,10 +4,10 @@
 using System.Text.Json;
 using Rulealize.Abstraction;
 using Rulealize.Abstraction.Building;
-using Rulealize.Abstraction.Nodes;
-using Rulealize.Abstraction.Plugins;
-using Rulealize.Abstraction.Values;
-using Rulealize.Internal.Plugins;
+using Rulealize.Abstraction.Node;
+using Rulealize.Abstraction.Plugin;
+using Rulealize.Abstraction.Value;
+using Rulealize.Internal.Plugin;
 
 namespace Rulealize.Internal.Building
 {

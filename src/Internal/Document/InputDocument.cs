@@ -2,10 +2,10 @@
 // Licensed under the Apache License, Version 2.0.
 
 using System.Text.Json;
-using Rulealize.Abstraction.Values;
+using Rulealize.Abstraction.Value;
 using Rulealize.Internal.RuleSet;
 
-namespace Rulealize.Internal.Documents
+namespace Rulealize.Internal.Document
 {
     /// <summary>An input document, read.</summary>
     internal sealed record InputRequest(string Input, IReadOnlyDictionary<string, RuleValue> Arguments);

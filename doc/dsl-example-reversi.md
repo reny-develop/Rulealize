@@ -61,20 +61,20 @@ $schema / id / version / requires / state / definitions / inputs / terminal
 
 ### 2.2 一覧
 
-各プラグインの詳細仕様は [plugins/](plugins/README.md) にある。
+各プラグインの詳細仕様は [plugin/](plugin/README.md) にある。
 
 | プラグイン | 名前空間 | 提供するもの |
 | --- | --- | --- |
-| [`Rulealize.Plugin.Binding`](plugins/Binding.md) | `bind` | `let` / `local`（糖衣 `@`）— スコープ付き束縛 |
-| [`Rulealize.Plugin.Branch`](plugins/Branch.md) | `branch` | `if` / `match` — 分岐 |
-| [`Rulealize.Plugin.Definition`](plugins/Definition.md) | `def` | `ref`（糖衣 `#`）/ `call` — `definitions` の参照と適用 |
-| [`Rulealize.Plugin.Logic`](plugins/Logic.md) | `logic` | `and` / `or` / `not` / `xor` |
-| [`Rulealize.Plugin.Comparison`](plugins/Comparison.md) | `cmp` | `eq` / `ne` / `lt` / `lte` / `gt` / `gte` / `compare` / `isNull` / `coalesce` |
-| [`Rulealize.Plugin.Arithmetic`](plugins/Arithmetic.md) | `math` | `add` / `sub` / `mul` / `div` / `mod` / `min` / `max` / `abs` |
-| [`Rulealize.Plugin.TypeSchema`](plugins/TypeSchema.md) | `type` | `enum` / `int` / `bool` / `string` — `state.schema` を書くための語彙 |
-| [`Rulealize.Plugin.Sequence`](plugins/Sequence.md) | `seq` | `any` / `count` / `empty` / `takeWhile` / `elementAt` / `select` / `selectMany` / `where` |
-| [`Rulealize.Plugin.State`](plugins/State.md) | `state` | `get`（糖衣 `$`）/ `set` / `update` — 状態の読み書き |
-| [`Rulealize.Plugin.Grid`](plugins/Grid.md) | `grid` | `board` / `at` / `set` / `setMany` / `coords` / `cells` / `ray` / `directions` |
+| [`Rulealize.Plugin.Binding`](plugin/Binding.md) | `bind` | `let` / `local`（糖衣 `@`）— スコープ付き束縛 |
+| [`Rulealize.Plugin.Branch`](plugin/Branch.md) | `branch` | `if` / `match` — 分岐 |
+| [`Rulealize.Plugin.Definition`](plugin/Definition.md) | `def` | `ref`（糖衣 `#`）/ `call` — `definitions` の参照と適用 |
+| [`Rulealize.Plugin.Logic`](plugin/Logic.md) | `logic` | `and` / `or` / `not` / `xor` |
+| [`Rulealize.Plugin.Comparison`](plugin/Comparison.md) | `cmp` | `eq` / `ne` / `lt` / `lte` / `gt` / `gte` / `compare` / `isNull` / `coalesce` |
+| [`Rulealize.Plugin.Arithmetic`](plugin/Arithmetic.md) | `math` | `add` / `sub` / `mul` / `div` / `mod` / `min` / `max` / `abs` |
+| [`Rulealize.Plugin.TypeSchema`](plugin/TypeSchema.md) | `type` | `enum` / `int` / `bool` / `string` — `state.schema` を書くための語彙 |
+| [`Rulealize.Plugin.Sequence`](plugin/Sequence.md) | `seq` | `any` / `count` / `empty` / `takeWhile` / `elementAt` / `select` / `selectMany` / `where` |
+| [`Rulealize.Plugin.State`](plugin/State.md) | `state` | `get`（糖衣 `$`）/ `set` / `update` — 状態の読み書き |
+| [`Rulealize.Plugin.Grid`](plugin/Grid.md) | `grid` | `board` / `at` / `set` / `setMany` / `coords` / `cells` / `ray` / `directions` |
 
 プラグイン識別子と名前空間は 1 対 1 に対応させ、対応表はプラグイン側のマニ
 フェストが宣言する。名前空間の衝突検出はロード時に行う。

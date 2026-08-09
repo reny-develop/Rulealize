@@ -8,13 +8,13 @@
     The references are deliberately not compile-time references. ReferenceOutputAssembly
     is false, so a host cannot name a plugin type even by accident; all the reference does
     is build the plugin and hand its DLL to the copy step below, which drops it into a
-    plugins folder for the runtime to discover. That is the arrangement a real deployment
+    plugin folder for the runtime to discover. That is the arrangement a real deployment
     has, and testing against anything else would leave the discovery path unexercised.
   -->
 
   <PropertyGroup>
     <PluginRepositoryRoot Condition="'$(PluginRepositoryRoot)' == ''">$(MSBuildThisFileDirectory)..\</PluginRepositoryRoot>
-    <PluginOutputFolder Condition="'$(PluginOutputFolder)' == ''">plugins</PluginOutputFolder>
+    <PluginOutputFolder Condition="'$(PluginOutputFolder)' == ''">plugin</PluginOutputFolder>
   </PropertyGroup>
 
   <ItemGroup>

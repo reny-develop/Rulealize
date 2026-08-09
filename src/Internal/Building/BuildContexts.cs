@@ -6,7 +6,7 @@ using System.Globalization;
 using System.Text.Json;
 using Rulealize.Abstraction;
 using Rulealize.Abstraction.Building;
-using Rulealize.Abstraction.Nodes;
+using Rulealize.Abstraction.Node;
 
 namespace Rulealize.Internal.Building
 {

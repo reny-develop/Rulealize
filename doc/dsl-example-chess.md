@@ -10,7 +10,7 @@
 チェスの手を `from` / `to` の 2 パラメータで書けば、**どの局面でも候補は
 64 × 64 = 4096 個**になる。実際の合法手は 20〜40 個である。
 
-- 対象: [rulesets/chess.json](../rulesets/chess.json)
+- 対象: [ruleset/chess.json](../ruleset/chess.json)
 - 検証: [test/ChessTests.cs](../test/ChessTests.cs)
 - 結論: **書けた。コアの変更は無し。** 足りなかったのは語彙だけで、しかもその
   すべてが特定の RuleSet を参照せずに仕様を書ける汎用ノードだった。
@@ -57,10 +57,10 @@ Kiwipete（`r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq -`）
 
 | 追加 | 何のため |
 | --- | --- |
-| [`Rulealize.Plugin.Tuple`](plugins/Tuple.md)（新設） | 複合パラメータそのもの。正規テキストを持つ複合値 |
-| [`seq.of`](plugins/Sequence.md)（Sequence 1.1） | 列リテラル。ナイトの 8 オフセット |
-| [`grid.with` / `grid.withMany`](plugins/Grid.md)（Grid 1.1） | 遷移後の盤面を値として組み立てる |
-| [`grid.square`](plugins/Grid.md)（Grid 1.1） | 座標 1 つを保持する状態フィールド |
+| [`Rulealize.Plugin.Tuple`](plugin/Tuple.md)（新設） | 複合パラメータそのもの。正規テキストを持つ複合値 |
+| [`seq.of`](plugin/Sequence.md)（Sequence 1.1） | 列リテラル。ナイトの 8 オフセット |
+| [`grid.with` / `grid.withMany`](plugin/Grid.md)（Grid 1.1） | 遷移後の盤面を値として組み立てる |
+| [`grid.square`](plugin/Grid.md)（Grid 1.1） | 座標 1 つを保持する状態フィールド |
 
 `seq.of` が無かったことは、Sequence が[分解の基準 A](dsl-example-reversi.md)
 （独立ロード可能性）を自分では満たしていなかったということでもある。リバーシは
@@ -71,10 +71,10 @@ Kiwipete（`r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq -`）
 - **座標の段・筋を読むノード** — `seq.count(grid.ray(c, dir))` が端までの距離を
   返すので、ポーンの初期段（後ろが 1 マス）も成りの段（前が 0 マス）も既存語彙で
   判定できた。
-- **個別方向を作るノード**（[Grid.md の未確定事項](plugins/Grid.md)）— `dir` は
+- **個別方向を作るノード**（[Grid.md の未確定事項](plugin/Grid.md)）— `dir` は
   `"0,-1"` のような文字列リテラルで書ける。`grid.directions` の集合からしか
   方向を得られない、というのは誤りだった。
-- **持ち駒・成りの専用プラグイン**（[Grid.md](plugins/Grid.md) の想定）— 成りは
+- **持ち駒・成りの専用プラグイン**（[Grid.md](plugin/Grid.md) の想定）— 成りは
   盤面の値を差し替えるだけなので不要だった。
 
 
@@ -176,7 +176,7 @@ Text だった。チェスはこれを**手の種別をタグに持たせる**�
 「**要素の種別が揃う**」ことは保証しない。チェスの手の座標は、通常手では
 `grid.coords` 由来の Opaque、キャスリングでは書き下した Text である。これは
 RuleSet 自身の作りであって入口の問題ではない。突き合わせには `branch.match`
-（正規テキストで一致を見る）を使う——[`corner` 定義](../rulesets/chess.json)が
+（正規テキストで一致を見る）を使う——[`corner` 定義](../ruleset/chess.json)が
 キャスリング権の更新でこれをやっている。
 
 

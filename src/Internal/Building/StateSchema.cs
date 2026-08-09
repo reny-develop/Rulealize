@@ -4,7 +4,7 @@
 using System.Collections.Immutable;
 using System.Diagnostics.CodeAnalysis;
 using Rulealize.Abstraction.Building;
-using Rulealize.Abstraction.Nodes;
+using Rulealize.Abstraction.Node;
 
 namespace Rulealize.Internal.Building
 {

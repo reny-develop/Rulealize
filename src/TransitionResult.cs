@@ -77,7 +77,7 @@ namespace Rulealize
             using (Utf8JsonWriter writer = new(buffer, new JsonWriterOptions { Indented = true }))
             {
                 writer.WriteStartObject();
-                writer.WriteString("$schema", Internal.Documents.StateDocument.SchemaId);
+                writer.WriteString("$schema", Internal.Document.StateDocument.SchemaId);
                 writer.WriteString("ruleSet", _ruleSet);
                 writer.WritePropertyName("data");
                 using (JsonDocument data = JsonDocument.Parse(_data))

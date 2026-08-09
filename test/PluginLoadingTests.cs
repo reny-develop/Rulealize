@@ -2,7 +2,7 @@
 // Licensed under the Apache License, Version 2.0.
 
 using Rulealize.Abstraction.Building;
-using Rulealize.Abstraction.Plugins;
+using Rulealize.Abstraction.Plugin;
 
 namespace Rulealize.Tests
 {
@@ -160,7 +160,7 @@ namespace Rulealize.Tests
 
         private sealed class StubExpander : ISugarExpander
         {
-            public Abstraction.Nodes.ExpressionNode Expand(IBuildContext context, string text) =>
+            public Abstraction.Node.ExpressionNode Expand(IBuildContext context, string text) =>
                 throw new NotSupportedException();
         }
     }

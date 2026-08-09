@@ -6,9 +6,9 @@ using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using Rulealize.Abstraction;
-using Rulealize.Abstraction.Nodes;
-using Rulealize.Abstraction.Values;
-using Rulealize.Internal.Documents;
+using Rulealize.Abstraction.Node;
+using Rulealize.Abstraction.Value;
+using Rulealize.Internal.Document;
 using Rulealize.Internal.Evaluation;
 using Rulealize.Internal.RuleSet;
 

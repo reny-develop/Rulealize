@@ -5,9 +5,9 @@ using System.Collections.Immutable;
 using Rulealize.Abstraction;
 using Rulealize.Abstraction.Building;
 using Rulealize.Abstraction.Evaluation;
-using Rulealize.Abstraction.Nodes;
-using Rulealize.Abstraction.Plugins;
-using Rulealize.Abstraction.Values;
+using Rulealize.Abstraction.Node;
+using Rulealize.Abstraction.Plugin;
+using Rulealize.Abstraction.Value;
 
 namespace Rulealize.Sample.Deploy
 {

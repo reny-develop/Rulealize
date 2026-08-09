@@ -3,9 +3,9 @@
 
 using System.Collections.Immutable;
 using Rulealize.Abstraction.Building;
-using Rulealize.Abstraction.Plugins;
+using Rulealize.Abstraction.Plugin;
 
-namespace Rulealize.Internal.Plugins
+namespace Rulealize.Internal.Plugin
 {
     /// <summary>Everything the loaded plugins between them provide.</summary>
     /// <remarks>

@@ -14,7 +14,7 @@
   </ItemGroup>
 
   <!--
-    Builds the twelve standard plugins and drops their DLLs into a plugins folder beside the
+    Builds the twelve standard plugins and drops their DLLs into a plugin folder beside the
     executable, exactly as the other samples do. This one then adds a thirteenth vocabulary
     that is not in that folder and never will be: DeployVocabulary is a class in this
     project, handed to the runtime with AddPlugin. See sample/README.md.
@@ -40,7 +40,7 @@
     <Content Include="Policy\*.json" CopyToOutputDirectory="PreserveNewest" />
 
     <!-- A different day, as a state document. -->
-    <Content Include="States\*.json" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="State\*.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

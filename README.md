@@ -7,7 +7,7 @@ and lists what is legal from here. What a rule set is allowed to say is decided 
 which plugins are loaded — the core provides no operations at all, not even booleans.
 
 ```csharp
-RuleRuntime runtime = new RuleRuntime().LoadPluginsFrom("plugins");
+RuleRuntime runtime = new RuleRuntime().LoadPluginsFrom("plugin");
 
 RuleContext reversi = runtime.CreateContext(File.ReadAllText("reversi.json"));
 
@@ -199,7 +199,7 @@ code:
 
 ```csharp
 RuleRuntime runtime = new RuleRuntime()
-    .LoadPluginsFrom("plugins")
+    .LoadPluginsFrom("plugin")
     .AddPlugin(new DeployVocabulary(freezeCalendar, ownershipMap));
 ```
 
@@ -248,18 +248,18 @@ Grid, Tuple, Record.
 | [`src/`](src/) | the runtime |
 | [`test/`](test/) | xUnit tests — `dotnet test` |
 | [`sample/`](sample/) | one directory per sample application — see [`sample/README.md`](sample/README.md) |
-| [`rulesets/`](rulesets/) | the rule set documents, one copy of each |
+| [`ruleset/`](ruleset/) | the rule set documents, one copy of each |
 | [`doc/`](doc/) | how the design was arrived at |
 
 A rule set lives in one place and is consumed from two: the test suite compiles every
-document in `rulesets/`, and a sample links the one it demonstrates. They used to be copies
+document in `ruleset/`, and a sample links the one it demonstrates. They used to be copies
 kept in step by hand, which is why [`RuleSets.props`](RuleSets.props) now exists — "the
 sample runs the document the tests pin down" is worth more as a build fact than as a rule
 somebody remembers.
 
 Both the tests and the samples need the twelve plugins, so both import
 [`StandardPlugins.props`](StandardPlugins.props). It builds each plugin from its own
-repository beside this one and drops the DLL into a `plugins` folder next to the
+repository beside this one and drops the DLL into a `plugin` folder next to the
 executable. The references are not compile-time references — neither project can name a
 plugin type — so what gets exercised is the same folder scan a deployed application does.
 
@@ -272,7 +272,7 @@ dotnet test -p:PluginRepositoryRoot=D:\somewhere\
 ## Design notes
 
 [`doc/`](doc/) works the design out on Reversi: the [DSL](doc/dsl-example-reversi.md), the
-[value model](doc/value-model.md), and a [specification per plugin](doc/plugins/README.md).
+[value model](doc/value-model.md), and a [specification per plugin](doc/plugin/README.md).
 Reversi is a good test of the boundary because the rule set that describes it contains no
 Reversi-specific vocabulary at all.
 
@@ -282,7 +282,7 @@ What that design then had to survive is written up one subject at a time:
 [a shift roster](doc/dsl-example-roster.md), which is not a game and never mentions a board;
 and [a deployment pipeline](doc/dsl-example-deploy.md), which is the first one whose
 vocabulary is not entirely made of plugins. Each has a rule set in
-[`rulesets/`](rulesets/) and a sample that plays with it.
+[`ruleset/`](ruleset/) and a sample that plays with it.
 
 ## License
 

@@ -2,8 +2,8 @@
 // Licensed under the Apache License, Version 2.0.
 
 using Rulealize.Abstraction.Evaluation;
-using Rulealize.Abstraction.Nodes;
-using Rulealize.Abstraction.Values;
+using Rulealize.Abstraction.Node;
+using Rulealize.Abstraction.Value;
 
 namespace Rulealize.Internal.Building
 {

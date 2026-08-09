@@ -2,7 +2,7 @@
 // Licensed under the Apache License, Version 2.0.
 
 using System.Collections.Immutable;
-using Rulealize.Abstraction.Nodes;
+using Rulealize.Abstraction.Node;
 
 namespace Rulealize.Internal.Building
 {

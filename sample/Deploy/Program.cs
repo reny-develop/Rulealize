@@ -51,7 +51,7 @@ DeployPolicy policy = DeployPolicy.Read(
 // Twelve plugins found by scanning a folder, then one that was never on disk. Both routes
 // end in the same table, and the rule set cannot tell which name came from where.
 RuleRuntime runtime = new RuleRuntime()
-    .LoadPluginsFrom(Path.Combine(AppContext.BaseDirectory, "plugins"))
+    .LoadPluginsFrom(Path.Combine(AppContext.BaseDirectory, "plugin"))
     .AddPlugin(new DeployVocabulary(policy));
 
 Console.WriteLine($"Loaded {runtime.Plugins.Length} vocabularies (policy: {policyName}):");
@@ -72,7 +72,7 @@ foreach (var manifest in runtime.Plugins.OrderBy(p => p.Namespace, StringCompare
 // Dropping the AddPlugin call above makes this line fail, naming it — a private vocabulary
 // is still a declared one.
 RuleContext pipeline = runtime.CreateContext(
-    File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "RuleSets", "deploy.json")));
+    File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "RuleSet", "deploy.json")));
 
 Console.WriteLine($"\nRule set: {pipeline.RuleSet}   inputs: {string.Join(", ", pipeline.Inputs)}");
 
@@ -205,7 +205,7 @@ static string ReadDay(string name)
 {
     string path = File.Exists(name)
         ? name
-        : Path.Combine(AppContext.BaseDirectory, "States", Path.HasExtension(name) ? name : $"{name}.json");
+        : Path.Combine(AppContext.BaseDirectory, "State", Path.HasExtension(name) ? name : $"{name}.json");
 
     return File.ReadAllText(path);
 }
@@ -222,7 +222,7 @@ static string? Named(string[] arguments, string flag)
 void Render(string stateDocument, ValidInputSet legal, TerminalStatus status)
 {
     // The same options the runtime reads documents with. A state document a person
-    // maintains is allowed comments, and States/friday.json uses them — a host that parses
+    // maintains is allowed comments, and State/friday.json uses them — a host that parses
     // one more strictly than the runtime does will accept a file and then fail to display
     // it.
     JsonDocumentOptions options = new() { CommentHandling = JsonCommentHandling.Skip, AllowTrailingCommas = true };

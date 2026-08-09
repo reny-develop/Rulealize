@@ -13,6 +13,18 @@ Rulealize follows a typical plugin architecture with the following principles:
 - Rulealize depends only on `Rulealize.Abstraction`.
 - Plugin DLLs are loaded at runtime, and the capabilities they provide are registered automatically.
 
+## Naming
+Folder names and namespaces are singular by default (`src/Internal/Document`, `doc/plugin`, `ruleset/`).
+
+Folders the build produces are folders too, and follow the same rule: the standard plugin DLLs land in `plugin` beside the executable, and the linked rule set documents in `RuleSet`. A source tree that is singular and an output tree that is not would leave the question the rule exists to remove.
+
+Plural is used only where it carries meaning the singular does not:
+
+- The name would otherwise collide with a type — `Rulealize.Internal.RuleSet` stays singular because no such type lives in it, whereas a namespace holding a `RuleSet` type would need the plural, for the same reason `System.Collections` has it.
+- A test class suffix — `ChessTests` marks a class of tests, which is what distinguishes it from a helper like `StandardRuntime` sitting in the same folder.
+
+The default is singular rather than plural because words like `Building` and `Evaluation` have no plural form, so a repository can only ever be consistent in the singular direction. Deciding once removes the per-folder question of whether the name describes a container or its contents.
+
 ## JSON DSL
 The JSON DSL is designed to define generic rules.
 

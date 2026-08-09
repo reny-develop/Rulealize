@@ -5,9 +5,9 @@ using System.Collections.Immutable;
 using System.Reflection;
 using System.Text.Json;
 using Rulealize.Abstraction;
-using Rulealize.Abstraction.Plugins;
+using Rulealize.Abstraction.Plugin;
 using Rulealize.Internal.Building;
-using Rulealize.Internal.Plugins;
+using Rulealize.Internal.Plugin;
 
 namespace Rulealize
 {
@@ -28,7 +28,7 @@ namespace Rulealize
     /// <example>
     /// <code>
     /// RuleRuntime runtime = new RuleRuntime()
-    ///     .LoadPluginsFrom("plugins");
+    ///     .LoadPluginsFrom("plugin");
     ///
     /// RuleContext reversi = runtime.CreateContext(File.ReadAllText("reversi.json"));
     /// ValidInputSet moves = reversi.GetValidInputs(reversi.InitialState, validationLimit: 128);
