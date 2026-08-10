@@ -24,6 +24,7 @@ namespace Rulealize.Tests
         public StandardRuntime()
         {
             Runtime = new RuleRuntime().LoadPluginsFrom(PluginFolder);
+            Approval = Runtime.CreateContext(ReadRuleSet("approval.json"));
             Reversi = Runtime.CreateContext(ReadRuleSet("reversi.json"));
             KitchenSink = Runtime.CreateContext(ReadRuleSet("kitchen-sink.json"));
             Chess = Runtime.CreateContext(ReadRuleSet("chess.json"));
@@ -62,6 +63,15 @@ namespace Rulealize.Tests
         public static string PluginFolder => Path.Combine(AppContext.BaseDirectory, "plugin");
 
         public RuleRuntime Runtime { get; }
+
+        /// <summary>Gets the rule set the README walks a reader through.</summary>
+        /// <remarks>
+        /// The smallest one here, and the only one whose audience is somebody who has not
+        /// decided to use the library yet. It is pinned down like the rest because a
+        /// document quoted in a README is a document that has to keep working, and the one
+        /// most likely to be read is the worst one to let rot.
+        /// </remarks>
+        public RuleContext Approval { get; }
 
         /// <summary>Gets the Reversi rule set, which the design was worked out on.</summary>
         public RuleContext Reversi { get; }

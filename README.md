@@ -1,137 +1,262 @@
 # Rulealize
 
-Plugin-oriented state transition and rule execution runtime driven by declarative JSON DSL.
+**Rules as a JSON document, not as code.** Rulealize compiles a declarative rule set into a
+runtime that applies an input to a state, lists every input that is legal from here, and
+says whether a state is final.
 
-A rule set is a JSON document. The runtime turns it into nodes, applies inputs to states,
-and lists what is legal from here. What a rule set is allowed to say is decided entirely by
-which plugins are loaded — the core provides no operations at all, not even booleans.
+It is not a game engine. Board games are in here because they are unforgiving test cases —
+[Reversi](doc/dsl-example-reversi.md), [chess](doc/dsl-example-chess.md),
+[shogi](doc/dsl-example-shogi.md) — and so, for the opposite reason, are
+[a shift roster](doc/dsl-example-roster.md) and
+[a deployment approval pipeline](doc/dsl-example-deploy.md). The roster rule set has no
+turn, no opponent, no board, and not one `grid.` operation in it.
+
+What a rule set is allowed to say is decided entirely by which plugins are loaded. The core
+provides no operations at all, not even booleans.
+
+```console
+$ dotnet run --project sample/Reversi -- --auto
+Loaded 12 plugins:
+  bind    Rulealize.Plugin.Binding 1.0.0  shorthand '@'
+  branch  Rulealize.Plugin.Branch 1.0.0
+  cmp     Rulealize.Plugin.Comparison 1.0.0
+  grid    Rulealize.Plugin.Grid 1.1.0
+  state   Rulealize.Plugin.State 1.0.0  shorthand '$'
+  …
+
+Rule set: reversi@1.0.0   inputs: place, pass
+
+    a b c d e f g h
+ 8  - - - - - - - -  8
+ 7  - - - - - - - -  7
+ 6  - - - - . - - -  6
+ 5  - - - @ O . - -  5
+ 4  - - . O @ - - -  4
+ 3  - - - . - - - -  3
+ 2  - - - - - - - -  2
+ 1  - - - - - - - -  1
+    a b c d e f g h
+
+ @ black 2    O white 2    turn: black    passes: 0
+ legal: place(at: e6), place(at: f5), place(at: c4), place(at: d3)
+```
+
+Nothing in that sample knows the rules of Reversi. It loads a folder of plugins, compiles a
+document, asks what is legal and applies what was chosen.
+
+> **Status — pre-release.** Requires `net10.0`. Neither `Rulealize` nor
+> `Rulealize.Abstraction` is published to nuget.org yet, and each of the twelve standard
+> plugins lives in its own repository, so there is no `dotnet add package` route today.
+> [Try it](#try-it) has the clone-and-build path.
+
+## Why you might want this
+
+**It tells you what is legal.** `GetValidInputs` takes the product of an input's parameter
+domains and sifts it with that input's guard. That is the move list for a game AI, the set
+of enabled buttons on a screen, and the branching factor of a scheduling search — and none
+of it is code anybody wrote twice.
+
+**A rule set is data.** It ships, versions and diffs on its own, and the same host binary
+runs a different set of rules. The Deploy sample switches between an ordinary policy and a
+lockdown policy without recompiling, and the Roster sample runs a completely different week
+— other people, three days instead of five — through the same document, because the people
+were never in the document.
+
+**A wrong rule set is refused before it runs.** Everything decidable from the document is
+decided in `CreateContext`, with a JSON pointer to the offending node. A guard that is only
+reached by the forty-first candidate is not a place to discover a typo.
+
+**The core knows nothing about your domain.** No plugin type crosses into it, no operation
+is built in. What your rules can say is exactly what you loaded, and a rule set's `requires`
+list says which vocabularies that was.
+
+## Try it
+
+Fourteen repositories, all cloned side by side: this one, the abstraction, and the twelve
+standard plugins.
+
+```sh
+git clone https://github.com/reny-develop/Rulealize
+git clone https://github.com/reny-develop/Rulealize.Abstraction
+for p in Binding Branch Definition Logic Comparison Arithmetic \
+         TypeSchema Sequence State Grid Tuple Record; do
+  git clone https://github.com/reny-develop/Rulealize.Plugin.$p
+done
+```
+
+`Rulealize.Abstraction` is consumed as a package, and [`NuGet.config`](NuGet.config) points
+at a folder feed named `LocalNuGet` beside the repositories. Produce it, then run anything:
+
+```sh
+dotnet pack Rulealize.Abstraction/src/Rulealize.Abstraction -c Release -o LocalNuGet
+
+cd Rulealize
+dotnet test
+dotnet run --project sample/Reversi -- --auto
+dotnet run --project sample/Roster  -- --solve
+dotnet run --project sample/Deploy  -- --policy lockdown --state friday
+```
+
+Nothing here references a plugin at compile time. Both the tests and the samples import
+[`StandardPlugins.props`](StandardPlugins.props), which builds each plugin from its own
+repository and drops the DLL into a `plugin` folder beside the executable, so what runs is
+the same folder scan a deployed application does. Point `PluginRepositoryRoot` elsewhere if
+the plugin repositories are not siblings:
+
+```sh
+dotnet test -p:PluginRepositoryRoot=D:\somewhere\
+```
+
+The five samples are described in [`sample/README.md`](sample/README.md). Read Reversi
+first — it is the shortest complete host there is.
+
+## Write a rule set
+
+Not a board. An approval that has to be submitted before it can be decided, and can only be
+rejected for a reason from a fixed list.
+
+```jsonc
+{
+  "$schema": "rulealize/ruleset/v1",
+  "id": "approval",
+  "version": "1.0.0",
+
+  // The vocabularies this document draws on. Nothing else is in scope.
+  "requires": [
+    { "plugin": "Rulealize.Plugin.TypeSchema", "version": "^1.0" },
+    { "plugin": "Rulealize.Plugin.State",      "version": "^1.0" },
+    { "plugin": "Rulealize.Plugin.Comparison", "version": "^1.0" },
+    { "plugin": "Rulealize.Plugin.Logic",      "version": "^1.0" },
+    { "plugin": "Rulealize.Plugin.Sequence",   "version": "^1.0" }
+  ],
+
+  // What a state is, and where one starts. `$stage` below is shorthand for reading
+  // this field — a string expansion the State plugin registered against `$`.
+  "state": {
+    "schema": {
+      "stage":  { "op": "type.enum", "values": ["draft", "review", "approved", "rejected"] },
+      "reason": { "op": "type.enum", "values": ["scope", "cost", "timing"], "nullable": true }
+    },
+    "initial": { "stage": "draft", "reason": null }
+  },
+
+  "inputs": {
+    "submit": {
+      "when": { "op": "cmp.eq", "left": "$stage", "right": "draft" },
+      "effects": [ { "op": "state.set", "path": "stage", "value": "review" } ]
+    },
+
+    "approve": {
+      "when": { "op": "cmp.eq", "left": "$stage", "right": "review" },
+      "effects": [ { "op": "state.set", "path": "stage", "value": "approved" } ]
+    },
+
+    // A parameter is a domain and a guard. The domain says what the argument may be,
+    // and `GetValidInputs` walks it — so this one input becomes three legal moves.
+    "reject": {
+      "params": { "reason": { "domain": { "op": "seq.of", "of": ["scope", "cost", "timing"] } } },
+      "when": { "op": "cmp.eq", "left": "$stage", "right": "review" },
+      "effects": [
+        { "op": "state.set", "path": "stage",  "value": "rejected" },
+        { "op": "state.set", "path": "reason", "value": "@reason" }
+      ]
+    }
+  },
+
+  "terminal": {
+    "when": {
+      "op": "logic.or",
+      "any": [
+        { "op": "cmp.eq", "left": "$stage", "right": "approved" },
+        { "op": "cmp.eq", "left": "$stage", "right": "rejected" }
+      ]
+    },
+    "result": "$stage"
+  }
+}
+```
+
+Comments and trailing commas are accepted in every document this runtime reads. A rule set
+of any size needs somewhere to say why a rule is the way it is.
+
+## Run it
 
 ```csharp
 RuleRuntime runtime = new RuleRuntime().LoadPluginsFrom("plugin");
+RuleContext approval = runtime.CreateContext(File.ReadAllText("approval.json"));
 
-RuleContext reversi = runtime.CreateContext(File.ReadAllText("reversi.json"));
+// A context holds no position. The state travels in and out as a document, so a case can
+// be suspended, stored and resumed by keeping nothing but this string.
+string state = approval.InitialState;
 
-ValidInputSet moves = reversi.GetValidInputs(reversi.InitialState, validationLimit: 128);
-// place(at: d3), place(at: c4), place(at: f5), place(at: e6) — all black's
+while (!approval.GetTerminalStatus(state).IsTerminal)
+{
+    ValidInputSet moves = approval.GetValidInputs(state, validationLimit: 64);
+    if (moves.Count == 0)
+    {
+        break;
+    }
 
-TransitionResult next = reversi.ApplyToState(
-    moves[0].ToInputDocument(reversi.RuleSet),
-    reversi.InitialState);
+    // A move that came out of GetValidInputs goes straight back in — that round trip is
+    // why an argument is written in its own JSON form. Pick properly; moves[0] is a stub.
+    ValidInput chosen = moves[0];
+    TransitionResult result = approval.ApplyToState(
+        chosen.ToInputDocument(approval.RuleSet),
+        state);
+
+    state = result.State;
+}
 ```
 
-## What the core knows
-
-Eight reserved keys, and one more for telling a node from anything else:
+What `GetValidInputs` answers, stage by stage:
 
 ```
-$schema  id  version  requires  state  definitions  inputs  terminal        op
+draft      submit
+review     approve, reject(reason: scope), reject(reason: cost), reject(reason: timing)
+rejected   —   terminal, result: rejected
 ```
 
-Everything else in the document is vocabulary. A node is an object carrying an `op`; the
-value of `op` selects a factory from a table the plugins filled in, and the rest of the
-object is that plugin's business. The core never sees a plugin type and never learns what
-an operation does — not even that `$board` is shorthand for reading a state field, which is
-a string expansion a plugin registered against a character it reserved.
+Five candidates are evaluated every time — the three domains do not depend on the state, only
+the guards do — and one input with a domain of three reasons is three legal moves. That is
+what makes this the button list for a screen and the branch set for a search.
 
-That is why `requires` is worth reading. It lists the vocabularies a rule set draws on, and
-it can only say something because the standard set is cut finely: a rule set that needs
-`Rulealize.Plugin.Arithmetic` is one that counts something.
+The document is [`ruleset/approval.json`](ruleset/approval.json), and
+[`test/ApprovalTests.cs`](test/ApprovalTests.cs) holds it to everything this section claims.
 
-## The three kinds of node, and when things fail
+## What is checked, and when
 
-| Kind | Produces | Appears in |
-| --- | --- | --- |
-| expression | a value | guards, effect arguments, definition bodies, parameter domains, `terminal` |
-| effect | a write to the state | elements of an input's `effects` |
-| schema | the type of a state field | `state.schema` |
+Everything the document can settle on its own is settled in `CreateContext`, and the
+message carries a JSON pointer to the node:
 
-Placement is enforced while the rule set is compiled. So is everything else the document
-can settle on its own: unknown operations, missing keys, an expression where a literal
-belongs, a local nothing declared, an undefined definition, an argument list that does not
-match a definition's parameters, a cycle between definitions, a state path that is not in
-the schema.
+```
+/inputs/submit/when/left: 'stagee' is not a field of the state schema.
+/inputs/reject/effects[0]/path: 'staeg' is not a field of the state schema.
+/inputs/submit/effects[0]: 'cmp.eq' is an expression and cannot appear where an effect is expected.
+```
 
-The reason for pushing so much into `CreateContext` is `GetValidInputs`. It evaluates a
-guard against every candidate in a parameter's domain, and a fault that first appears on
-the forty-first candidate is a fault that reaches production.
+Unknown operations, missing keys, unbound locals, undefined or cyclic definitions, an
+argument list that does not match a definition's parameters, and a node used where its kind
+does not belong are all refused there too.
 
-What is left to fail at run time is short: a value of the wrong kind, an ordering
-comparison against null, division by zero, a `branch.match` with no matching case, and a
-set of effects that builds a state the schema forbids. Reading past the end of a sequence
-and reading a square off the board are not on that list — they produce null, and rule sets
-are built on their doing so.
+State documents come from outside, so they are checked against the schema on the way in,
+and every violation is reported rather than the first:
 
-## Snapshot semantics
+```
+The state does not satisfy state.schema.
+  stage: Expected one of draft, review, approved, rejected but got "shipped".
+  reason: Expected one of scope, cost, timing but got "vibes".
+```
 
-Every expression an input's effects evaluate reads the state as it was when the input
-arrived. Writes accumulate in a draft and are committed together.
-
-This is what lets Reversi's placement be written in the order a person would describe it —
-put the stone down, then flip what it captured — instead of hoisting the capture set into a
-binding to keep the second effect from rescanning a board that already has the new stone on
-it.
-
-An effect that does need to build on what an earlier effect wrote reads the field back from
-the draft. Both halves are in play at once when two effects edit one board: the second
-starts from a board that already has the new stone, while the expressions inside it still
-compute captures from the position as it stood before the move.
-
-## Definitions
-
-Held by the core as a name, a parameter list and a body; never evaluated by it. A plugin
-supplies the vocabulary for referring to one and calling one, so a rule set that defines
-nothing need not load it.
-
-Bodies are hygienic — a body sees the state, the other definitions, and its own parameters,
-and nothing from wherever it was called. Arguments are the only way in.
-
-Bodies are also pure, so the runtime caches a result against the definition, its arguments,
-and the snapshot, for as long as that snapshot lasts. Over a whole `GetValidInputs` sweep
-that matters: Reversi's capture computation is reached from a guard and again from the
-effect that follows it, with the same coordinate, for each of sixty-four candidates, and
-each evaluation walks eight rays.
-
-Recursion is refused. Termination could not be guaranteed otherwise, and with the call
-graph fixed the cost of an evaluation has an upper bound that can be estimated.
-
-## `GetValidInputs` and the limit
-
-Candidates are the product of an input's parameter domains, sifted by its guard. Reversi
-produces sixty-five — sixty-four squares and a pass — which is nothing. A shogi move
-written as `from`, `to` and a promotion flag produces thirteen thousand, which is not.
-
-`validationLimit` bounds how many guards are evaluated. `Truncated` says whether it stopped
-the search early; a truncated result is a subset of what is legal, never a wrong entry. The
-real fix for a large domain is to narrow it before the guard runs, which is a job for the
-plugin that owns the domain.
-
-The method is synchronous on purpose. It performs thousands of node evaluations per call,
-and an asynchronous signature over that path would cost more than it could buy.
-
-## Where asynchrony belongs
-
-At the boundary, and nowhere else. Evaluation is pure computation over documents that are
-already in memory, so the methods that take a `string` are synchronous — `CreateContext`,
-`ApplyToState`, `GetValidInputs`, `GetTerminalStatus`. An `Async` suffix over a body that
-can only ever return an already-completed task tells the caller something untrue about
-where it may yield.
-
-Reading a document off a stream genuinely is I/O, and that is what the asynchronous
-overloads are for: `CreateContextAsync(Stream)` and `ApplyToStateAsync(Stream, Stream)`.
-They await the read and then run the same synchronous evaluation.
-
-## Arguments have to survive the round trip
-
-`GetValidInputs` hands back moves; feeding one straight back to `ApplyToState` must
-produce the move it described. So an argument is written in its own JSON form — a number
-stays a number, a boolean stays a boolean.
-
-Only a value with no JSON form of its own is written as text: a coordinate, a direction,
-anything opaque. That is what the value model's canonical text is for, and why a plugin
-whose values can be input arguments has to accept both its own type and that text on the
-way back in.
+What is left to fail during evaluation is short — a value of the wrong kind, an ordering
+comparison against null, division by zero, a `branch.match` with no matching case, and a set
+of effects that builds a state the schema forbids. Reading past the end of a sequence and
+reading a square off the board are not on that list: they produce null, and rule sets are
+built on their doing so.
 
 ## Documents
+
+Three of them — `rulealize/ruleset/v1` above, and the two that travel per call. The core
+fixes only the frame.
 
 ```jsonc
 // rulealize/state/v1
@@ -143,28 +268,14 @@ way back in.
   "input": "place", "args": { "at": "d3" } }
 ```
 
-The frame is all the core fixes. How each field inside `data` becomes JSON is decided by
-the schema node that declared it — a board is a sparse coordinate map because a grid plugin
-says so, and changing it to a dense array would touch one file in that plugin and nothing
-else.
+How each field inside `data` becomes JSON is decided by the schema node that declared it — a
+board is a sparse coordinate map because a grid plugin says so, and changing it to a dense
+array would touch one file in that plugin and nothing else.
 
 A state document is read when the `ruleSet` it names matches on identifier and major
 version, so `reversi@1.0.0` and `reversi@1.4.2` are interchangeable and `reversi@2.0.0` is
 not. Anything a revision did to the shape of the state is the schema's business rather than
 the version's.
-
-State documents come from outside, so they are checked against the schema on the way in,
-and every violation is reported rather than the first:
-
-```
-The state does not satisfy state.schema.
-  board.z9: is not a square of a 8×8 (algebraic) board.
-  turn: Expected one of black, white but got "green".
-  passes: Expected at most 2 but got 7.
-```
-
-Comments and trailing commas are accepted in every document this runtime reads. A rule set
-of any size needs somewhere to say why a rule is the way it is.
 
 ## API
 
@@ -184,6 +295,34 @@ values that make an operation meaningless, and `PluginLoadException` for a set o
 that cannot be used together.
 
 A context is immutable and holds no position, so one serves any number of concurrent games.
+
+The methods taking a `string` are synchronous, because evaluation is pure computation over
+documents already in memory; the `Async` overloads exist for the one thing that is genuinely
+I/O, reading a document off a stream. That, along with snapshot semantics, the caching and
+purity rules for definitions, and how `validationLimit` behaves, is in
+[`doc/runtime.md`](doc/runtime.md).
+
+## What the core knows
+
+Eight reserved keys, and one more for telling a node from anything else:
+
+```
+$schema  id  version  requires  state  definitions  inputs  terminal        op
+```
+
+Everything else in the document is vocabulary. A node is an object carrying an `op`; the
+value of `op` selects a factory from a table the plugins filled in, and the rest of the
+object is that plugin's business. The core never sees a plugin type and never learns what
+an operation does — not even that `$board` is shorthand for reading a state field, which is
+a string expansion a plugin registered against a character it reserved.
+
+That is why `requires` is worth reading. It lists the vocabularies a rule set draws on, and
+it can only say something because the standard set is cut finely: a rule set that needs
+`Rulealize.Plugin.Arithmetic` is one that counts something.
+
+Nodes come in three kinds — expression, effect and schema — and where each may appear is
+enforced at compile time. [`doc/runtime.md`](doc/runtime.md#the-three-kinds-of-node-and-when-things-fail)
+has the table.
 
 ## Loading plugins
 
@@ -232,21 +371,6 @@ inventing a lighter registration path. A rule set naming `Acme.Deploy.Rules` is 
 runtime without it, with the name in the message — the same failure as for a plugin that was
 not on the feed. [`sample/Deploy/`](sample/Deploy/) is the worked example.
 
-## Building
-
-`Rulealize.Abstraction` is not on nuget.org yet, so `NuGet.config` points at a folder feed.
-Produce it from the abstraction repository first:
-
-```
-dotnet pack path\to\Rulealize.Abstraction\src\Rulealize.Abstraction -c Release -o path\to\LocalNuGet
-```
-
-with `LocalNuGet` a sibling of this repository. Then `dotnet build`.
-
-The twelve standard plugins live in their own repositories, one per vocabulary:
-Binding, Branch, Definition, Logic, Comparison, Arithmetic, TypeSchema, Sequence, State,
-Grid, Tuple, Record.
-
 ## Repository layout
 
 | | |
@@ -255,7 +379,7 @@ Grid, Tuple, Record.
 | [`test/`](test/) | xUnit tests — `dotnet test` |
 | [`sample/`](sample/) | one directory per sample application — see [`sample/README.md`](sample/README.md) |
 | [`ruleset/`](ruleset/) | the rule set documents, one copy of each |
-| [`doc/`](doc/README.md) | the DSL specification, and the record of how the design was arrived at |
+| [`doc/`](doc/README.md) | the DSL specification, the runtime's semantics, and the record of how the design was arrived at |
 
 A rule set lives in one place and is consumed from two: the test suite compiles every
 document in `ruleset/`, and a sample links the one it demonstrates. They used to be copies
@@ -263,21 +387,9 @@ kept in step by hand, which is why [`RuleSets.props`](RuleSets.props) now exists
 sample runs the document the tests pin down" is worth more as a build fact than as a rule
 somebody remembers.
 
-Both the tests and the samples need the twelve plugins, so both import
-[`StandardPlugins.props`](StandardPlugins.props). It builds each plugin from its own
-repository beside this one and drops the DLL into a `plugin` folder next to the
-executable. The references are not compile-time references — neither project can name a
-plugin type — so what gets exercised is the same folder scan a deployed application does.
-
-Point `PluginRepositoryRoot` somewhere else if the plugin repositories are not siblings:
-
-```
-dotnet test -p:PluginRepositoryRoot=D:\somewhere\
-```
-
 ## Documentation
 
-[`doc/`](doc/README.md) holds two things, and the index there keeps them apart.
+[`doc/`](doc/README.md) holds three things, and the index there keeps them apart.
 
 **The specification** is what you read to write a rule set: [the value model and the three
 kinds of node](https://github.com/reny-develop/Rulealize.Abstraction/blob/main/doc/value-model.md),
@@ -286,6 +398,10 @@ standard vocabulary](doc/plugin.md), whose twelve entries each link to a specifi
 shipped from that plugin's own repository. [Reversi](doc/dsl-example-reversi.md) is the walkthrough —
 one whole rule set read from the top — and it is a good test of the boundary because the
 document that describes the game contains no Reversi-specific vocabulary at all.
+
+**[The runtime's semantics](doc/runtime.md)** is what the library does with a rule set:
+snapshot semantics, definitions and their cache, `validationLimit`, where asynchrony
+belongs, and what has to survive the round trip out through JSON and back.
 
 **The design record** is how it came to be that way, one subject at a time, and none of it
 is required reading. [Chess](doc/dsl-example-chess.md), where a move's destination depends

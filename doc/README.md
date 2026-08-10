@@ -1,9 +1,14 @@
 # Documentation
 
-Two kinds of document live here, and they are read for different reasons.
+Three kinds of document live here, and they are read for different reasons.
 
 **The specification** says what the DSL is. It is what you read to write a rule set, and it
 is normative — where it and a design note disagree, the specification is right.
+
+**[The runtime's semantics](runtime.md)** says what this library does with a rule set once
+it has one. Also normative, and read second: the DSL can be written without it, but nothing
+about `GetValidInputs` or the order two effects see the state in can be predicted without
+it.
 
 **The design record** says how the DSL got that way. Each entry takes one subject, states
 the question it was written to answer, and reports what came of it — including the times the
@@ -20,16 +25,18 @@ Read in this order. Every plugin specification assumes the value model, and says
 | [The value model, and the three kinds of node](https://github.com/reny-develop/Rulealize.Abstraction/blob/main/doc/value-model.md) | `Rulealize.Abstraction` | the kinds of value, equality, null propagation, and what expression, effect and schema nodes may do. What every plugin assumes, and the only thing holding plugins together |
 | [The standard vocabulary](plugin.md) | here | the twelve plugins and what each provides, plus the conventions for a vocabulary you keep to yourself |
 | A specification per plugin | each plugin's own repository | what one version of one vocabulary provides, normatively. Reached from the table on the page above |
+| [The runtime's surface](runtime.md) | here | node placement, snapshot semantics, definitions and their cache, `validationLimit`, asynchrony, the input round trip |
 
-**Only the index is here.** Both of the documents every specification assumes describe types
-`Rulealize.Abstraction` defines, and a plugin's specification ships with the plugin so that
-it can change when the plugin releases and not before —
-[the reasoning](plugin.md#why-the-specifications-are-not-in-this-repository).
+**Only the index is here** for the first three. Both of the documents every specification
+assumes describe types `Rulealize.Abstraction` defines, and a plugin's specification ships
+with the plugin so that it can change when the plugin releases and not before —
+[the reasoning](plugin.md#why-the-specifications-are-not-in-this-repository). The runtime's
+surface is the exception, because it describes this repository.
 
 The shape of the three documents — RuleSet, State and InputRule — is worked out in
 [the Reversi walkthrough](dsl-example-reversi.md) below, which is the closest thing to a
-DSL tutorial here. The runtime's own surface — the API, the exceptions, snapshot semantics,
-`validationLimit` — is in [the README](../README.md).
+DSL tutorial here. Getting a rule set running at all — the smallest complete document, the
+API, the exceptions, loading plugins — is in [the README](../README.md).
 
 ## The design record
 

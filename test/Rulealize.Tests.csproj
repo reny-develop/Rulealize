@@ -42,6 +42,7 @@
   <!-- Every rule set the repository ships. A document nothing here compiles is a document
        that is only claimed to work. -->
   <ItemGroup>
+    <RulealizeRuleSet Include="approval" />
     <RulealizeRuleSet Include="reversi" />
     <RulealizeRuleSet Include="chess" />
     <RulealizeRuleSet Include="shogi" />
