@@ -111,7 +111,7 @@ So "today" arrives as the field `state.today`.
 > The person who does this is not the author of a distributed plugin. It is **the person
 > writing a quick business rule inside their application**. Documenting the route officially
 > means writing the contract down in both
-> [the plugin specifications' "a vocabulary that is not distributed"](plugin/README.md) and
+> [the plugin specifications' "a vocabulary that is not distributed"](plugin.md) and
 > the XML doc on `AddPlugin`.
 
 `DeployPolicy` is immutable for the same reason. A node captures the instance at build

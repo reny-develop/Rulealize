@@ -1,8 +1,8 @@
 # The JSON DSL under test — something that is not a game
 
 Reversi, chess and shogi are three board games. **Three samples from the same corner, which
-is not evidence of generality.** CLAUDE.md puts simulations and rule-based applications
-inside the scope, and none of that had ever been tried.
+is not evidence of generality.** The scope this DSL claims takes in simulations and
+rule-based applications generally, and none of that had ever been tried.
 
 The subject is a shift roster — assigning resources. **The `grid` plugin is deliberately
 not used at all**, to find out whether the DSL is board-shaped.
@@ -71,7 +71,7 @@ The audit trail appends and truncates in one expression.
 ```
 
 The schema's `maxLength: 5` says the same number twice. Since a transition checks what its
-effects built ([TypeSchema](plugin/TypeSchema.md)), getting the truncation wrong now fails
+effects built ([TypeSchema](https://github.com/reny-develop/Rulealize.Plugin.TypeSchema/blob/main/doc/specification.md)), getting the truncation wrong now fails
 at the transition that overran, naming the input — rather than growing quietly and being
 rejected the next time the state is read.
 
@@ -226,5 +226,5 @@ rule set: is this document written without reference to this problem instance?**
   malformed state document the normal path**, and `type.list` and `rec.of` validation
   carries most of it. What still cannot be said is a constraint like "no name appears twice
   in the roll". That is the same missing thing as invariants across fields, tracked in
-  [Record](plugin/Record.md): a predicate language for `state.schema`, and a new reserved
+  [Record](https://github.com/reny-develop/Rulealize.Plugin.Record/blob/main/doc/specification.md): a predicate language for `state.schema`, and a new reserved
   key in a document whose reserved keys are deliberately eight.

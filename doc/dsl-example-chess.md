@@ -60,10 +60,10 @@ set". Not one chess-specific node was built.
 
 | Added | For |
 | --- | --- |
-| [`Rulealize.Plugin.Tuple`](plugin/Tuple.md) (new) | the compound parameter itself — a compound value with a canonical text form |
-| [`seq.of`](plugin/Sequence.md) (Sequence 1.1) | a sequence literal, for the knight's eight offsets |
-| [`grid.with` / `grid.withMany`](plugin/Grid.md) (Grid 1.1) | building the board after a move, as a value |
-| [`grid.square`](plugin/Grid.md) (Grid 1.1) | a state field holding one coordinate |
+| [`Rulealize.Plugin.Tuple`](https://github.com/reny-develop/Rulealize.Plugin.Tuple/blob/main/doc/specification.md) (new) | the compound parameter itself — a compound value with a canonical text form |
+| [`seq.of`](https://github.com/reny-develop/Rulealize.Plugin.Sequence/blob/main/doc/specification.md) (Sequence 1.1) | a sequence literal, for the knight's eight offsets |
+| [`grid.with` / `grid.withMany`](https://github.com/reny-develop/Rulealize.Plugin.Grid/blob/main/doc/specification.md) (Grid 1.1) | building the board after a move, as a value |
+| [`grid.square`](https://github.com/reny-develop/Rulealize.Plugin.Grid/blob/main/doc/specification.md) (Grid 1.1) | a state field holding one coordinate |
 
 That `seq.of` was missing also means Sequence did not satisfy
 [criterion A, independent loadability](dsl-example-reversi.md), on its own. Reversi never
@@ -75,9 +75,9 @@ noticed because all of its sequences come out of `grid.*`.
   to the edge, which decides both a pawn's starting rank (one square behind it) and the
   promotion rank (zero in front).
 - **A node for building a single direction.** A direction has a canonical text form, so
-  `dir` is written as the string literal `"0,-1"`. [Grid](plugin/Grid.md) had recorded that
+  `dir` is written as the string literal `"0,-1"`. [Grid](https://github.com/reny-develop/Rulealize.Plugin.Grid/blob/main/doc/specification.md) had recorded that
   directions could only be obtained from `grid.directions`, and that was simply false.
-- **A dedicated plugin for promotion or captured pieces**, which [Grid](plugin/Grid.md) had
+- **A dedicated plugin for promotion or captured pieces**, which [Grid](https://github.com/reny-develop/Rulealize.Plugin.Grid/blob/main/doc/specification.md) had
   expected. Promotion replaces a value on the board, so a way to update a board as a value
   was all it took.
 
@@ -143,7 +143,7 @@ were settled along with it.
 1. **A match is equal values, or text that is an opaque value's canonical form.** Only the
    latter is the return leg of the trip [`ValidInput.ToInputDocument`](../src/ValidInput.cs)
    opens, and it goes no wider. **`"2"` still does not match `2`** — [value model
-   §2](value-model.md)'s "different kinds are unequal" holds at the boundary too.
+   §2](https://github.com/reny-develop/Rulealize.Abstraction/blob/main/doc/value-model.md)'s "different kinds are unequal" holds at the boundary too.
 2. **What gets bound is the domain's value** (→ §3.3).
 3. **Failure is `IllegalInputException`**, not distinguished from rejection by the guard.
    To the caller both mean "not a move you can make here".
@@ -192,7 +192,7 @@ them uses `branch.match`, which compares canonical text — the
 
 - **Threefold repetition** — a state is a position, and repetition is a property of the
   game record. Writable with a history in the state, and `state.schema` had no type for a
-  sequence. It has one now: [`type.list`](plugin/TypeSchema.md), which
+  sequence. It has one now: [`type.list`](https://github.com/reny-develop/Rulealize.Plugin.TypeSchema/blob/main/doc/specification.md), which
   [collections §6](collections.md) sketches the repetition rule against.
 - **Draws by insufficient material** — writable, and left out because it is a long
   enumeration of combinations and nothing else. Not a question of expressiveness.
@@ -278,7 +278,7 @@ spent on the expressiveness of the state goes further.
   a caller is measured against it, and it is a public API addition rather than a design
   question. Note that §3.2's checking cost hides behind this one, so touching this first
   makes that one relatively larger.
-- **`tuple.text`** — settled in [Tuple](plugin/Tuple.md): not built, and if it ever is, it
+- **`tuple.text`** — settled in [Tuple](https://github.com/reny-develop/Rulealize.Plugin.Tuple/blob/main/doc/specification.md): not built, and if it ever is, it
   belongs in Comparison rather than Tuple. `branch.match` covers the case at the price of
   writing the cases out.
 - **Skipping the domain check when applying** — for a caller feeding back a move it got

@@ -61,7 +61,7 @@ game's requirement**.
 **The state could not hold a collection.** That was the real pain.
 
 > **Resolved.** This section is what produced [the collections design](collections.md) and
-> became [`rec.map` and `rec.update`](plugin/Record.md). What follows describes it as
+> became [`rec.map` and `rec.update`](https://github.com/reny-develop/Rulealize.Plugin.Record/blob/main/doc/specification.md). What follows describes it as
 > found; today's `shogi.json` has one `hand` field, and went from 925 lines to 880.
 
 ```jsonc
@@ -75,7 +75,7 @@ game's requirement**.
 
 ### 3.1 Fourteen lines of effects, in two inputs
 
-`state.set`'s `path` is a literal ([the State plugin](plugin/State.md)). "Increment the
+`state.set`'s `path` is a literal ([the State plugin](https://github.com/reny-develop/Rulealize.Plugin.State/blob/main/doc/specification.md)). "Increment the
 counter for kind K" is unsayable, so all fourteen get enumerated.
 
 ```jsonc
@@ -101,7 +101,7 @@ reads `$bP`.
 
 Fourteen static state references, selected by `branch.match` because a path cannot be
 computed. **The ban on dynamic paths** — the price of the three benefits
-[the State plugin](plugin/State.md) lists — costs most right here.
+[the State plugin](https://github.com/reny-develop/Rulealize.Plugin.State/blob/main/doc/specification.md) lists — costs most right here.
 
 ### 3.3 The schema cannot state the invariant
 
@@ -204,13 +204,13 @@ spent on the expressiveness of the state goes further.**
   mixed results and the caller filters on `.Input` first, which is an ordinary
   responsibility rather than a rough edge. Roster's conclusion is the one that stands.
 - ~~**Repetition (sennichite)**~~ — was recorded as depending on whether the state could
-  hold a history. It can, since [`type.list`](plugin/TypeSchema.md). It is not written into
+  hold a history. It can, since [`type.list`](https://github.com/reny-develop/Rulealize.Plugin.TypeSchema/blob/main/doc/specification.md). It is not written into
   `shogi.json`, for the same reason chess does not write threefold repetition: it is a
   long, well-understood rule that would not test anything the rule set does not already
   test. The blocker is gone; only the writing is left.
 - **Invariants across state fields** — §3.3, and still unwritable. Becoming a record did
   not change it: `rec.map` constrains one field, and there is no predicate language for
-  `state.schema`. [Record](plugin/Record.md) records what it would take, and that both
+  `state.schema`. [Record](https://github.com/reny-develop/Rulealize.Plugin.Record/blob/main/doc/specification.md) records what it would take, and that both
   shogi and roster want it while neither is blocked by it.
 - **Asking about the whole state after a transition** — the remainder of §4, and the one
   place shogi came within a step of being blocked. Tracked in

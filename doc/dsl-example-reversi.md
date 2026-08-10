@@ -1,17 +1,28 @@
 # The JSON DSL — working the design out on Reversi
 
-The design memo that came before `Rulealize.Abstraction` had an API, written to make
-"what would be enough JSON to write" concrete by writing it. The interfaces on the
-Abstraction side were then worked backwards out of the shape settled here.
+A whole rule set, read from the top — the state schema, the definitions, the inputs and
+their domains, the terminal condition — and then the state and input documents that go with
+it. **Start here to see what the DSL looks like written down**, and take
+[the value model](https://github.com/reny-develop/Rulealize.Abstraction/blob/main/doc/value-model.md) and [the plugin specifications](plugin.md) as the
+normative account of anything this only shows in passing.
 
-- Subject: the three documents — RuleSet, State, InputRule
-- Written when `Rulealize.Abstraction` did not yet exist. It does now, and §7 records what
-  it ended up needing.
+The question it was written to answer was "what would be enough JSON to write?", made
+concrete by writing it.
+
+- Subject: [ruleset/reversi.json](../ruleset/reversi.json), and the three document kinds —
+  RuleSet, State, InputRule
+- Checked by: [test/ReversiTests.cs](../test/ReversiTests.cs)
+- Conclusion: **general vocabulary is enough.** Not one Reversi-specific operation appears
+  in the document
+
+This came before `Rulealize.Abstraction` had an API, and the interfaces on the Abstraction
+side were worked backwards out of the shape settled here — which is why §7 is written as a
+forecast and then says what became of it.
 
 
 ## 1. The structural principles
 
-The constraints in CLAUDE.md narrow the shape of the DSL a long way.
+Three constraints, fixed before any of this, narrow the shape of the DSL a long way.
 
 | Constraint | What follows for the DSL |
 | --- | --- |
@@ -60,22 +71,22 @@ set uses.** A `Rulealize.Plugin.Core` would destroy that discoverability outrigh
 
 ### 2.2 The ten
 
-Reversi needed ten. Chess later added [Tuple](plugin/Tuple.md) and shogi added
-[Record](plugin/Record.md), for the twelve that exist now; the specifications are in
-[plugin/](plugin/README.md).
+Reversi needed ten. Chess later added [Tuple](https://github.com/reny-develop/Rulealize.Plugin.Tuple/blob/main/doc/specification.md) and shogi added
+[Record](https://github.com/reny-develop/Rulealize.Plugin.Record/blob/main/doc/specification.md), for the twelve that exist now; the specifications are in
+[plugin/](plugin.md).
 
 | Plugin | Namespace | Provides |
 | --- | --- | --- |
-| [`Rulealize.Plugin.Binding`](plugin/Binding.md) | `bind` | `let` / `local` (sugar `@`) — scoped bindings |
-| [`Rulealize.Plugin.Branch`](plugin/Branch.md) | `branch` | `if` / `match` |
-| [`Rulealize.Plugin.Definition`](plugin/Definition.md) | `def` | `ref` (sugar `#`) / `call` |
-| [`Rulealize.Plugin.Logic`](plugin/Logic.md) | `logic` | `and` / `or` / `not` / `xor` |
-| [`Rulealize.Plugin.Comparison`](plugin/Comparison.md) | `cmp` | `eq` / `ne` / `lt` / `lte` / `gt` / `gte` / `compare` / `isNull` / `coalesce` |
-| [`Rulealize.Plugin.Arithmetic`](plugin/Arithmetic.md) | `math` | `add` / `sub` / `mul` / `div` / `mod` / `min` / `max` / `abs` |
-| [`Rulealize.Plugin.TypeSchema`](plugin/TypeSchema.md) | `type` | `enum` / `int` / `bool` / `string` |
-| [`Rulealize.Plugin.Sequence`](plugin/Sequence.md) | `seq` | `any` / `count` / `empty` / `takeWhile` / `elementAt` / `select` / `selectMany` / `where` |
-| [`Rulealize.Plugin.State`](plugin/State.md) | `state` | `get` (sugar `$`) / `set` / `update` |
-| [`Rulealize.Plugin.Grid`](plugin/Grid.md) | `grid` | `board` / `at` / `set` / `setMany` / `coords` / `cells` / `ray` / `directions` |
+| [`Rulealize.Plugin.Binding`](https://github.com/reny-develop/Rulealize.Plugin.Binding/blob/main/doc/specification.md) | `bind` | `let` / `local` (sugar `@`) — scoped bindings |
+| [`Rulealize.Plugin.Branch`](https://github.com/reny-develop/Rulealize.Plugin.Branch/blob/main/doc/specification.md) | `branch` | `if` / `match` |
+| [`Rulealize.Plugin.Definition`](https://github.com/reny-develop/Rulealize.Plugin.Definition/blob/main/doc/specification.md) | `def` | `ref` (sugar `#`) / `call` |
+| [`Rulealize.Plugin.Logic`](https://github.com/reny-develop/Rulealize.Plugin.Logic/blob/main/doc/specification.md) | `logic` | `and` / `or` / `not` / `xor` |
+| [`Rulealize.Plugin.Comparison`](https://github.com/reny-develop/Rulealize.Plugin.Comparison/blob/main/doc/specification.md) | `cmp` | `eq` / `ne` / `lt` / `lte` / `gt` / `gte` / `compare` / `isNull` / `coalesce` |
+| [`Rulealize.Plugin.Arithmetic`](https://github.com/reny-develop/Rulealize.Plugin.Arithmetic/blob/main/doc/specification.md) | `math` | `add` / `sub` / `mul` / `div` / `mod` / `min` / `max` / `abs` |
+| [`Rulealize.Plugin.TypeSchema`](https://github.com/reny-develop/Rulealize.Plugin.TypeSchema/blob/main/doc/specification.md) | `type` | `enum` / `int` / `bool` / `string` |
+| [`Rulealize.Plugin.Sequence`](https://github.com/reny-develop/Rulealize.Plugin.Sequence/blob/main/doc/specification.md) | `seq` | `any` / `count` / `empty` / `takeWhile` / `elementAt` / `select` / `selectMany` / `where` |
+| [`Rulealize.Plugin.State`](https://github.com/reny-develop/Rulealize.Plugin.State/blob/main/doc/specification.md) | `state` | `get` (sugar `$`) / `set` / `update` |
+| [`Rulealize.Plugin.Grid`](https://github.com/reny-develop/Rulealize.Plugin.Grid/blob/main/doc/specification.md) | `grid` | `board` / `at` / `set` / `setMany` / `coords` / `cells` / `ray` / `directions` |
 
 Identifier and namespace correspond one to one, declared by the plugin's own manifest.
 Namespace collisions are detected at load.
@@ -329,7 +340,7 @@ Candidates are the product of the parameter domains, sifted by `when`. For Rever
 64 for `place` and 1 for `pass`, so 65.
 
 Both the domain and `when` are rules, and `ApplyToState` enforces both
-([value model §4.1](value-model.md)). Reversi puts all of its rules in `when`, so for this
+([value model §4.1](https://github.com/reny-develop/Rulealize.Abstraction/blob/main/doc/value-model.md)). Reversi puts all of its rules in `when`, so for this
 rule set alone the domain does behave like a hint. Chess is the opposite — most of its
 rules are in the domain — and that is what made enforcing them necessary.
 
@@ -337,14 +348,14 @@ The limit is defined as **the most candidates whose `when` may be evaluated**, w
 `Truncated = true` when it is hit. Shogi's `move(from, to, promote)` would be 81 × 81 × 2,
 about 13k, which is what made narrowing before the guard the deciding question — and the
 answer turned out to be a compound parameter rather than a narrowing node
-([Tuple](plugin/Tuple.md), [Grid](plugin/Grid.md)).
+([Tuple](https://github.com/reny-develop/Rulealize.Plugin.Tuple/blob/main/doc/specification.md), [Grid](https://github.com/reny-develop/Rulealize.Plugin.Grid/blob/main/doc/specification.md)).
 
 
 ## 6. The design decisions this raised, and how they went
 
 ### 6.1 Interoperation rests on a shared value model — settled
 
-Split out into [the value model and the three kinds of node](value-model.md). In summary:
+Split out into [the value model and the three kinds of node](https://github.com/reny-develop/Rulealize.Abstraction/blob/main/doc/value-model.md). In summary:
 `seq.any` has to be able to consume what `grid.coords` returned, and Grid referencing
 Sequence would defeat the decomposition, so **the shared value model lives in Abstraction**.
 The minimum is `null / bool / number / text / sequence / record / opaque`, where `opaque`
@@ -375,7 +386,7 @@ onto whoever writes the rule set.
 This is where memoisation earns its place, and it was built: results are cached per
 evaluation session, keyed by the definition and its argument values. A session covers a
 whole `GetValidInputs` sweep, over which 64 candidates × 8 directions of ray walking is
-roughly halved. [Definition](plugin/Definition.md) records why the cache key needs nothing
+roughly halved. [Definition](https://github.com/reny-develop/Rulealize.Plugin.Definition/blob/main/doc/specification.md) records why the cache key needs nothing
 to identify the snapshot.
 
 ### 6.4 Explicit pass, or automatic — settled on explicit
@@ -398,7 +409,7 @@ Once they take `params` they are pure functions in all but name, and recursion f
 termination argument. Non-recursive was judged sufficient for Reversi, and it has held for
 four more rule sets — shogi needed a one-ply search into the opponent's reply and got it by
 splitting the definition in two ([shogi §4](dsl-example-shogi.md)) rather than by
-recursing. [Definition](plugin/Definition.md) has the reasoning.
+recursing. [Definition](https://github.com/reny-develop/Rulealize.Plugin.Definition/blob/main/doc/specification.md) has the reasoning.
 
 ### 6.6 Is `state.schema` required — settled on yes
 

@@ -3,12 +3,12 @@
 The answer to the hole [shogi](dsl-example-shogi.md) opened up: `state.schema` was a flat
 map of scalars, with nowhere to put a multiset or a sequence.
 
-**Built.** [`type.list`](plugin/TypeSchema.md) (TypeSchema 1.1),
-[`Rulealize.Plugin.Record`](plugin/Record.md), [Sequence 1.2](plugin/Sequence.md), and
+**Built.** [`type.list`](https://github.com/reny-develop/Rulealize.Plugin.TypeSchema/blob/main/doc/specification.md) (TypeSchema 1.1),
+[`Rulealize.Plugin.Record`](https://github.com/reny-develop/Rulealize.Plugin.Record/blob/main/doc/specification.md), [Sequence 1.2](https://github.com/reny-develop/Rulealize.Plugin.Sequence/blob/main/doc/specification.md), and
 `SchemaNode.Normalize` (Abstraction 0.2.0). Shogi was rewritten and its perft numbers did
 not move.
 
-- Assumes: [the value model](value-model.md), [the State plugin](plugin/State.md)
+- Assumes: [the value model](https://github.com/reny-develop/Rulealize.Abstraction/blob/main/doc/value-model.md), [the State plugin](https://github.com/reny-develop/Rulealize.Plugin.State/blob/main/doc/specification.md)
 
 
 ## 1. What it was costing
@@ -30,7 +30,7 @@ items of anything that is not a game were all on the far side of the same wall.
 ## 2. The principle — paths stay literal
 
 **`state.set` is not going to accept `"hand.P"`.** That gives up the three things
-[the State plugin](plugin/State.md) names: checking every path up front, reading which
+[the State plugin](https://github.com/reny-develop/Rulealize.Plugin.State/blob/main/doc/specification.md) names: checking every path up front, reading which
 field an input writes off the document, and not carrying schema validation into run time.
 
 Instead, **follow the precedent `grid.board` already set.**
@@ -56,7 +56,7 @@ owning two nodes that mean the same thing.
 
 Therefore:
 
-- **`type.list` goes in [TypeSchema](plugin/TypeSchema.md).** It is a pure schema node with
+- **`type.list` goes in [TypeSchema](https://github.com/reny-develop/Rulealize.Plugin.TypeSchema/blob/main/doc/specification.md).** It is a pure schema node with
   no expressions, which does not violate TypeSchema's character — the line that plugin
   holds is "no expression nodes", not "scalars only". Only its one-line description needed
   rewording.
@@ -278,7 +278,7 @@ public virtual RuleValue Normalize(RuleValue value) => value;
 The second aim is now met, and not by `Normalize`: a transition **settles each written
 field and then checks it against its schema**. `Normalize` does what its name says and
 nothing more, and rejecting is `Validate`'s job — see
-[TypeSchema](plugin/TypeSchema.md) for why the objection to running it was mistaken.
+[TypeSchema](https://github.com/reny-develop/Rulealize.Plugin.TypeSchema/blob/main/doc/specification.md) for why the objection to running it was mistaken.
 
 The default implementation is the identity, so **no existing plugin needed changing**.
 `StateDraft.Commit` calls it only for fields that were written; a field nobody touched came
@@ -312,7 +312,7 @@ out of a document or an earlier commit and has settled once already.
   it is a list**; [roster §4.1](dsl-example-roster.md) works the distinction out.
 - **Records cannot be input arguments**, which is correct: `Record` has no canonical text,
   so a domain returning one fails when the argument is resolved. A compound input uses
-  [`tuple`](plugin/Tuple.md), and [Tuple](plugin/Tuple.md) records why the division between
+  [`tuple`](https://github.com/reny-develop/Rulealize.Plugin.Tuple/blob/main/doc/specification.md), and [Tuple](https://github.com/reny-develop/Rulealize.Plugin.Tuple/blob/main/doc/specification.md) records why the division between
   the two compounds is a clean one rather than a gap.
 - **Comparing sequence elements is as expensive as it looked, and bounded.** `seq.any` over
   a sequence of positions compares boards repeatedly. What keeps it in hand is the same
@@ -320,4 +320,4 @@ out of a document or an earlier commit and has settled once already.
   bounds, and a hundred positions is not a problem. A rule set that wants an unbounded
   history has a bigger problem than the comparison cost.
 - **`rec.of` is where inference would start**, and inference is not being built yet;
-  [TypeSchema](plugin/TypeSchema.md) records the condition for starting.
+  [TypeSchema](https://github.com/reny-develop/Rulealize.Plugin.TypeSchema/blob/main/doc/specification.md) records the condition for starting.

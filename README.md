@@ -255,7 +255,7 @@ Grid, Tuple, Record.
 | [`test/`](test/) | xUnit tests — `dotnet test` |
 | [`sample/`](sample/) | one directory per sample application — see [`sample/README.md`](sample/README.md) |
 | [`ruleset/`](ruleset/) | the rule set documents, one copy of each |
-| [`doc/`](doc/) | how the design was arrived at |
+| [`doc/`](doc/README.md) | the DSL specification, and the record of how the design was arrived at |
 
 A rule set lives in one place and is consumed from two: the test suite compiles every
 document in `ruleset/`, and a sample links the one it demonstrates. They used to be copies
@@ -275,20 +275,26 @@ Point `PluginRepositoryRoot` somewhere else if the plugin repositories are not s
 dotnet test -p:PluginRepositoryRoot=D:\somewhere\
 ```
 
-## Design notes
+## Documentation
 
-[`doc/`](doc/) works the design out on Reversi: the [DSL](doc/dsl-example-reversi.md), the
-[value model](doc/value-model.md), and a [specification per plugin](doc/plugin/README.md).
-Reversi is a good test of the boundary because the rule set that describes it contains no
-Reversi-specific vocabulary at all.
+[`doc/`](doc/README.md) holds two things, and the index there keeps them apart.
 
-What that design then had to survive is written up one subject at a time:
-[chess](doc/dsl-example-chess.md), where a move's destination depends on its origin;
-[shogi](doc/dsl-example-shogi.md), where captured pieces have to be held somewhere;
-[a shift roster](doc/dsl-example-roster.md), which is not a game and never mentions a board;
-and [a deployment pipeline](doc/dsl-example-deploy.md), which is the first one whose
-vocabulary is not entirely made of plugins. Each has a rule set in
-[`ruleset/`](ruleset/) and a sample that plays with it.
+**The specification** is what you read to write a rule set: [the value model and the three
+kinds of node](https://github.com/reny-develop/Rulealize.Abstraction/blob/main/doc/value-model.md),
+which `Rulealize.Abstraction` carries because it is what both sides depend on, then [the
+standard vocabulary](doc/plugin.md), whose twelve entries each link to a specification
+shipped from that plugin's own repository. [Reversi](doc/dsl-example-reversi.md) is the walkthrough —
+one whole rule set read from the top — and it is a good test of the boundary because the
+document that describes the game contains no Reversi-specific vocabulary at all.
+
+**The design record** is how it came to be that way, one subject at a time, and none of it
+is required reading. [Chess](doc/dsl-example-chess.md), where a move's destination depends
+on its origin; [shogi](doc/dsl-example-shogi.md), where captured pieces have to be held
+somewhere, and [collections](doc/collections.md), which is what that turned into; [a shift
+roster](doc/dsl-example-roster.md), which is not a game and never mentions a board; and
+[a deployment pipeline](doc/dsl-example-deploy.md), which is the first one whose vocabulary
+is not entirely made of plugins. Each subject has a rule set in [`ruleset/`](ruleset/) and a
+sample that plays with it.
 
 ## License
 
