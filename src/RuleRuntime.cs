@@ -81,7 +81,7 @@ namespace Rulealize
         /// <para>
         /// Whatever it carries must be an immutable snapshot, and every operation it
         /// registers must be a pure function of its arguments and that snapshot.
-        /// <see cref="RuleContext.GetValidInputs(string, int)"/> evaluates a guard once per
+        /// <see cref="RuleContext.GetValidInputs(string, int, CancellationToken)"/> evaluates a guard once per
         /// candidate in a parameter's domain: an operation that reads a clock or a database
         /// turns a domain into a storm of queries and answers one question two ways inside a
         /// single call. Values that change belong in the state document — the current date

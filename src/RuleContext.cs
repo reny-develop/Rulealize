@@ -209,7 +209,7 @@ namespace Rulealize
                 effect.Apply(context, draft);
             }
 
-            ImmutableArray<RuleValue> next = draft.Commit();
+            ImmutableArray<RuleValue> next = draft.Commit($"inputs.{declared.Name}.effects");
             TerminalStatus terminal = EvaluateTerminal(next, cancellationToken);
             return new TransitionResult(_ruleSet.Qualified, WriteData(next), terminal.IsTerminal, terminal.Result);
         }

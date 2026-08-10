@@ -56,9 +56,10 @@ guard against every candidate in a parameter's domain, and a fault that first ap
 the forty-first candidate is a fault that reaches production.
 
 What is left to fail at run time is short: a value of the wrong kind, an ordering
-comparison against null, division by zero, a `branch.match` with no matching case. Reading
-past the end of a sequence and reading a square off the board are not on that list — they
-produce null, and rule sets are built on their doing so.
+comparison against null, division by zero, a `branch.match` with no matching case, and a
+set of effects that builds a state the schema forbids. Reading past the end of a sequence
+and reading a square off the board are not on that list — they produce null, and rule sets
+are built on their doing so.
 
 ## Snapshot semantics
 
@@ -146,6 +147,11 @@ The frame is all the core fixes. How each field inside `data` becomes JSON is de
 the schema node that declared it — a board is a sparse coordinate map because a grid plugin
 says so, and changing it to a dense array would touch one file in that plugin and nothing
 else.
+
+A state document is read when the `ruleSet` it names matches on identifier and major
+version, so `reversi@1.0.0` and `reversi@1.4.2` are interchangeable and `reversi@2.0.0` is
+not. Anything a revision did to the shape of the state is the schema's business rather than
+the version's.
 
 State documents come from outside, so they are checked against the schema on the way in,
 and every violation is reported rather than the first:

@@ -70,6 +70,48 @@ namespace Rulealize.Tests
                 StringComparison.Ordinal);
 
         [Fact]
+        public void AStateFromAnotherRevisionOfTheSameRuleSetIsRead() =>
+            // A major version is where this project says meaning changed, which makes it the
+            // only part of a version that can decide whether a state written earlier still
+            // says what it said. Everything a revision may have done to the shape of the
+            // state is the schema's business, and the schema is checked either way.
+            Assert.Equal(
+                4,
+                Reversi.GetValidInputs(
+                    """
+                    { "ruleSet": "reversi@1.4.2",
+                      "data": { "board": { "d4": "white", "e4": "black", "d5": "black", "e5": "white" },
+                                "turn": "black", "passes": 0 } }
+                    """,
+                    128).Count);
+
+        [Fact]
+        public void AStateFromAnotherMajorVersionIsRefused() =>
+            Assert.Contains(
+                "reversi@2.0.0",
+                Assert.Throws<RuleDocumentException>(
+                    () => Reversi.GetValidInputs(
+                        """
+                        { "ruleSet": "reversi@2.0.0",
+                          "data": { "board": { "d4": "white", "e4": "black", "d5": "black", "e5": "white" },
+                                    "turn": "black", "passes": 0 } }
+                        """,
+                        128)).Message,
+                StringComparison.Ordinal);
+
+        [Fact]
+        public void ARevisionThatChangedTheStateStillFailsByField() =>
+            // The point of gating identity on the major version and shape on the schema: a
+            // document from a compatible revision that is missing a field says which field,
+            // instead of collapsing into a version mismatch that names none of them.
+            Assert.Contains(
+                Assert.Throws<RuleDocumentException>(
+                    () => Reversi.GetValidInputs(
+                        """{ "ruleSet": "reversi@1.4.2", "data": { "turn": "black", "passes": 0 } }""",
+                        128)).Violations,
+                static v => v.StartsWith("board", StringComparison.Ordinal));
+
+        [Fact]
         public void MalformedJsonIsReportedAsSuch() =>
             Assert.Contains(
                 "not valid JSON",

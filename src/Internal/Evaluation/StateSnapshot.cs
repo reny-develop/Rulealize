@@ -2,9 +2,11 @@
 // Licensed under the Apache License, Version 2.0.
 
 using System.Collections.Immutable;
+using Rulealize.Abstraction;
 using Rulealize.Abstraction.Building;
 using Rulealize.Abstraction.Evaluation;
 using Rulealize.Abstraction.Value;
+using Rulealize.Internal.Building;
 
 namespace Rulealize.Internal.Evaluation
 {
@@ -57,20 +59,54 @@ namespace Rulealize.Internal.Evaluation
         }
 
         /// <summary>Produces the state the transition arrives at.</summary>
+        /// <param name="origin">Where the writes came from, for the error message.</param>
         /// <returns>Every field, written or not.</returns>
+        /// <exception cref="RuleEvaluationException">
+        /// The effects produced a field that does not satisfy its schema.
+        /// </exception>
         /// <remarks>
-        /// A field that was written is handed to its schema to settle before it is stored.
-        /// Nothing is asked of a field nobody touched: it came out of a state document or out
-        /// of an earlier commit, and either way it has been settled once already.
+        /// <para>
+        /// A field that was written is handed to its schema to settle, and then checked
+        /// against it. Nothing is asked of a field nobody touched: it came out of a state
+        /// document or out of an earlier commit, and either way it has been through this
+        /// once already.
+        /// </para>
+        /// <para>
+        /// Checking here rather than nowhere is what keeps <c>state.schema</c> a statement
+        /// about the state rather than only about documents. A rule set whose effects can
+        /// build a state the schema forbids would otherwise hand that state back to the
+        /// caller, and the fault would surface on the next read — one transition away from
+        /// the effect that caused it, with nothing left to say which one that was.
+        /// </para>
+        /// <para>
+        /// This costs one check per written field per transition, and no more. Candidate
+        /// search never gets here: <c>GetValidInputs</c> evaluates guards and builds no
+        /// draft, so the hundreds of candidates behind a domain pay nothing for this.
+        /// </para>
         /// </remarks>
-        public ImmutableArray<RuleValue> Commit()
+        public ImmutableArray<RuleValue> Commit(string origin)
         {
+            SchemaViolations violations = new();
             ImmutableArray<RuleValue>.Builder committed = ImmutableArray.CreateBuilder<RuleValue>(fields.Length);
             for (int i = 0; i < fields.Length; i++)
             {
-                committed.Add(_writes[i] is RuleValue written
-                    ? fields[i].Schema.Normalize(written)
-                    : snapshot[i]);
+                if (_writes[i] is not RuleValue written)
+                {
+                    committed.Add(snapshot[i]);
+                    continue;
+                }
+
+                RuleValue settled = fields[i].Schema.Normalize(written);
+                fields[i].Schema.Validate(settled, violations.For(fields[i].Text));
+                committed.Add(settled);
+            }
+
+            if (violations.Any)
+            {
+                throw new RuleEvaluationException(
+                    origin,
+                    $"produced a state that does not satisfy state.schema.{Environment.NewLine}  "
+                    + string.Join($"{Environment.NewLine}  ", violations.Messages));
             }
 
             return committed.MoveToImmutable();

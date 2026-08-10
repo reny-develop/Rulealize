@@ -165,12 +165,31 @@ namespace Rulealize.Tests
         [Fact]
         public void AListPastItsBoundIsRejected() =>
             Assert.Contains(
-                "at most 2 items",
+                "at most 4 items",
                 Assert.Throws<RuleDocumentException>(() => Log().GetValidInputs("""
                     { "$schema": "rulealize/state/v1", "ruleSet": "log@1.0.0",
-                      "data": { "entries": ["x", "x", "x"] } }
+                      "data": { "entries": ["x", "x", "x", "x", "x"] } }
                     """, 8)).Message,
                 StringComparison.Ordinal);
+
+        [Fact]
+        public void EffectsThatBuildAStateTheSchemaForbidsAreCaughtAtTheTransition()
+        {
+            // A bound in the schema and a guard that does not repeat it are the same rule
+            // written once and enforced nowhere. Checking a written field on the way out is
+            // what keeps state.schema a statement about the state rather than only about
+            // documents: without it this state goes back to the caller intact and the fault
+            // surfaces on the next read, one transition away from the effect that caused it.
+            RuleContext context = Overrun();
+
+            string state = context.ApplyToState("""{ "input": "note", "args": {} }""", context.InitialState).State;
+
+            RuleEvaluationException fault = Assert.Throws<RuleEvaluationException>(
+                () => context.ApplyToState("""{ "input": "note", "args": {} }""", state));
+
+            Assert.Equal("inputs.note.effects", fault.Origin);
+            Assert.Contains("at most 1 items", fault.Detail, StringComparison.Ordinal);
+        }
 
         [Fact]
         public void AnElementOfTheWrongTypeIsNamedByItsPosition() =>
@@ -254,17 +273,45 @@ namespace Rulealize.Tests
             """);
 
         /// <summary>A rule set whose only field is a bounded list, appended to one entry at a time.</summary>
+        /// <remarks>
+        /// The guard repeats the bound the schema states. That is the same rule written
+        /// twice and nothing checks that the two agree, so writing them to agree is the
+        /// rule set's job — see <see cref="Overrun"/> for what happens when they do not.
+        /// </remarks>
         private RuleContext Log() => standard.Runtime.CreateContext("""
             {
               "id": "log", "version": "1.0.0",
               "state": {
-                "schema": { "entries": { "op": "type.list", "maxLength": 2,
+                "schema": { "entries": { "op": "type.list", "maxLength": 4,
                                          "element": { "op": "type.string" } } },
                 "initial": { "entries": [] }
               },
               "inputs": {
                 "note": {
-                  "when": { "op": "cmp.lt", "left": { "op": "seq.count", "source": "$entries" }, "right": 99 },
+                  "when": { "op": "cmp.lt", "left": { "op": "seq.count", "source": "$entries" }, "right": 4 },
+                  "effects": [
+                    { "op": "state.set", "path": "entries", "value": {
+                        "op": "seq.concat", "of": ["$entries", { "op": "seq.of", "of": ["x"] }] } } ]
+                }
+              }
+            }
+            """);
+
+        /// <summary>The same list, with a guard that lets in more than the schema allows.</summary>
+        /// <remarks>
+        /// Deliberately inconsistent, which is the only way to reach the check a transition
+        /// makes on its way out.
+        /// </remarks>
+        private RuleContext Overrun() => standard.Runtime.CreateContext("""
+            {
+              "id": "overrun", "version": "1.0.0",
+              "state": {
+                "schema": { "entries": { "op": "type.list", "maxLength": 1,
+                                         "element": { "op": "type.string" } } },
+                "initial": { "entries": [] }
+              },
+              "inputs": {
+                "note": {
                   "effects": [
                     { "op": "state.set", "path": "entries", "value": {
                         "op": "seq.concat", "of": ["$entries", { "op": "seq.of", "of": ["x"] }] } } ]
