@@ -1,51 +1,52 @@
 # Rulealize.Plugin.Logic
 
-| 項目 | 値 |
+| | |
 | --- | --- |
-| 識別子 | `Rulealize.Plugin.Logic` |
-| 名前空間 | `logic` |
-| バージョン | `1.0.0` |
-| 予約プレフィックス | なし |
-| 依存 | [値モデル](../value-model.md) のみ |
+| Identifier | `Rulealize.Plugin.Logic` |
+| Namespace | `logic` |
+| Version | `1.0.0` |
+| Reserved prefix | none |
+| Depends on | [the value model](../value-model.md), and nothing else |
 
-真偽値の演算。`Bool` を受け取り `Bool` を返す式のみを提供する。
+Boolean operations. Every node here takes `Bool` and returns `Bool`, and none of them is
+anything but an expression.
 
-制御構造（[Branch](Branch.md)）とは別プラグイン。`logic.and` は「条件を組み立てる
-式」であって「実行の流れを変えるノード」ではない、という区別による。
+Separate from [Branch](Branch.md) on the grounds that `logic.and` is an expression that
+assembles a condition, not a node that changes what gets evaluated.
 
-## 提供ノード
+## Nodes
 
-| ノード | 種別 | リバーシでの使用 |
+| Node | Kind | Used in Reversi |
 | --- | --- | --- |
-| `logic.and` | 式 | ○ `canPlace` |
-| `logic.or` | 式 | ○ `terminal.when` |
-| `logic.not` | 式 | ○ `inputs.pass.when`, `terminal.when` |
-| `logic.xor` | 式 | — |
+| `logic.and` | expression | ○ `canPlace` |
+| `logic.or` | expression | ○ `terminal.when` |
+| `logic.not` | expression | ○ `inputs.pass.when`, `terminal.when` |
+| `logic.xor` | expression | — |
 
 ---
 
 ## `logic.and`
 
-### 形式
+### Form
 
 ```jsonc
-{ "op": "logic.and", "all": [<式:Bool>, ...] }
+{ "op": "logic.and", "all": [<expression:Bool>, ...] }
 ```
 
-### 評価規則
+### How it evaluates
 
-`all` の各要素を **先頭から順に** 評価し、`false` が出た時点で `false` を返す
-（短絡）。すべて `true` なら `true`。
+Each element of `all` is evaluated **in order**, and the first `false` is the answer
+(short-circuit). All `true` gives `true`.
 
-**空配列は `true`。** 「制約が無い＝常に成立」という解釈。
+**An empty array is `true`** — no constraints means nothing to fail.
 
-### 評価順序の保証
+### The evaluation order is guaranteed
 
-短絡が意味を持つよう、`all` の評価順序は **配列の順序で固定** する。並列評価や
-順序入れ替えによる最適化は許さない。
+So that short-circuiting means something, `all` is evaluated **in array order**. Reordering
+or parallelizing it is not allowed.
 
-これは性能上の理由ではなく、記述者が「安いチェックを先に、高いチェックを後に」
-と書けることを保証するため。リバーシの `canPlace` がこれに依存している。
+This is not for speed. It is so that whoever writes the rule set can put the cheap check
+first and the expensive one after, and have that hold. Reversi's `canPlace` depends on it.
 
 ```jsonc
 {
@@ -57,126 +58,130 @@
 }
 ```
 
-第 1 要素は 1 マスの参照で済むが、第 2 要素は 8 方向のレイ走査を伴う。
-`GetValidInputs` は 64 マスすべてで `canPlace` を評価するため、石が置かれた
-マスを第 1 要素で落とせる効果は盤が埋まるほど大きくなる（終盤では大半の
-マスがレイ走査に到達しない）。
+The first element reads one square; the second walks eight rays. `GetValidInputs` evaluates
+`canPlace` for all sixty-four squares, so dropping the occupied ones on the first element
+matters more the fuller the board gets — by the endgame most squares never reach a ray
+walk at all.
 
-**この順序が保証されないと、DSL 記述者は性能を制御できない。**
+**Without that guarantee the rule set has no way to control its own cost.**
 
-### エラー
+### Errors
 
-| 条件 | タイミング |
+| Condition | When |
 | --- | --- |
-| 要素が `Bool` でない | 評価時エラー。短絡により未評価の要素は検査されない |
-| `all` が配列でない | 静的エラー |
+| an element is not `Bool` | evaluation. Short-circuiting means unevaluated elements are not checked |
+| `all` is not an array | static |
 
-`Null` や `0` を偽として扱う暗黙変換は行わない（[Branch](Branch.md) の
-`branch.if` と同じ方針）。
+There is no implicit conversion of `Null` or `0` to false, the same policy
+[Branch](Branch.md)'s `branch.if` follows.
 
 ---
 
 ## `logic.or`
 
-### 形式
+### Form
 
 ```jsonc
-{ "op": "logic.or", "any": [<式:Bool>, ...] }
+{ "op": "logic.or", "any": [<expression:Bool>, ...] }
 ```
 
-### 評価規則
+### How it evaluates
 
-`any` の各要素を先頭から順に評価し、`true` が出た時点で `true` を返す。
-すべて `false` なら `false`。
+Each element of `any` in order, and the first `true` is the answer. All `false` gives
+`false`.
 
-**空配列は `false`。**
+**An empty array is `false`.**
 
-評価順序の保証は `logic.and` と同じ。
+The order guarantee is `logic.and`'s.
 
-### 例（リバーシ `terminal.when`）
+### Example (Reversi's `terminal.when`)
 
 ```jsonc
 {
   "op": "logic.or",
   "any": [
     { "op": "cmp.gte", "left": "$passes", "right": 2 },
-    { "op": "logic.not", "value": { "op": "seq.any", ... } }   // 空マスが無い
+    { "op": "logic.not", "value": { "op": "seq.any", ... } }   // no empty square left
   ]
 }
 ```
 
-「連続パス 2 回」の判定が先。整数比較 1 回で済むため、盤面全走査を伴う第 2
-要素の前に置いている。
+Two consecutive passes is tested first: one integer comparison, ahead of an element that
+scans the whole board.
 
 ---
 
 ## `logic.not`
 
-### 形式
+### Form
 
 ```jsonc
-{ "op": "logic.not", "value": <式:Bool> }
+{ "op": "logic.not", "value": <expression:Bool> }
 ```
 
-### 評価規則
+### How it evaluates
 
-`value` を評価し、その否定を返す。
+Evaluates `value` and returns its negation.
 
-### 例（リバーシ `inputs.pass.when`）
+### Example (Reversi's `inputs.pass.when`)
 
 ```jsonc
 { "op": "logic.not", "value": "#hasAnyMove" }
 ```
 
-パスが合法なのは、打てる手が一つも無いときだけ。
+Passing is legal exactly when there is no move.
 
 ---
 
 ## `logic.xor`
 
-### 形式
+### Form
 
 ```jsonc
-{ "op": "logic.xor", "of": [<式:Bool>, ...] }
+{ "op": "logic.xor", "of": [<expression:Bool>, ...] }
 ```
 
-### 評価規則
+### How it evaluates
 
-`of` の全要素を評価し、`true` の個数が奇数なら `true` を返す。
+Evaluates every element and returns `true` when an odd number of them are `true`.
 
-**短絡しない。** 排他的論理和は全要素を見ないと決まらないため。この点だけ
-`and` / `or` と異なるので、要素に高価な式を置く際は注意する。
+**No short-circuit**, because exclusive or is not decided until every element has been
+seen. That is the one place this differs from `and` and `or`, so put expensive expressions
+here knowing they will all run.
 
-空配列は `false`。要素 1 個ならその値そのもの。
+An empty array is `false`. A single element is itself.
 
-リバーシでは使用しない。汎用語彙として提供する。
-
----
-
-## 設計判断
-
-### なぜ可変長配列（`all` / `any` / `of`）か
-
-二項演算の入れ子（`and(and(a, b), c)`）にしなかったのは、制約の列挙という
-用途が主だから。`canPlace` のように「これらの条件をすべて満たす」という形が
-自然に書ける。
-
-キー名を `all` / `any` / `of` と演算ごとに変えているのは、読んだときに演算の
-意味が二重に現れるようにするため（`"op": "logic.and", "all": [...]`）。
-
-### `logic.implies` を提供しない
-
-`a → b` は `logic.or(logic.not(a), b)` で書ける。制約記述では有用だが、
-短絡の意味論が直感と食い違いやすい（`a` が `false` なら `b` を評価しない）
-ため、必要性が実証されるまで見送る。
+Not used in Reversi. Provided as general vocabulary.
 
 ---
 
-## 未確定事項
+## Design notes
 
-- **三値論理** — `Null` を「不明」として扱う三値論理は導入しない。現状は
-  `Bool` 以外を評価時エラーとする。列の中に空マスが混じるような集約
-  （`seq.any` の述語が `Null` を返しうる場合）で問題になる可能性があるが、
-  リバーシでは `cmp.isNull` を明示的に書くことで回避できている。
-- **`logic.and` の要素数上限** — なし。`GetValidInputs` のコスト見積もりを
-  行うなら、静的な式サイズの指標が必要になるかもしれない。
+### Why variadic arrays rather than binary nesting
+
+`and(and(a, b), c)` was rejected because the main use is enumerating constraints.
+`canPlace`'s shape — "all of these hold" — falls out of an array and does not fall out of
+nesting.
+
+The key is named differently per operation (`all` / `any` / `of`) so that reading the node
+says the operation twice: `"op": "logic.and", "all": [...]`.
+
+### Why there is no `logic.implies`
+
+`a → b` is `logic.or(logic.not(a), b)`. Useful in constraint work, but its short-circuit
+behaviour reads wrong — nothing about `a → b` suggests that `b` goes unevaluated when `a`
+is false — so it waits until something demonstrates the need.
+
+---
+
+## Decided
+
+- **No three-valued logic.** Treating `Null` as "unknown" is not introduced, and anything
+  that is not `Bool` stays an evaluation fault. The scenario that would argue for it is an
+  aggregate whose predicate can return `Null`, and across five rule sets that has never
+  arisen: writing `cmp.isNull` where the question is actually being asked has been both
+  possible and clearer every time.
+- **No limit on how many elements `logic.and` takes.** The reason to want one would be
+  estimating what a `GetValidInputs` sweep costs before running it, and expression size is
+  the wrong handle for that — sequence length is the one that governs, which
+  [Sequence](Sequence.md) records under the same heading.

@@ -1,91 +1,95 @@
-# JSON DSL 検証 — 将棋。予測は外れた
+# The JSON DSL under test — shogi, where the prediction was wrong
 
-チェス（[dsl-example-chess.md](dsl-example-chess.md)）の §6 で、複合パラメータの
-残る問題は「書き味」だけであり、それは将棋で結論が出ると書いた。
+[Chess §6](dsl-example-chess.md) said the remaining problem with compound parameters was
+how they read to write, and that shogi would settle it.
 
-> タグ方式は §3.3 の回避策であって設計ではない。第 4 要素が要る規則（将棋の
-> 成り選択と打ち場所を同時に持つ手など）では入れ子になって破綻する。
+> The tag scheme is a workaround for §3.3 rather than a design. A rule that needs a fourth
+> element — a shogi move carrying both a promotion choice and a drop square — would nest
+> and fall apart.
 
-**破綻しなかった。予測が間違っていた。** そして将棋が実際に突きつけたのは、
-まったく別の場所だった。
+**It did not fall apart. The prediction was wrong.** And what shogi actually pressed on was
+somewhere else entirely.
 
-- 対象: [ruleset/shogi.json](../ruleset/shogi.json)
-- 検証: [test/ShogiTests.cs](../test/ShogiTests.cs)
+- Subject: [ruleset/shogi.json](../ruleset/shogi.json)
+- Checked by: [test/ShogiTests.cs](../test/ShogiTests.cs)
 
 
-## 1. 正しさ
+## 1. Correctness
 
-| 局面 | 深さ | 期待値 | 結果 |
+| Position | Depth | Expected | |
 | --- | --- | --- | --- |
-| 初期局面 | 1 | 30 | ○ |
-| 初期局面 | 2 | 900 | ○ |
-| 初期局面 | 3 | 25,470 | ○ |
+| opening | 1 | 30 | ○ |
+| opening | 2 | 900 | ○ |
+| opening | 3 | 25,470 | ○ |
 
-加えて、成り／強制成り／行き所のない駒／二歩／**打ち歩詰め**／持ち駒の増減／
-詰みの判定を個別に検証している（22 件）。
+On top of that, promotion, forced promotion, pieces with no legal square ahead of them,
+two pawns on a file, **dropped-pawn mate**, hands going up and down, and mate detection are
+each tested individually — 22 cases.
 
-盤は a1〜i9（筋を a〜i、段を 1〜9、先手が段 1 側）。将棋の慣用表記とは違うが、
-標準初期局面の左右反転であり、盤の対称性から perft は変わらない。
+The board runs a1 to i9, with files a–i and ranks 1–9, black on the rank 1 side. That is
+not the customary notation, but it is a left-right mirror of the standard opening position,
+and the board's symmetry leaves perft unchanged.
 
 
-## 2. 予測が外れた理由
+## 2. Why the prediction was wrong
 
-将棋の手は **(from, to, promote) の 3 要素**で、チェスとまったく同じだった。
+A shogi move is **(from, to, promote) — three elements**, exactly as in chess.
 
-第 4 要素を要求すると踏んでいたのは「駒打ち」である。しかし駒打ちは
-**別の入力**であり、しかもその 2 つのパラメータは**本当に独立している**。
+What was expected to demand a fourth was the drop. But a drop is **a separate input**, and
+its two parameters **are genuinely independent**.
 
-| 入力 | パラメータ | domain | 候補数 |
+| Input | Parameters | Domain | Candidates |
 | --- | --- | --- | --- |
-| `move` | `m`（複合） | 全合法手の生成 | 初期局面で **30**（`from`/`to`/`promote` なら 81×81×2 = **13,122**） |
-| `drop` | `piece`, `to` | 持ち駒の駒種 / 空きマス | 7 × 空きマス数（実測 7×78 = **546**） |
+| `move` | `m` (compound) | generate every legal move | **30** in the opening position (`from`/`to`/`promote` would be 81×81×2 = **13,122**) |
+| `drop` | `piece`, `to` | the kinds in hand / the empty squares | 7 × empty squares (measured 7×78 = **546**) |
 
-`piece` の domain は持ち駒だけを見て、`to` の domain は盤だけを見る。互いに
-参照する必要がないので、直積のままで何も困らない。546 は `validationLimit` に
-十分収まる。
+`piece`'s domain looks only at the hand and `to`'s looks only at the board. Neither needs
+the other, so the product costs nothing, and 546 sits well inside any sensible
+`validationLimit`.
 
-**つまり将棋は「複合パラメータが要る形」と「素直な 2 パラメータで足りる形」を
-1 つの RuleSet の中に並べて見せている。** 分けるべきものを分けたら、複合
-パラメータが背負う要素数は増えなかった。
+**So shogi puts a case that needs a compound parameter and a case that is fine as two plain
+ones side by side in one rule set.** Separate what should be separate and the compound
+parameter's element count does not grow.
 
-無理に 1 つの `play` 入力へまとめれば 4 要素になり、第 2 スロットが
-「移動元 または 駒種」という union になる。だがそれは**書き手の選択であって
-ゲームの要求ではない**。
+Forcing them into a single `play` input would give four elements, with the second slot
+being a union of "origin square or piece kind". That is **the writer's choice, not the
+game's requirement**.
 
 
-## 3. 将棋が実際に要求したもの — 持ち駒
+## 3. What shogi actually demanded — the hand
 
-**状態がコレクションを持てない。** これが本当の痛点だった。
+**The state could not hold a collection.** That was the real pain.
 
-> **解決済み。** この節が[コレクション設計](collections.md)を生み、
-> [`rec.map` / `rec.update`](plugin/Record.md) になった。以下は発見時の記述で、
-> 現在の `shogi.json` は `hand` 1 フィールドである。実測 925 行 → 880 行。
+> **Resolved.** This section is what produced [the collections design](collections.md) and
+> became [`rec.map` and `rec.update`](plugin/Record.md). What follows describes it as
+> found; today's `shogi.json` has one `hand` field, and went from 925 lines to 880.
 
 ```jsonc
 "bP": { "op": "type.int", "min": 0 },
 "bL": { "op": "type.int", "min": 0 },
-// … 先手 7 種、後手 7 種、計 14 フィールド
+// … seven kinds for black, seven for white, fourteen fields
 ```
 
-`state.schema` はスカラのフラットなマップなので、多重集合である持ち駒は
-**駒種 × 手番の 14 個のカウンタ**に展開するしかない。帰結は 3 つある。
+`state.schema` was a flat map of scalars, so the hand — a multiset — had to be spread over
+**fourteen counters, piece kind × side**. Three consequences.
 
-### 3.1 effects が 14 行 × 2 入力
+### 3.1 Fourteen lines of effects, in two inputs
 
-`state.set` の `path` はリテラルである（[State プラグイン](plugin/State.md)）。
-「駒種 K のカウンタを増やす」とは書けないので、14 個すべてを列挙する。
+`state.set`'s `path` is a literal ([the State plugin](plugin/State.md)). "Increment the
+counter for kind K" is unsayable, so all fourteen get enumerated.
 
 ```jsonc
 { "op": "state.set", "path": "bP",
   "value": { "op": "math.add", "of": ["$bP",
     { "op": "def.call", "def": "gained", "args": { "m": "@m", "colour": "black", "kind": "P" } }] } },
-{ "op": "state.set", "path": "bL", … },   // あと 13 個
+{ "op": "state.set", "path": "bL", … },   // thirteen more
 ```
 
-`move` と `drop` の両方が持ち駒を動かすので、**同型のブロックが 28 個**並ぶ。
-`gained` / `spent` に括り出しても、`$bP` を読む部分は括り出せない。
+Both `move` and `drop` move pieces in and out of a hand, so **twenty-eight blocks of the
+same shape** line up. Factoring out `gained` and `spent` does not help with the part that
+reads `$bP`.
 
-### 3.2 読み出しも 2 段の match
+### 3.2 Reading takes two levels of match
 
 ```jsonc
 "held": { "params": ["colour", "kind"], "body": {
@@ -95,102 +99,119 @@
     "white": { … } } } }
 ```
 
-14 個の静的な状態参照を、パスを計算できない代わりに `branch.match` で選ぶ。
-**動的なパスの禁止**（[State プラグイン](plugin/State.md)が挙げる 3 つの利点の
-代償）が、ここで最も高くつく。
+Fourteen static state references, selected by `branch.match` because a path cannot be
+computed. **The ban on dynamic paths** — the price of the three benefits
+[the State plugin](plugin/State.md) lists — costs most right here.
 
-### 3.3 スキーマが不変条件を言えない
+### 3.3 The schema cannot state the invariant
 
-「先手の歩と後手の歩と盤上の歩の合計は 18」は、この形では書けない。14 個の
-独立した `type.int` があるだけである。
+"The pawns on the board and in both hands total eighteen" is unwritable in this shape.
+There are fourteen independent `type.int`s and nothing else.
 
 
-## 4. 打ち歩詰め — §3.1 の完全版が通った
+## 4. Dropped-pawn mate — the complete version of §3.1 went through
 
-チェスの §3.1 で「盤面が 1 フィールドの 1 つの値だから逃げ切れた。遷移後の状態
-全体に依存する規則は書けない」と書いた。将棋の打ち歩詰めはその境界にある規則で、
-**書けた。**
+[Chess §3.1](dsl-example-chess.md) said it got away with the after-position question
+"because a board is one value in one field", and that a rule depending on the whole state
+after a transition could not be written. Shogi's dropped-pawn mate sits right on that
+boundary, and **it went through.**
 
 ```
-歩を打った後の盤面で、相手が王手されていて、かつ相手に合法手が無い
+after dropping the pawn: the opponent is in check, and the opponent has no legal move
 ```
 
-必要だったのは 2 つ。
+Two things made it work.
 
-1. **移動生成全体を `(盤面, 手番)` で仮引数化する。** `targetsFrom(b, colour, f)`、
-   `movesFor(b, colour)`、`safeAfterMove(b, colour, m)`、`hasBoardMove(b, colour)`。
-   チェスの `attacked(b, sq, by)` を全体へ広げた形で、**制約ではなく規律**である。
-2. **深さ 1 の相手番探索。** `hasBoardMove` と `hasAnyPlay` を別定義にすることで
-   再帰を避けている（`hasAnyPlay` → `dropLegal` → `dropMate` → `hasBoardMove`）。
+1. **Parameterizing the whole move generator over `(board, colour)`** —
+   `targetsFrom(b, colour, f)`, `movesFor(b, colour)`, `safeAfterMove(b, colour, m)`,
+   `hasBoardMove(b, colour)`. Chess's `attacked(b, sq, by)` widened to cover everything,
+   and it is **a discipline rather than a constraint**.
+2. **A one-ply search into the reply.** Splitting `hasBoardMove` from `hasAnyPlay` avoids
+   recursion (`hasAnyPlay` → `dropLegal` → `dropMate` → `hasBoardMove`).
 
-**近似ではなく厳密である。** 打った歩は玉の直前のマスから王手するので、玉と歩の
-間に空きマスは無く、合駒は原理的に効かない。したがって「相手の**盤上の手**が
-無い」ことが「合法手が無い」ことと同値になる。仕様上の裏付けがあるので、
-`dropLegal` から駒打ちの再帰を切れる。
+**It is exact, not an approximation.** A dropped pawn gives check from the square directly
+in front of the king, so there is no gap between them and interposing is impossible in
+principle. "The opponent has no **board** move" is therefore equivalent to "the opponent
+has no legal move", and that is what licenses cutting drops out of the recursion in
+`dropLegal`.
 
-ただし成立の条件は変わっていない。**持ち駒はこの規則に影響しないから**盤面だけ
-を差し替えれば済んだ。手番と盤面と持ち駒が同時に効く規則なら、やはり書けない。
-
-
-## 5. 副産物
-
-- **`attacked` の実装方針をチェスと変えた。** チェスは逆向きレイ（利きの逆算）
-  で書いたが、将棋は 14 種・6 パターンで非対称な駒が多く、逆算表は「移動生成の
-  second implementation」になる。将棋版は全 81 マスから前向きに生成して照合する。
-  遅いが、生成と利きが定義上ずれない。**DSL がこの選択を自然にした**のは、
-  定義を仮引数化する以外の書き方が無かったからでもある。
-- **`ValidInput.Arguments[key]` は存在しないキーで例外を投げる。** 入力が複数
-  あると `GetValidInputs` の結果は混在し、`move` の結果に `Arguments["piece"]`
-  を引くと落ちる。テストで実際に踏んだ。小さいが実在する角。
+But the condition for it working has not changed. **The hand does not affect this rule**,
+so replacing the board alone was enough. A rule where the turn, the board and the hand all
+matter at once is still unwritable.
 
 
-## 6. 結論 — domain 依存性のコア改修について
+## 5. By-products
 
-**証拠が出揃った。**
+- **`attacked` is implemented differently from chess's.** Chess works backwards along rays.
+  Shogi has fourteen kinds in six patterns, many of them asymmetric, and a reverse table
+  would be "the move generator, implemented a second time". The shogi version generates
+  forwards from all 81 squares and matches. It is slower, and generation and attack cannot
+  drift apart by construction. **The DSL made that choice the natural one**, because
+  parameterizing the definitions was the only way to write it at all.
+- **`ValidInput.Arguments[key]` throws on a key that is not there.** With more than one
+  input the results of `GetValidInputs` are mixed together, so asking a `move` result for
+  `Arguments["piece"]` fails. A test hit it. Small, and real — and see below.
 
-| | チェス | 将棋 |
+
+## 6. The conclusion about making domains parameter-dependent
+
+**The evidence is in.**
+
+| | Chess | Shogi |
 | --- | --- | --- |
-| 2 パラメータなら | 4,096 | 13,122 |
-| 複合パラメータで | 20 | 30 |
-| 手の要素数 | 3 | 3 |
+| as two parameters | 4,096 | 13,122 |
+| as a compound | 20 | 30 |
+| elements in a move | 3 | 3 |
 
-**要素数は増えなかった。** したがって「4〜5 要素で破綻するから改修が要る」という
-論拠は消えた。残るのは当初挙げたうちの弱い方だけである。
+**The element count did not grow.** So the argument "it falls apart at four or five
+elements, therefore the change is needed" is gone. What is left is the weaker half of the
+original list.
 
-- 戻り値が `{"m": "e2|e4|-"}` で構造を失う
-- `index: 0/1/2` に名前が無い
-- 拒否のメッセージがパラメータ単位にならない
+- the return value is `{"m": "e2|e4|-"}` and loses its structure
+- `index: 0/1/2` have no names
+- a rejection message cannot name the parameter that was wrong
 
-これらは実在するが、**2 つのゲームがどちらも 3 要素で収まった**以上、緊急性は
-無い。
+These are real, and with **two games both fitting in three elements** there is no urgency.
 
-一方で **[§3.2 の決着](dsl-example-chess.md) が改修を安くした**ことは記録して
-おく価値がある。`BindArguments` は既にパラメータを宣言順に走査し、1 つずつ
-domain と突き合わせている。domain 依存性を入れるなら、適用側は
-**束縛を積み上げた文脈で次の domain を評価するだけ**（`EvaluationContext.Bind`
-が新しい文脈を返すので数行）で済む。残る作業は探索側の `Collect` / `Walk` に
-集中する。
+Worth recording that **[settling chess §3.2](dsl-example-chess.md) made the change
+cheaper.** `BindArguments` already walks the parameters in declaration order, matching each
+against its domain one at a time. To make domains parameter-dependent, the applying side
+would only need to **evaluate the next domain in a context with the bindings so far**
+(`EvaluationContext.Bind` returns a new context, so it is a few lines). The remaining work
+concentrates in `Collect` and `Walk` on the search side.
 
-### 優先順位の見直し
+### Reprioritizing
 
-**持ち駒が示した穴の方が大きい。** `type.list` / `type.record`（あるいは多重集合の
-スキーマノード）は、
+**The hole the hand exposed is bigger.** `type.list` and `type.record` — or a multiset
+schema node — would
 
-- 将棋の 14 フィールドと 28 の effects を消す
-- チェスの三回同形反復（履歴）を可能にする
-- 非ゲーム用途（キュー、履歴、明細）の前提になる
+- delete shogi's fourteen fields and twenty-eight effects
+- make chess's threefold repetition possible
+- be the precondition for non-game uses: queues, histories, line items
 
-domain 依存性が改善するのは戻り値の形だけである。**同じ労力なら状態の表現力に
-使う方が広く効く。**
+Parameter-dependent domains improve only the shape of the return value. **The same effort
+spent on the expressiveness of the state goes further.**
 
 
-## 7. 未確定事項
+## 7. What is still open, and what has closed
 
-- ~~**`type.list` / `type.record` / 多重集合**~~ — 解決済み。
-  [コレクション設計](collections.md)を参照。
-- **状態フィールドをまたぐ不変条件** — §3.3。スキーマに述語を書けるか。
-  レコードになっても書けないままである。
-- **遷移後の状態全体を問う手段** — §4 の残り。持ち駒と盤面が同時に効く規則。
-- **千日手** — 局面ではなく棋譜の性質。State に履歴が置けるかに依存する。
-- **`Arguments` の安全な参照** — §5。`TryGetValue` 相当か、入力ごとの型付き
-  ビューか。
+- ~~**`type.list` / `type.record` / a multiset**~~ — resolved, and this section is what
+  caused it. See [the collections design](collections.md).
+- ~~**Referring to `Arguments` safely**~~ — withdrawn. §5 recorded this as a small real
+  corner, and [roster §4.5](dsl-example-roster.md) reached the opposite conclusion on
+  better grounds: `ImmutableDictionary` throwing `KeyNotFoundException` for a key it does
+  not have is a dictionary behaving correctly. A rule set with several inputs returns
+  mixed results and the caller filters on `.Input` first, which is an ordinary
+  responsibility rather than a rough edge. Roster's conclusion is the one that stands.
+- ~~**Repetition (sennichite)**~~ — was recorded as depending on whether the state could
+  hold a history. It can, since [`type.list`](plugin/TypeSchema.md). It is not written into
+  `shogi.json`, for the same reason chess does not write threefold repetition: it is a
+  long, well-understood rule that would not test anything the rule set does not already
+  test. The blocker is gone; only the writing is left.
+- **Invariants across state fields** — §3.3, and still unwritable. Becoming a record did
+  not change it: `rec.map` constrains one field, and there is no predicate language for
+  `state.schema`. [Record](plugin/Record.md) records what it would take, and that both
+  shogi and roster want it while neither is blocked by it.
+- **Asking about the whole state after a transition** — the remainder of §4, and the one
+  place shogi came within a step of being blocked. Tracked in
+  [chess §7](dsl-example-chess.md), where the shape of an answer is sketched.

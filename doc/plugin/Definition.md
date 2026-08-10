@@ -1,141 +1,150 @@
 # Rulealize.Plugin.Definition
 
-| 項目 | 値 |
+| | |
 | --- | --- |
-| 識別子 | `Rulealize.Plugin.Definition` |
-| 名前空間 | `def` |
-| バージョン | `1.0.0` |
-| 予約プレフィックス | `#` |
-| 依存 | [値モデル](../value-model.md) のみ |
+| Identifier | `Rulealize.Plugin.Definition` |
+| Namespace | `def` |
+| Version | `1.0.0` |
+| Reserved prefix | `#` |
+| Depends on | [the value model](../value-model.md), and nothing else |
 
-RuleSet の `definitions` セクションに書かれた式を参照・適用する。
+Refers to and applies the expressions a rule set writes in its `definitions` section.
 
-**`definitions` セクションそのものはコアの予約キー**であり、コアはその中身を
-「名前 → （パラメータ列, 本体ノード）」として保持する。ただしコアは本体を
-評価しない。評価コンテキスト経由で定義を引く手段が Abstraction にあり、この
-プラグインはそれを使う。
+**The `definitions` section itself is a reserved key of the core**, which holds each entry
+as a name, a parameter list and a body — and never evaluates the body. Abstraction exposes
+a way to resolve a definition through the evaluation context, and this plugin is what uses
+it.
 
-この分担により、「定義を持つ」という構造はコアが、「定義を呼ぶ」という語彙は
-プラグインが担う。定義を使わない RuleSet はこのプラグインをロードしなくてよい。
+That split puts "a rule set has definitions" in the core and "a rule set calls one" in a
+plugin, so a rule set that defines nothing need not load this at all.
 
-## 提供ノード
+## Nodes
 
-| ノード | 種別 | リバーシでの使用 |
+| Node | Kind | Used in Reversi |
 | --- | --- | --- |
-| `def.ref` | 式 | ○ 糖衣 `#` として `#me`, `#opponent`, `#hasAnyMove` |
-| `def.call` | 式 | ○ `flips1`, `flips`, `canPlace` の呼び出し |
+| `def.ref` | expression | ○ as the sugar `#`, in `#me`, `#opponent`, `#hasAnyMove` |
+| `def.call` | expression | ○ calling `flips1`, `flips`, `canPlace` |
 
 ---
 
-## `definitions` セクションの形式
+## The form of the `definitions` section
 
-コア側の構造だが、このプラグインの意味論と不可分なのでここに記す。
+Core structure, but inseparable from this plugin's meaning, so it is written down here.
 
 ```jsonc
 "definitions": {
-  "<名前>": {
-    "params": ["<名前>", ...],   // 省略可。静的
-    "body": <式>
+  "<name>": {
+    "params": ["<name>", ...],   // optional, static
+    "body": <expression>
   }
 }
 ```
 
-`body` キーを持たないエントリは短縮形とみなし、**書かれたもの全体を本体**として
-`{ "params": [], "body": <そのエントリ> }` と読む。リバーシの `me` / `opponent` が
-これに当たる。
+An entry with no `body` key is a **short form**, read as `{ "params": [], "body": <the
+whole entry> }`. Reversi's `me` and `opponent` are written this way.
 
 ```jsonc
 "definitions": {
-  "me": { "op": "state.get", "path": "turn" },   // ノード
-  "maxPasses": 2                                  // 名前付き定数
+  "me": { "op": "state.get", "path": "turn" },   // a node
+  "maxPasses": 2                                  // a named constant
 }
 ```
 
-短縮形の判定を「`op` キーを持つオブジェクトか」ではなく「`body` キーを持たないか」
-で行うのは、**本体は任意の式であってノードとは限らない**ため。上の `maxPasses` の
-ように定数へ名前を与える用途は、`terminal.when` と `type.int` の `max` に同じ数値が
-二度現れる（[TypeSchema](TypeSchema.md) の「状態空間の制約と遷移規則の整合」）ような
-場面で実際に要る。
+The short form is detected by the absence of a `body` key rather than by the presence of an
+`op`, because **a body is any expression and need not be a node at all**. Naming a constant,
+as `maxPasses` does, is genuinely useful where the same number would otherwise appear in
+both `terminal.when` and a `type.int`'s `max` — see the note on state-space constraints in
+[TypeSchema](TypeSchema.md).
 
-`body` を持つオブジェクトだけが長形式であり、そちらでのみ `params` を書ける。
-`params` があって `body` が無いエントリは静的エラーとする（パラメータを可視にする
-本体が無い）。
+Only an entry with a `body` is the long form, and only there may `params` be written. An
+entry with `params` and no `body` is a static error, since there is no body for the
+parameters to be visible in.
 
-短縮形が本体をオブジェクトに限らないため、**`body` というキーを持つレコードリテラルを
-本体にすることはできない**。その場合は長形式で明示的に包む。リバーシでは生じない。
+Because the short form allows a body that is not an object, **a record literal with a key
+called `body` cannot be a body**. Wrap it in the long form. Nothing in the five rule sets
+runs into this.
 
-## 意味論の中心 — 定義は衛生的
+## The heart of it — definitions are hygienic
 
-**定義の本体は、呼び出し元のローカル束縛を一切参照できない。**
+**The body of a definition cannot see any local binding of its caller.**
 
-本体を評価するスコープは次のもののみを含む。
+The scope a body is evaluated in contains only
 
-- 状態（`$…`）— 常に可視
-- 他の定義（`#…`）— 常に可視
-- 自身の `params` で宣言された名前（`@…`）
+- the state (`$…`), always visible
+- the other definitions (`#…`), always visible
+- the names its own `params` declares (`@…`)
 
-呼び出し元の `bind.let` や `seq.*` の `as` が導入した束縛は見えない。値を渡す
-手段は `def.call` の `args` だけである。
+A `bind.let` or a `seq.*` `as` at the call site is invisible. The only way in is
+`def.call`'s `args`.
 
-この制約により、定義は呼び出し位置に依存せず単体で意味が決まる。リバーシの
-`flips1` は `at` / `dir` を引数で受け取っており、`flips` の `as: "d"` が
-たまたま `d` という名前だったことに影響されない。
+This is what fixes a definition's meaning independently of where it is called from.
+Reversi's `flips1` takes `at` and `dir` as arguments and is unaffected by `flips` happening
+to have named its own binding `d`.
 
-## 評価回数とメモ化
+## How often a body runs, and what gets cached
 
-定義の本体は参照のたびに評価される。ただし全ノードが純粋なので、**同一の状態
-スナップショットと同一の引数に対する結果のメモ化は実装の自由**とする。
+A body is evaluated on every reference. Since every node is pure, the runtime is free to
+memoise, and it does: results are cached per evaluation session, keyed by **the definition
+and its argument values**.
 
-リバーシではここが効く。`flips` は `inputs.place` の `when`（`canPlace` 経由）と
-`effects` の両方から、同じ `at` で呼ばれる。さらに `GetValidInputs` は 64 候補
-それぞれについて `canPlace` を評価するため、メモ化の有無で 8 方向のレイ走査の
-回数が倍近く変わる。
+A session covers one whole call — a single transition, or an entire `GetValidInputs` sweep
+over hundreds of candidates — and the snapshot does not move underneath it. That is what
+keeps the cache valid for the whole sweep, and it is also why the key needs nothing to
+identify the snapshot: a session *is* one snapshot, so there is never a second one to tell
+apart.
 
-キャッシュキーは「定義名 + 引数値 + 状態スナップショットの識別子」。
-`effects` がスナップショット意味論（[値モデル §5](../value-model.md)）である
-ことが、このキャッシュを 1 回の遷移中ずっと有効に保つ前提になっている。
+Reversi is where this pays. `flips` is reached from `inputs.place`'s `when` (through
+`canPlace`) and again from its `effects`, with the same `at`; and `GetValidInputs`
+evaluates `canPlace` for all sixty-four candidates. Memoisation roughly halves the number
+of eight-direction ray walks.
 
-## 再帰
+One caveat worth knowing: hashing an argument walks it, so a definition **called with large
+sequences as arguments pays for the cache rather than gaining from it**. The rule sets here
+pass coordinates, directions and boards, which are cheap to hash.
 
-**再帰を許さない。** 定義の参照関係は有向非巡回でなければならず、循環は
-`CreateContext` 時に静的エラーとする。
+## Recursion
 
-理由は 2 つ。
+**Recursion is refused.** The reference graph between definitions has to be acyclic, and a
+cycle is a static error at `CreateContext`.
 
-- 停止性を保証できない。`GetValidInputs` は数百から数千の候補を評価するため、
-  一つの無限再帰が全体を止める
-- 静的に呼び出しグラフが決まるので、評価コストの上界を見積もれる
+Two reasons.
 
-リバーシには再帰が不要。将棋の利き判定なども反復（`seq.*`）で書けるため、再帰の
-必要性が実証されるまでは制限を維持する。
+- Termination could not be guaranteed. `GetValidInputs` evaluates hundreds to thousands of
+  candidates, so one runaway recursion stops everything.
+- With the call graph fixed, the cost of an evaluation has an upper bound that can be
+  estimated.
+
+Reversi has no need of it. Neither did chess or shogi — shogi's drop-mate rule needed a
+one-ply search into the opponent's reply, and got it by splitting `hasBoardMove` and
+`hasAnyPlay` into separate definitions rather than by recursing.
 
 ---
 
 ## `def.ref`
 
-引数を取らない定義を参照する。
+Refers to a definition that takes no arguments.
 
-### 形式
+### Form
 
 ```jsonc
-{ "op": "def.ref", "name": "<名前>" }   // name は静的
+{ "op": "def.ref", "name": "<name>" }   // name is static
 ```
 
-糖衣: `"#<名前>"`
+Sugar: `"#<name>"`
 
-### 評価規則
+### How it evaluates
 
-`name` の定義を解決し、その本体を評価して値を返す。
+Resolves `name`, evaluates that definition's body, and returns the value.
 
-### エラー
+### Errors
 
-| 条件 | タイミング |
+| Condition | When |
 | --- | --- |
-| 未定義の名前 | 静的エラー |
-| 対象定義が `params` を持つ | 静的エラー（`def.call` を使うこと） |
-| `name` が式 | 静的エラー |
+| the name is not defined | static |
+| the definition has `params` | static (use `def.call`) |
+| `name` is an expression | static |
 
-### 例（リバーシ）
+### Example (Reversi)
 
 ```jsonc
 "me":       { "op": "state.get", "path": "turn" },
@@ -143,53 +152,55 @@ RuleSet の `definitions` セクションに書かれた式を参照・適用す
               "cases": { "black": "white", "white": "black" } }
 ```
 
-`#me` は「現在の手番の色」という意味に名前を与えているだけだが、`$turn` を
-直に書く箇所が散らばるのを防ぐ。`#opponent` は `#me` を参照しており、定義から
-定義への参照が成立している。
+`#me` does no more than name the idea "the colour to move", which keeps `$turn` from being
+scattered through the document. `#opponent` refers to `#me`, so one definition reaching
+another works.
 
 ---
 
 ## `def.call`
 
-引数を取る定義を適用する。
+Applies a definition that takes arguments.
 
-### 形式
+### Form
 
 ```jsonc
 {
   "op": "def.call",
-  "def": "<名前>",                    // 静的
-  "args": { "<パラメータ名>": <式>, ... }
+  "def": "<name>",                       // static
+  "args": { "<parameter>": <expression>, ... }
 }
 ```
 
-### 評価規則
+### How it evaluates
 
-1. `args` の各式を **呼び出し元のスコープで** 評価する
-2. 呼び先の `params` に対応させて、新しいスコープを作る
-3. そのスコープ（＋状態＋定義）で本体を評価し、値を返す
+1. Each expression in `args` is evaluated **in the caller's scope**.
+2. A fresh scope is built, matching them to the callee's `params`.
+3. The body is evaluated in that scope, plus the state and the definitions, and its value
+   returned.
 
-引数は評価済みの値として渡される（値渡し・正格）。遅延引数は持たない。
+Arguments are passed as evaluated values — by value, strictly. There are no lazy
+arguments.
 
-### 引数の対応
+### Matching arguments
 
-`args` のキー集合は呼び先の `params` と **完全一致** しなければならない。
-過不足はいずれも静的エラー。位置引数は持たず、名前指定のみとする。
+The key set of `args` has to match the callee's `params` **exactly**. Too few or too many
+is a static error. There are no positional arguments; names only.
 
-パラメータ数が増えたときの可読性を優先した判断。リバーシの
-`flips1(at, dir)` 程度なら位置引数でも読めるが、順序の取り違えを構文で防げる
-ことを重視する。
+That is a readability judgement about what happens as parameter counts grow. `flips1(at,
+dir)` would read fine positionally, but having the syntax rule out a transposition is worth
+more than the brevity.
 
-### エラー
+### Errors
 
-| 条件 | タイミング |
+| Condition | When |
 | --- | --- |
-| 未定義の `def` | 静的エラー |
-| `args` のキーが `params` と不一致 | 静的エラー |
-| 対象定義が `params` を持たない | 静的エラー（`def.ref` を使うこと） |
-| 呼び出しの循環 | 静的エラー |
+| `def` is not defined | static |
+| the keys of `args` do not match `params` | static |
+| the definition has no `params` | static (use `def.ref`) |
+| the call graph has a cycle | static |
 
-### 例（リバーシ `flips`）
+### Example (Reversi's `flips`)
 
 ```jsonc
 {
@@ -201,18 +212,25 @@ RuleSet の `definitions` セクションに書かれた式を参照・適用す
 }
 ```
 
-`@at` は `flips` 自身のパラメータ、`@d` は `seq.selectMany` が導入した束縛。
-どちらも呼び出し元スコープで評価されてから `flips1` へ渡る。
+`@at` is `flips`'s own parameter and `@d` is the binding `seq.selectMany` introduced. Both
+are evaluated in the caller's scope before they reach `flips1`.
 
 ---
 
-## 未確定事項
+## Decided
 
-- **定義の可視性** — 現状すべて公開。RuleSet の合成・インポートを導入する
-  なら、公開／非公開の区別が要る。
-- **部分適用** — 持たない。`flips1` を `dir` で部分適用できると `flips` が
-  もう少し短く書けるが、値モデルに関数型を導入することになるため見送る。
-- **RuleSet 間の定義インポート** — リバーシとその亜種でルールを共有する
-  ような場面で必要になる。`requires` と同様の依存宣言が要る。
-- **メモ化の観測可能性** — 実装の自由としたが、状態スナップショットの識別子を
-  Abstraction 側でどう表現するかは未定。
+- **Memoisation is no longer an open question.** It was recorded as unresolved because
+  identifying a state snapshot in the cache key looked like something Abstraction would
+  have to express. Scoping the cache to an evaluation session dissolved that: the session
+  holds exactly one snapshot, so the key is the definition and its arguments and nothing
+  else, and Abstraction gained no API for it.
+- **No partial application.** Applying `flips1` to a `dir` and leaving `at` open would
+  shorten `flips` a little, at the price of putting function values into the value model —
+  which every plugin would then have to know about, for one shorter definition.
+- **Definitions have no visibility modifier.** All of them are public. The distinction only
+  earns its keep alongside importing definitions across rule sets, so it waits on that.
+- **No importing definitions between rule sets.** The case for it is variants sharing a
+  base — Reversi and its cousins, or a chess variant. It needs a dependency declaration of
+  its own, roughly what `requires` is for plugins, and nothing here has two rule sets that
+  overlap: the five in [`ruleset/`](../../ruleset/) are five separate games and processes.
+  Worth building when a family of variants actually exists, and not before.

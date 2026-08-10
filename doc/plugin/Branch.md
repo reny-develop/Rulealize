@@ -1,68 +1,68 @@
 # Rulealize.Plugin.Branch
 
-| 項目 | 値 |
+| | |
 | --- | --- |
-| 識別子 | `Rulealize.Plugin.Branch` |
-| 名前空間 | `branch` |
-| バージョン | `1.0.0` |
-| 予約プレフィックス | なし |
-| 依存 | [値モデル](../value-model.md) のみ |
+| Identifier | `Rulealize.Plugin.Branch` |
+| Namespace | `branch` |
+| Version | `1.0.0` |
+| Reserved prefix | none |
+| Depends on | [the value model](../value-model.md), and nothing else |
 
-条件分岐。真偽値による二分岐（`if`）と、値による多分岐（`match`）を提供する。
+Branching: two ways on a boolean (`if`), and many ways on a value (`match`).
 
-[Logic](Logic.md) とは別プラグイン。`logic.and` などは真偽値を返す **式** で
-あり、制御構造ではない。両者を分けておくと、分岐が不要な RuleSet（純粋な
-制約充足の記述など）で Branch を外せる。
+Separate from [Logic](Logic.md), because `logic.and` and the rest are **expressions** that
+return a truth value rather than control structures. Splitting them lets a rule set that
+does no branching at all — a pure constraint description, say — leave Branch out.
 
-## 提供ノード
+## Nodes
 
-| ノード | 種別 | リバーシでの使用 |
+| Node | Kind | Used in Reversi |
 | --- | --- | --- |
-| `branch.if` | 式 | ○ `flips1` |
-| `branch.match` | 式 | ○ `opponent`, `terminal.result` |
+| `branch.if` | expression | ○ `flips1` |
+| `branch.match` | expression | ○ `opponent`, `terminal.result` |
 
 ---
 
 ## `branch.if`
 
-### 形式
+### Form
 
 ```jsonc
 {
   "op": "branch.if",
-  "cond": <式:Bool>,
-  "then": <式>,
-  "else": <式>          // 省略可
+  "cond": <expression:Bool>,
+  "then": <expression>,
+  "else": <expression>          // optional
 }
 ```
 
-### 評価規則
+### How it evaluates
 
-1. `cond` を評価する
-2. `true` なら `then` を評価してその値を返す
-3. `false` なら `else` を評価してその値を返す。`else` が無ければ `Null` を返す
+1. `cond` is evaluated.
+2. `true` evaluates `then` and returns its value.
+3. `false` evaluates `else` and returns its value; with no `else`, returns `Null`.
 
-**短絡評価。** 選択されなかった枝は評価しない。これは性能のためだけでなく、
-評価エラーを起こしうる式を条件で守れるようにするため（例: 空列に対する
-`seq.elementAt` を非空チェックで守る）。
+**The branch not taken is not evaluated.** That is not only for speed — it is what lets a
+condition guard an expression that would otherwise fault, such as protecting a
+`seq.elementAt` behind a non-empty check.
 
-### 型
+### Types
 
-`then` と `else` の値の種別が一致することは要求しない。ただし `branch.if` の
-結果を受け取る側が種別を要求する場合、その検査は受け取る側で行われる。
+`then` and `else` are not required to agree on the kind of value they produce. Whatever
+consumes the result is where a kind gets required, and that is where it gets checked.
 
-### エラー
+### Errors
 
-| 条件 | タイミング |
+| Condition | When |
 | --- | --- |
-| `cond` が `Bool` でない | 評価時エラー。`Null` や `0` を偽として扱う暗黙変換は行わない |
-| `then` の欠落 | 静的エラー |
+| `cond` is not `Bool` | evaluation. `Null` and `0` are not converted to false |
+| `then` is missing | static |
 
-真偽値への暗黙変換を認めないのは、`grid.at` が返す `Null`（＝空マス）が
-うっかり偽として通ってしまう事故を防ぐため。空マス判定は
-`cmp.isNull` を明示的に書かせる。
+Refusing the implicit conversion is what stops the `Null` that `grid.at` returns for an
+empty square from quietly passing as false. Asking whether a square is empty means writing
+`cmp.isNull`.
 
-### 例（リバーシ `flips1`）
+### Example (Reversi's `flips1`)
 
 ```jsonc
 {
@@ -79,75 +79,75 @@
 }
 ```
 
-相手石の連なり `run` の直後のマスが自分の石なら、`run` が裏返し対象として確定
-する。そうでなければ空列。`cond` は [値モデル §3](../value-model.md) の null
-伝播に依存しており、レイが盤端で尽きた場合も自然に `else` へ落ちる。
+If the square just past the run of opponent stones holds one of mine, that run is what gets
+flipped; otherwise nothing. The condition leans on the null propagation of
+[value model §3](../value-model.md), so a ray that runs out at the board edge falls into
+`else` on its own.
 
 ---
 
 ## `branch.match`
 
-値による多分岐。
+Branching on a value.
 
-### 形式
+### Form
 
 ```jsonc
 {
   "op": "branch.match",
-  "value": <式>,
-  "cases": { "<キー>": <式>, ... },   // キーは静的
-  "default": <式>                     // 省略可
+  "value": <expression>,
+  "cases": { "<key>": <expression>, ... },   // the keys are static
+  "default": <expression>                    // optional
 }
 ```
 
-### 評価規則
+### How it evaluates
 
-1. `value` を評価する
-2. 結果を **テキスト正規形** に変換し、`cases` のキーと完全一致で照合する
-3. 一致したケースの式を評価して返す
-4. 一致が無く `default` があればそれを評価して返す
-5. 一致が無く `default` も無ければ **評価時エラー**
+1. `value` is evaluated.
+2. The result is converted to its **canonical text** and matched against the keys of
+   `cases`, exactly.
+3. The matching case is evaluated and returned.
+4. With no match and a `default`, `default` is evaluated and returned.
+5. With no match and no `default`, **an evaluation fault**.
 
-一致したケース以外は評価しない。
+No case but the matching one is evaluated.
 
-### キーの照合規則
+### How keys are matched
 
-`cases` のキーは JSON オブジェクトのキーなので必ず文字列である。照合のために
-`value` の評価結果を次の規則でテキスト化する。
+The keys of `cases` are JSON object keys and therefore always strings, so the value is
+turned into text to match them.
 
-| `value` の種別 | テキスト正規形 |
+| Kind of `value` | Canonical text |
 | --- | --- |
-| `Text` | そのまま |
+| `Text` | itself |
 | `Bool` | `"true"` / `"false"` |
-| `Number` | 正規化した十進表記（`1.0` → `"1"`） |
+| `Number` | normalized decimal (`1.0` → `"1"`) |
 | `Null` | `"null"` |
-| `Opaque` | プラグインが定義するテキスト正規形（[値モデル §1.1](../value-model.md)） |
-| `Sequence` / `Record` | 評価時エラー（照合不能） |
+| `Opaque` | whatever the defining plugin says ([value model §1.1](../value-model.md)) |
+| `Sequence` / `Record` | an evaluation fault; there is nothing to match against |
 
-`Opaque` が照合できることで、座標や方向に対する分岐が書ける。
+That `Opaque` matches is what makes branching on a coordinate or a direction possible.
 
-### 網羅性
+### Exhaustiveness
 
-`default` を省略した場合に網羅性を静的に検査できるのは、`value` が
-`type.enum` に由来すると静的に判る場合に限られる。現状の設計では式の型推論を
-持たないため、**網羅性検査は行わず、実行時に一致なしでエラー** とする。
+Checking that `cases` covers everything, when there is no `default`, would need to know
+statically that `value` comes from a `type.enum`. There is no inference over expressions,
+so **exhaustiveness is not checked and a missing case is an evaluation fault**.
 
-これはリバーシの `opponent` にとっては実質的に安全である（`turn` が
-`type.enum` で `black` / `white` に制限されており、`cases` が両方を覆っている）
-が、それを保証しているのは DSL ではなく `state.schema` の検証であることに注意。
+For Reversi's `opponent` that is safe in practice — `turn` is a `type.enum` of `black` and
+`white`, and both are covered — but what guarantees it is the validation of
+`state.schema`, not anything in the DSL.
 
-型推論を導入すれば静的検査に格上げできる。→ 未確定事項。
+### Errors
 
-### エラー
-
-| 条件 | タイミング |
+| Condition | When |
 | --- | --- |
-| `cases` が空 | 静的エラー |
-| キー重複 | JSON のキー重複として静的エラー |
-| 一致なし・`default` なし | 評価時エラー |
-| `value` が `Sequence` / `Record` | 評価時エラー |
+| `cases` is empty | static |
+| duplicate keys | static, as duplicate JSON keys |
+| no match and no `default` | evaluation |
+| `value` is a `Sequence` or `Record` | evaluation |
 
-### 例（リバーシ `opponent`）
+### Example (Reversi's `opponent`)
 
 ```jsonc
 {
@@ -157,18 +157,24 @@
 }
 ```
 
-`terminal.result` では `cmp.compare` の戻り値（`"lt"` / `"eq"` / `"gt"`）を
-受けている。`cmp.compare` が Text を返す設計なので、`branch.match` と自然に
-噛み合う。
+`terminal.result` uses it on the return value of `cmp.compare` (`"lt"` / `"eq"` / `"gt"`).
+That `cmp.compare` returns text rather than a number is what makes the two fit together.
 
 ---
 
-## 未確定事項
+## Decided
 
-- **パターンマッチ** — `cases` のキーは完全一致のみ。範囲や構造パターンは
-  持たない。リバーシでは不要だが、より複雑なルール（駒種による分岐など）で
-  必要になる可能性がある。
-- **網羅性の静的検査** — 上述のとおり型推論が前提。導入するなら
-  [TypeSchema](TypeSchema.md) のスキーマ情報を式の型推論へ流す必要がある。
-- **`branch.cond`（多段 if-else）** — `branch.if` の入れ子で書けるが、
-  ネストが深くなる。リバーシでは不要。
+- **`cases` matches keys exactly, and gains no pattern language.** No ranges, no structural
+  patterns. This was recorded as something more complicated rule sets — branching on a
+  piece kind was the example — would likely force, and then chess and shogi were written.
+  Neither forced it: shogi has fourteen piece kinds and dispatches all of them through
+  exact matches on canonical text. The prediction was tested and did not hold.
+- **No `branch.cond` for multi-way if-else.** The concern was nesting `branch.if` getting
+  deep, and the rule sets say otherwise — chess uses `branch.match` 27 times against
+  `branch.if` 12, shogi 15 against 6. Multi-way dispatch is already going through
+  `branch.match`, which is what a `branch.cond` would have been competing with rather than
+  the nesting it was meant to replace.
+- **Exhaustiveness stays a run time fault**, because promoting it needs inference from
+  `state.schema` into expression types, and [TypeSchema](TypeSchema.md) records why that is
+  not being built yet. This is the one item here that is waiting on something rather than
+  settled against.

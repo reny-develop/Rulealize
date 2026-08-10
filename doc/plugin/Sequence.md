@@ -1,326 +1,316 @@
 # Rulealize.Plugin.Sequence
 
-| 項目 | 値 |
+| | |
 | --- | --- |
-| 識別子 | `Rulealize.Plugin.Sequence` |
-| 名前空間 | `seq` |
-| バージョン | `1.2.0` |
-| 予約プレフィックス | なし |
-| 依存 | [値モデル](../value-model.md) のみ |
+| Identifier | `Rulealize.Plugin.Sequence` |
+| Namespace | `seq` |
+| Version | `1.2.0` |
+| Reserved prefix | none |
+| Depends on | [the value model](../value-model.md), and nothing else |
 
-値モデルの `Sequence` に対する生成・変換・集約。
+Building, transforming and folding the value model's `Sequence`.
 
-**このプラグインは列がどこから来たかを知らない。** リバーシでは
-[Grid](Grid.md) の `grid.ray` / `grid.coords` / `grid.directions` が返した列を
-扱うが、Sequence は Grid を参照していない。両者が噛み合うのは、値モデルが
-`Sequence` を共有種別として定義しているからである。
+**This plugin does not know where a sequence came from.** In Reversi it handles what
+[Grid](Grid.md)'s `grid.ray`, `grid.coords` and `grid.directions` returned, and it does not
+reference Grid. The two mesh because the value model defines `Sequence` as a shared kind.
 
-**差し替え動機が最も明確なプラグイン。** 評価戦略（即時／遅延）、並列化、
-中間結果のバッファリング方針は、このプラグインの実装を入れ替えるだけで変えられる
-——ただし下記「再列挙可能性」を満たす限りにおいて。
+**The clearest candidate for replacement.** Evaluation strategy — eager or lazy —
+parallelism, and how intermediate results are buffered are all changeable by swapping this
+plugin out, so long as re-enumerability below is preserved.
 
-## 提供ノード
+## Nodes
 
-| ノード | 種別 | リバーシでの使用 |
+| Node | Kind | Used in Reversi |
 | --- | --- | --- |
-| `seq.empty` | 式 | ○ `flips1` |
-| `seq.of` | 式 | — （1.1 で追加） |
-| `seq.any` | 式 | ○ `canPlace`, `hasAnyMove`, `terminal.when` |
-| `seq.count` | 式 | ○ `flips1`, `terminal.result` |
-| `seq.elementAt` | 式 | ○ `flips1` |
-| `seq.takeWhile` | 式 | ○ `flips1` |
-| `seq.selectMany` | 式 | ○ `flips` |
-| `seq.where` | 式 | — |
-| `seq.select` | 式 | — |
-| `seq.concat` | 式 | — （1.2 で追加） |
-| `seq.take` | 式 | — （1.2 で追加） |
-| `seq.skip` | 式 | — （1.2 で追加） |
+| `seq.empty` | expression | ○ `flips1` |
+| `seq.of` | expression | — (added in 1.1) |
+| `seq.any` | expression | ○ `canPlace`, `hasAnyMove`, `terminal.when` |
+| `seq.count` | expression | ○ `flips1`, `terminal.result` |
+| `seq.elementAt` | expression | ○ `flips1` |
+| `seq.takeWhile` | expression | ○ `flips1` |
+| `seq.selectMany` | expression | ○ `flips` |
+| `seq.where` | expression | — |
+| `seq.select` | expression | — |
+| `seq.concat` | expression | — (added in 1.2) |
+| `seq.take` | expression | — (added in 1.2) |
+| `seq.skip` | expression | — (added in 1.2) |
 
 ---
 
-## 列の性質
+## What a sequence is
 
-### 有限性
+### Finite
 
-すべての列は有限。無限列を生成するノードは提供しない。
+Every sequence is finite. No node produces an infinite one.
 
-`GetValidInputs` が列の全走査を伴うため、停止性は仕様として保証したい。
-[Definition](Definition.md) が再帰を禁じているのと同じ理由。
+`GetValidInputs` walks sequences end to end, so termination is guaranteed by the
+specification rather than hoped for — the same reason [Definition](Definition.md) refuses
+recursion.
 
-### 再列挙可能性（必須）
+### Re-enumerable (required)
 
-[値モデル §1.2](../value-model.md) のとおり、**同一の列値を複数回列挙したとき
-同じ結果を返さなければならない。**
+As [value model §1.2](../value-model.md) says, **enumerating one sequence value more than
+once has to produce the same run of values each time**.
 
-リバーシの `flips1` が実際にこれを要求している。
+Reversi's `flips1` is what demands it.
 
 ```jsonc
 "bind": {
   "ray": { "op": "grid.ray", ... },
-  "run": { "op": "seq.takeWhile", "source": "@ray", ... }   // ← 1 回目
+  "run": { "op": "seq.takeWhile", "source": "@ray", ... }   // ← first enumeration
 },
 "in": {
   ...
-  "coord": { "op": "seq.elementAt", "source": "@ray", ... }  // ← 2 回目
+  "coord": { "op": "seq.elementAt", "source": "@ray", ... }  // ← second
 }
 ```
 
-`@ray` は `bind.let` で 1 回だけ評価されるが、その結果の列は 2 回列挙される。
-遅延列を「1 回しか列挙できないイテレータ」として実装すると、2 回目が空になって
-ルールが壊れる。
+`@ray` is evaluated once by `bind.let`, and the sequence it produced is enumerated twice.
+Implement a lazy sequence as a single-use iterator and the second enumeration comes back
+empty and the rule quietly breaks.
 
-実装の選択肢は 2 つ。
+Two ways to satisfy it:
 
-- 列挙のたびに元の計算を再実行する（純粋なので結果は同じ）
-- 初回列挙時にバッファリングする
+- re-run the underlying computation on each enumeration (pure, so the result is the same)
+- buffer on the first enumeration
 
-どちらでもよいが、**「使い捨てイテレータ」は許されない。**
+Either is fine. **A single-use iterator is not.**
 
-### 要素の種別
+### The elements
 
-列の要素は任意の値。同一の列に異なる種別が混在してもよい（値モデルは
-均質性を要求しない）。リバーシでは座標の列（`Opaque`）、方向の列（`Opaque`）、
-セル値の列（`Text` / `Null`）が現れる。
+Any value. One sequence may mix kinds — the value model does not ask for homogeneity.
+Reversi has sequences of coordinates (`Opaque`), of directions (`Opaque`), and of cell
+values (`Text` and `Null`).
 
 ---
 
-## 反復ノードの共通形式
+## The shape the iterating nodes share
 
-述語や射影を取るノードは、要素を束縛する名前を `as` で導入する。
+A node taking a predicate or a projection introduces a name for the element with `as`.
 
 ```jsonc
 {
-  "op": "seq.<名前>",
-  "source": <式:Sequence>,
-  "as": "<名前>",        // 静的。省略可
-  "<述語または射影>": <式>
+  "op": "seq.<name>",
+  "source": <expression:Sequence>,
+  "as": "<name>",        // static, optional
+  "<predicate or projection>": <expression>
 }
 ```
 
-- `as` で導入した名前は、**そのノードの述語／射影の式の内側でのみ可視**
-- 外側の同名束縛をシャドーイングする
-- 参照は [Binding](Binding.md) の `bind.local`（糖衣 `@`）で行う
+- The name is visible **only inside that node's predicate or projection**.
+- It shadows an outer binding of the same name.
+- Referring to it is [Binding](Binding.md)'s `bind.local`, sugar `@`.
 
-**Sequence プラグインは束縛を導入するが、参照の語彙は持たない。** これは
-分解の帰結。スコープ機構そのものは評価コンテキスト（Abstraction）が提供する。
+**Sequence introduces bindings but owns no vocabulary for referring to one.** That falls
+out of the decomposition; the scope machinery itself belongs to the evaluation context in
+Abstraction.
 
-`as` を省略できるのは、述語／射影が要素を参照しない場合のみ。省略した状態で
-`@` 参照を書けば [Binding](Binding.md) 側の未束縛エラー（静的）になる。
+`as` may be omitted only when the predicate or projection does not refer to the element.
+Omit it and write a `@` reference anyway and you get [Binding](Binding.md)'s unbound-name
+error, statically.
 
-### 評価順序
+### Evaluation order
 
-要素の処理順は **列の順序に従う**。短絡するノード（`seq.any` / `seq.takeWhile`）
-の意味論がこれに依存する。並列実装であっても、観測される結果は逐次実行と
-一致しなければならない。
+Elements are processed **in sequence order**. The meaning of the short-circuiting nodes
+(`seq.any`, `seq.takeWhile`) depends on it. A parallel implementation is allowed, but what
+it produces has to match what running in order would have produced.
 
 ---
 
 ## `seq.empty`
 
-### 形式
+### Form
 
 ```jsonc
 { "op": "seq.empty" }
 ```
 
-空列を返す。
+The empty sequence.
 
-リバーシの `flips1` で「この方向には裏返せる石が無い」を表す。
-`seq.selectMany`（`flips`）が空列を素通りさせるため、8 方向のうち成立しない
-方向は自然に消える。
+In Reversi's `flips1` this says "nothing to flip in this direction". `seq.selectMany`
+(in `flips`) passes an empty sequence straight through, so the directions that do not work
+out disappear on their own.
 
 ---
 
 ## `seq.of`
 
-### 形式
+### Form
 
 ```jsonc
-{ "op": "seq.of", "of": [ <式>, … ] }
+{ "op": "seq.of", "of": [ <expression>, … ] }
 ```
 
-要素を書き並べた列を返す。空配列は空列。
+A sequence of the elements written out. An empty array is the empty sequence.
 
-### 列を書き下す唯一の手段
+### The only way to write a sequence down
 
-値モデルは `Sequence` に JSON リテラルを与えていない（[§1](../value-model.md)）。
-したがってこのノードが無いと、**RuleSet 中のすべての列は他プラグイン由来でしか
-作れない**。リバーシは列がすべて `grid.*` から出てくるので気づかなかったが、
-これは「Sequence だけをロードして意味が通るか」という[分解の基準 A](../dsl-example-reversi.md)
-を Sequence 自身が満たしていなかったということでもある。
+The value model gives `Sequence` no JSON literal ([§1](../value-model.md)). Without this
+node **every sequence in a rule set has to come from some other plugin**. Reversi did not
+notice, because all of its sequences come out of `grid.*` — which also means Sequence did
+not satisfy [criterion A, independent loadability](../dsl-example-reversi.md), on its own.
 
-チェスのナイトで露見した。8 つのオフセットは `grid.directions` のどの `kind`
-にも該当せず、単に 8 つの方向であって、RuleSet がそう言えなければならない。
+Chess's knight exposed it. Its eight offsets match no `kind` of `grid.directions`; they are
+simply eight directions, and the rule set has to be able to say so.
 
 ```jsonc
 "knightDirs": { "op": "seq.of",
   "of": ["1,2","2,1","2,-1","1,-2","-1,-2","-2,-1","-2,1","-1,2"] }
 ```
 
-`seq.selectMany` と組み合わせると連結にもなる。`seq.concat` を別に置かないのは
-このため。
+### How it evaluates
 
-```jsonc
-// run ++ [next]
-{ "op": "seq.selectMany",
-  "source": { "op": "seq.of", "of": ["@run", { "op": "seq.of", "of": ["@next"] }] },
-  "as": "part", "select": "@part" }
-```
-
-### 評価
-
-要素の式は**列挙のたびに**評価する。再列挙可能性が構成上満たされ、全ノードが
-純粋なので結果は変わらない。
+The element expressions are evaluated **on each enumeration**. Re-enumerability then holds
+by construction, and since every node is pure the result does not change.
 
 ---
 
 ## `seq.any`
 
-### 形式
+### Form
 
 ```jsonc
 {
   "op": "seq.any",
-  "source": <式:Sequence>,
-  "as": "<名前>",           // 省略可
-  "predicate": <式:Bool>    // 省略可
+  "source": <expression:Sequence>,
+  "as": "<name>",              // optional
+  "predicate": <expression:Bool>   // optional
 }
 ```
 
-### 評価規則
+### How it evaluates
 
-- `predicate` がある場合: 各要素に対して評価し、`true` が出た時点で `true` を
-  返す（短絡）。すべて `false` なら `false`
-- `predicate` が無い場合: 列が非空なら `true`
+- With a `predicate`: evaluated per element, returning `true` at the first one that holds
+  (short-circuit). All false gives `false`.
+- Without: `true` when the sequence is non-empty.
 
-空列は常に `false`。
+The empty sequence is always `false`.
 
-### 短絡の重要性
+### Why the short-circuit matters
 
-`hasAnyMove` は 64 マスすべてについて `canPlace` を評価しうるが、打てる手が
-一つ見つかった時点で止まる。`inputs.pass.when` が
-`logic.not(#hasAnyMove)` である以上、パスが非合法な局面（＝ほとんどの局面）
-では早期に確定する。短絡しない実装だと、パス判定のたびに常に 64 マス × 8 方向
-のレイ走査が走る。
+`hasAnyMove` may evaluate `canPlace` for all sixty-four squares, and stops at the first
+playable one. Since `inputs.pass.when` is `logic.not(#hasAnyMove)`, in a position where
+passing is illegal — which is most of them — it settles early. Without the short-circuit,
+every pass check walks 64 squares × 8 directions of rays.
 
-### 例（リバーシ）
+### Example (Reversi)
 
 ```jsonc
-// canPlace: この座標から裏返せる石があるか
+// canPlace: is there anything to flip from this square
 { "op": "seq.any",
   "source": { "op": "def.call", "def": "flips", "args": { "at": "@at" } } }
 
-// hasAnyMove: 打てる手が一つでもあるか
+// hasAnyMove: is there a move anywhere
 { "op": "seq.any", "source": { "op": "grid.coords", "of": "$board" }, "as": "c",
   "predicate": { "op": "def.call", "def": "canPlace", "args": { "at": "@c" } } }
 ```
 
-前者は `predicate` 省略形（非空判定）、後者は述語付き。
+The first omits `predicate` (a non-empty test), the second has one.
 
 ---
 
 ## `seq.count`
 
-### 形式
+### Form
 
 ```jsonc
 {
   "op": "seq.count",
-  "source": <式:Sequence>,
-  "as": "<名前>",      // 省略可
-  "where": <式:Bool>   // 省略可
+  "source": <expression:Sequence>,
+  "as": "<name>",          // optional
+  "where": <expression:Bool>   // optional
 }
 ```
 
-### 評価規則
+### How it evaluates
 
-`where` があれば、それが `true` になる要素の個数を返す。無ければ列の長さ。
-戻り値は `Number`。
+With a `where`, the number of elements it holds for; without, the length. The result is a
+`Number`.
 
-短絡しない（全要素を走査する）。
+No short-circuit — every element is visited.
 
-### 例（リバーシ）
+### Example (Reversi)
 
 ```jsonc
-// flips1: 相手石の連なりの長さ = レイ上のその次の位置
+// flips1: the length of the run of opponent stones = the index of the next square on the ray
 { "op": "seq.count", "source": "@run" }
 
-// terminal.result: 黒石の数
+// terminal.result: how many black stones
 { "op": "seq.count", "source": { "op": "grid.cells", "of": "$board" },
   "as": "c", "where": { "op": "cmp.eq", "left": "@c", "right": "black" } }
 ```
 
-前者の使い方が巧妙で、`run` の長さがそのまま「レイ上で連なりの直後にある要素の
-インデックス」になる（0 始まりのため）。
+The first is the neat one: because indices start at zero, the length of `run` *is* the
+index of the element just past the run.
 
 ---
 
 ## `seq.elementAt`
 
-### 形式
+### Form
 
 ```jsonc
 {
   "op": "seq.elementAt",
-  "source": <式:Sequence>,
-  "index": <式:Number>
+  "source": <expression:Sequence>,
+  "index": <expression:Number>
 }
 ```
 
-### 評価規則
+### How it evaluates
 
-`index` 番目（0 始まり）の要素を返す。
+The element at `index`, counting from zero.
 
-**範囲外なら `Null` を返す。エラーにしない。**
+**Out of range returns `Null` rather than faulting.**
 
-これは [値モデル §3](../value-model.md) の null 伝播連鎖の起点であり、
-リバーシの `flips1` が「レイが盤端まで相手石で埋まっている」ケースを明示的な
-境界チェック無しに扱えている理由。
+This is where the null propagation chain of [value model §3](../value-model.md) starts, and
+why Reversi's `flips1` handles "the ray is opponent stones all the way to the edge" with no
+boundary check.
 
 ```
-seq.elementAt(範囲外) → null → grid.at(null) → null → cmp.eq(null, "black") → false
+seq.elementAt(out of range) → null → grid.at(null) → null → cmp.eq(null, "black") → false
 ```
 
-`index` が負、または小数部を持つ場合は評価時エラー（範囲外とは区別する。
-「列の外を指した」のではなく「インデックスとして不正」なため）。
+A negative `index`, or one with a fractional part, is an evaluation fault — distinct from
+out of range, because it is not "past the end of the sequence" but "not an index".
 
-### 計算量
+### Cost
 
-列がランダムアクセス可能とは限らないため、実装は先頭から `index + 1` 要素を
-走査してよい。`flips1` ではレイの長さが最大 7 なので問題にならない。
+A sequence is not necessarily random-access, so an implementation may walk `index + 1`
+elements from the front. In `flips1` a ray is at most 7 long, so it does not matter.
 
 ---
 
 ## `seq.takeWhile`
 
-### 形式
+### Form
 
 ```jsonc
 {
   "op": "seq.takeWhile",
-  "source": <式:Sequence>,
-  "as": "<名前>",
-  "predicate": <式:Bool>
+  "source": <expression:Sequence>,
+  "as": "<name>",
+  "predicate": <expression:Bool>
 }
 ```
 
-### 評価規則
+### How it evaluates
 
-先頭から順に `predicate` を評価し、初めて `false` になった要素の **手前まで**
-を列として返す。`false` になった要素自身は含まない。以降は評価しない。
+Evaluates `predicate` from the front and returns everything **before** the first element
+where it is false. That element is not included, and nothing after it is evaluated.
 
-`predicate` が最初の要素で `false` なら空列。すべて `true` なら元の列全体。
+False on the first element gives the empty sequence; true throughout gives the whole thing.
 
-### なぜ `takeWhile` がリバーシの中核か
+### Why this is the centre of Reversi
 
-リバーシの「挟む」判定は、レイ上で
+Reversi's "sandwich" test has the shape
 
-1. 相手石が 1 個以上連続し
-2. その直後に自分の石がある
+1. one or more opponent stones in a row, and
+2. one of mine immediately after.
 
-という形をしている。1 が `seq.takeWhile`、2 が `seq.elementAt` + `cmp.eq`。
-条件 1 の「1 個以上」は、`flips1` が返した列を `flips` が連結した後、
-`canPlace` の `seq.any` が非空判定することで担保される。
+Part 1 is `seq.takeWhile`, part 2 is `seq.elementAt` plus `cmp.eq`. The "one or more" of
+part 1 is secured further out: `flips` concatenates what `flips1` returned and `canPlace`'s
+`seq.any` tests it for non-emptiness.
 
 ```jsonc
 {
@@ -331,34 +321,34 @@ seq.elementAt(範囲外) → null → grid.at(null) → null → cmp.eq(null, "b
 }
 ```
 
-空マス（`Null`）に当たった時点でも `cmp.eq` が `false` になって止まる。
-「相手石でない」に空マスと自分の石と盤端がすべて含まれるので、3 通りの
-終了条件を 1 つの述語で書けている。
+Hitting an empty square (`Null`) also makes `cmp.eq` false and stops it. Because "not an
+opponent stone" covers an empty square, one of mine, and the edge of the board, three
+stopping conditions are written as one predicate.
 
 ---
 
 ## `seq.selectMany`
 
-### 形式
+### Form
 
 ```jsonc
 {
   "op": "seq.selectMany",
-  "source": <式:Sequence>,
-  "as": "<名前>",
-  "select": <式:Sequence>
+  "source": <expression:Sequence>,
+  "as": "<name>",
+  "select": <expression:Sequence>
 }
 ```
 
-### 評価規則
+### How it evaluates
 
-各要素に対して `select` を評価し、得られた列を **元の順序を保って連結** した
-列を返す。
+Evaluates `select` for each element and concatenates the resulting sequences **in the
+original order**.
 
-`select` が `Sequence` 以外を返した場合は評価時エラー（単一値の自動ラップは
-行わない）。
+`select` returning anything but a `Sequence` is an evaluation fault; a single value is not
+wrapped automatically.
 
-### 例（リバーシ `flips`）
+### Example (Reversi's `flips`)
 
 ```jsonc
 {
@@ -369,71 +359,86 @@ seq.elementAt(範囲外) → null → grid.at(null) → null → cmp.eq(null, "b
 }
 ```
 
-8 方向それぞれの裏返し対象を求め、平坦化して 1 本の列にする。成立しない方向は
-`seq.empty` を返すので、連結の結果から自然に消える。
+Works out what each of the eight directions flips and flattens it into one run. The
+directions that do not work out returned `seq.empty`, so they vanish in the concatenation.
 
-### 重複
+### Duplicates
 
-連結時に重複除去は行わない。リバーシでは 8 方向のレイが互いに素なので重複は
-起きないが、これはルールの性質であってプラグインが保証するものではない。
+Concatenation does not remove them. In Reversi the eight rays are disjoint so none arise,
+but that is a property of the rules and not something this plugin guarantees.
 
 ---
 
 ## `seq.where` / `seq.select`
 
-### 形式
+### Form
 
 ```jsonc
-{ "op": "seq.where",  "source": <式:Sequence>, "as": "<名前>", "predicate": <式:Bool> }
-{ "op": "seq.select", "source": <式:Sequence>, "as": "<名前>", "select": <式> }
+{ "op": "seq.where",  "source": <expression:Sequence>, "as": "<name>", "predicate": <expression:Bool> }
+{ "op": "seq.select", "source": <expression:Sequence>, "as": "<name>", "select": <expression> }
 ```
 
-`seq.where` は述語を満たす要素のみからなる列、`seq.select` は各要素を射影した
-列を返す。いずれも順序を保存する。
+`seq.where` keeps the elements the predicate holds for; `seq.select` projects each element.
+Both preserve order.
 
-リバーシでは使用しない。`seq.count` の `where` と `seq.any` の `predicate` で
-足りているため。汎用語彙として提供する。
+Unused in Reversi, where `seq.count`'s `where` and `seq.any`'s `predicate` cover everything.
+Provided as general vocabulary — and both earn their place in roster, which filters staff
+lists and projects names out of records.
 
 ---
 
-## `seq.concat` / `seq.take` / `seq.skip`（1.2）
+## `seq.concat` / `seq.take` / `seq.skip` (1.2)
 
 ```jsonc
-{ "op": "seq.concat", "of": [ <式:Sequence>, … ] }
-{ "op": "seq.take", "source": <式:Sequence>, "count": <式:Number> }
-{ "op": "seq.skip", "source": <式:Sequence>, "count": <式:Number> }
+{ "op": "seq.concat", "of": [ <expression:Sequence>, … ] }
+{ "op": "seq.take", "source": <expression:Sequence>, "count": <expression:Number> }
+{ "op": "seq.skip", "source": <expression:Sequence>, "count": <expression:Number> }
 ```
 
-`seq.concat` は「`seq.of` + `seq.selectMany` で書けるから不要」として一度見送った。
-実際に書けるが、**列に対する最も普通の操作がいちばん読みにくくなる**のは、置かない
-理由ではなく置く理由だった。[`type.list`](TypeSchema.md) への追記がこれを要求した。
+`seq.concat` was once turned down on the grounds that `seq.of` plus `seq.selectMany`
+already writes it. That is true and it was the wrong conclusion: **the most ordinary
+operation on a sequence being the least readable one is a reason to add a node, not to
+withhold one.** Adding `type.list` is what forced the issue.
 
 ```jsonc
 { "op": "state.set", "path": "history",
   "value": { "op": "seq.concat", "of": ["$history", { "op": "seq.of", "of": ["@position"] }] } }
 ```
 
-`take` / `skip` は上限のある履歴を保つため。範囲を超える `count` はエラーにしない
-（列の長さは局面次第であり、3 個しかない列に 10 個求めるのは妥当な問いである）。
-負の `count` は評価時エラー——`seq.elementAt` の負インデックスと同じ扱いで、
-「範囲外」ではなく「個数として不正」。
+`take` and `skip` are for keeping a bounded history. A `count` beyond the end is not an
+error — how long a sequence is depends on the position, and asking for ten of something
+that has three is a reasonable question with a short answer. A negative `count` is an
+evaluation fault, the same treatment `seq.elementAt` gives a negative index: not "out of
+range" but "not a count".
 
 ---
 
-## 未確定事項
+## Decided
 
-- **集約ノード（`seq.sum` / `seq.min` / `seq.max` / `seq.minBy`）** — 未提供。
-  `seq.count` 以外の集約が必要になった時点で追加する。
-  [Arithmetic](Arithmetic.md) 側ではなくこちらに置くのが値モデル上は自然
-  （列を受け取る演算のため）だが、未整理。
-- **`seq.distinct`** — 未提供。等価性は値モデルが定義しているので実装は可能。
-  `seq.selectMany` の重複が問題になる規則が出たら追加する。
-- **`seq.orderBy`** — 未提供。順序付けには `Opaque` の比較が必要になり、
-  [Comparison](Comparison.md) の未確定事項と連動する。
-  `GetValidInputs` の出力順を決定的にしたい場合にも関わる。
-- **`seq.zip` / インデックス付き反復** — 未提供。`as` が要素だけを束縛する
-  現在の形では、要素の位置を参照できない。`flips1` は `seq.count` で位置を
-  代替している。
-- **列の長さに対する静的な上界** — `GetValidInputs` のコスト見積もりを
-  精密化するなら、`grid.coords` のような有界な列の長さを静的に知る仕組みが
-  要る。
+- **Aggregates over a sequence belong here, and are not provided yet.** The unresolved part
+  was where they belong — here or in [Arithmetic](Arithmetic.md) — and the value model
+  settles it: an operation that takes a sequence is a sequence operation. `math.min` taking
+  a fixed list of operands is a different node that happens to share a name. What is still
+  missing is a reason: `seq.count` is the only fold five rule sets have needed, and roster,
+  the one that does arithmetic over collections, gets by with `math.max` over two operands.
+  When `seq.sum` or `seq.minBy` is wanted, it goes here.
+- **No `seq.distinct`.** Implementable — the value model defines equality — and wanted by
+  nothing. The case would be a rule where `seq.selectMany` produces duplicates that matter;
+  in Reversi the rays are disjoint and in chess and shogi the move generators do not
+  overlap.
+- **No `seq.orderBy`.** Two things were said to be waiting on it, and both dissolved. The
+  first, ordering `Opaque` values, is settled against in [Comparison](Comparison.md). The
+  second, making `GetValidInputs` produce a stable order, is already true by construction —
+  `grid.coords` enumerates deterministically, `rec.keys` is ordinal, and candidates are the
+  product of domains walked in order. Sorting numbers and text needs no new comparison and
+  could be built tomorrow; nothing has asked.
+- **No `seq.zip`, and no indexed iteration.** `as` binds the element and not its position.
+  `flips1` reaches a position through `seq.count` instead, which is the trick that makes it
+  short rather than a workaround for a missing feature — the length of the run *is* the
+  index of what follows it. A rule set genuinely needing to walk two sequences in step has
+  not appeared.
+- **No static upper bound on a sequence's length.** The idea was to sharpen the cost
+  estimate for `GetValidInputs`, and `validationLimit` already answers that question, at
+  run time, exactly: it bounds the guards evaluated and reports `Truncated`. A static bound
+  would also need inference to be worth anything, which
+  [TypeSchema](TypeSchema.md) records is not being built yet.

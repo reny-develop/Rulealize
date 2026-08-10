@@ -1,177 +1,187 @@
 # Rulealize.Plugin.Arithmetic
 
-| 項目 | 値 |
+| | |
 | --- | --- |
-| 識別子 | `Rulealize.Plugin.Arithmetic` |
-| 名前空間 | `math` |
-| バージョン | `1.0.0` |
-| 予約プレフィックス | なし |
-| 依存 | [値モデル](../value-model.md) のみ |
+| Identifier | `Rulealize.Plugin.Arithmetic` |
+| Namespace | `math` |
+| Version | `1.0.0` |
+| Reserved prefix | none |
+| Depends on | [the value model](../value-model.md), and nothing else |
 
-`Number` に対する算術演算。
+Arithmetic on `Number`.
 
-リバーシが使うのは `math.add` 1 箇所（パス回数の加算）だけであり、このプラグイン
-は分解の妥当性を測る良い例になっている。**`Rulealize.Plugin.Core` に同梱されて
-いたら、リバーシの `requires` を読んだ人は「この RuleSet は算術を使うのか」を
-判断できない。** 分けておけば、`requires` に `Arithmetic` があることが
-「どこかで数を数えている」という情報になる。
+Reversi reaches for this in exactly one place — incrementing the pass count — which makes
+it the best illustration of why the vocabularies are cut this finely. **Had it been folded
+into a `Rulealize.Plugin.Core`, reading Reversi's `requires` would tell you nothing about
+whether the rule set does arithmetic.** Kept separate, `Arithmetic` appearing in `requires`
+means something is being counted somewhere.
 
-なお、列の要素数を数える `seq.count` は [Sequence](Sequence.md) の責務であり、
-このプラグインには含まれない。
+Counting the elements of a sequence is `seq.count` and belongs to [Sequence](Sequence.md),
+not here.
 
-## 提供ノード
+## Nodes
 
-| ノード | 種別 | リバーシでの使用 |
+| Node | Kind | Used in Reversi |
 | --- | --- | --- |
-| `math.add` | 式 | ○ `inputs.pass.effects` |
-| `math.sub` / `math.mul` / `math.div` / `math.mod` | 式 | — |
-| `math.min` / `math.max` | 式 | — |
-| `math.abs` | 式 | — |
+| `math.add` | expression | ○ `inputs.pass.effects` |
+| `math.sub` / `math.mul` / `math.div` / `math.mod` | expression | — |
+| `math.min` / `math.max` | expression | — |
+| `math.abs` | expression | — |
 
 ---
 
-## 数値表現
+## How numbers are represented
 
-値モデルの `Number` は整数と小数を区別しない。実装は **十進固定小数
-（`decimal`）** を採る。
+The value model's `Number` does not distinguish integers from fractions. The
+implementation is **decimal fixed point** (`decimal`).
 
-二進浮動小数（`double`）にしない理由は、RuleSet の意味が実行環境の丸めに
-依存しないようにするため。ルール記述で扱う数は、駒数・座標・スコア・確率と
-いった十進で書かれた量が中心であり、`0.1 + 0.2 != 0.3` のような挙動が
-ルールの判定に影響するのは望ましくない。
+Not binary floating point, so that a rule set does not mean something different depending
+on how the runtime rounds. The quantities rule descriptions deal in — piece counts,
+coordinates, scores, probabilities — are written in decimal, and `0.1 + 0.2 != 0.3`
+deciding a rule is not a thing anyone wants to debug.
 
-演算結果が `decimal` の範囲を超えた場合は評価時エラー（オーバーフローを
-サイレントに丸めない）。
+A result outside the range of `decimal` is an evaluation fault; overflow is not quietly
+rounded away.
 
 ---
 
-## 可変長演算 — `math.add` / `math.mul`
+## Variadic — `math.add` / `math.mul`
 
-### 形式
+### Form
 
 ```jsonc
-{ "op": "math.add", "of": [<式:Number>, ...] }
-{ "op": "math.mul", "of": [<式:Number>, ...] }
+{ "op": "math.add", "of": [<expression:Number>, ...] }
+{ "op": "math.mul", "of": [<expression:Number>, ...] }
 ```
 
-### 評価規則
+### How it evaluates
 
-`of` の全要素を評価し、順に畳み込む。
+Every element of `of` is evaluated and folded in order.
 
-- `math.add` の空配列は `0`（加法単位元）
-- `math.mul` の空配列は `1`（乗法単位元）
+- `math.add` of an empty array is `0`, the additive identity
+- `math.mul` of an empty array is `1`, the multiplicative identity
 
-短絡しない。`math.mul` に `0` が含まれていても全要素を評価する（純粋なので
-観測上の差は性能のみだが、規則としては全評価と定める）。
+No short-circuit: `math.mul` evaluates every element even with a `0` among them. Since
+every node is pure the only observable difference is speed, but the rule is stated as full
+evaluation.
 
-### 例（リバーシ `inputs.pass.effects`）
+### Example (Reversi's `inputs.pass.effects`)
 
 ```jsonc
 { "op": "state.set", "path": "passes",
   "value": { "op": "math.add", "of": ["$passes", 1] } }
 ```
 
-`$passes` は [値モデル §5](../value-model.md) のスナップショット意味論により
-**入力時の値** を読む。この効果が `passes` を書き換えても、同じ `effects` 内の
-他の式が読む `$passes` は元の値のまま。
+`$passes` reads **the value the input arrived at** by the snapshot semantics of
+[value model §5](../value-model.md). Even though this effect writes `passes`, any other
+expression in the same `effects` reading `$passes` still sees the original.
 
 ---
 
-## 二項演算 — `math.sub` / `math.div` / `math.mod`
+## Binary — `math.sub` / `math.div` / `math.mod`
 
-### 形式
+### Form
 
 ```jsonc
-{ "op": "math.sub", "left": <式:Number>, "right": <式:Number> }
-{ "op": "math.div", "left": <式:Number>, "right": <式:Number> }
-{ "op": "math.mod", "left": <式:Number>, "right": <式:Number> }
+{ "op": "math.sub", "left": <expression:Number>, "right": <expression:Number> }
+{ "op": "math.div", "left": <expression:Number>, "right": <expression:Number> }
+{ "op": "math.mod", "left": <expression:Number>, "right": <expression:Number> }
 ```
 
-可変長にしないのは、非可換な演算で `of: [a, b, c]` の畳み込み方向が読み取れ
-ないため。`left` / `right` なら曖昧さがない。
+Not variadic, because for a non-commutative operation `of: [a, b, c]` does not say which
+way the fold goes. `left` and `right` leave nothing to guess.
 
-### 評価規則
+### How it evaluates
 
-| ノード | 結果 |
+| Node | Result |
 | --- | --- |
 | `math.sub` | `left - right` |
-| `math.div` | `left / right`。**整数除算ではない**（`7 / 2` → `3.5`） |
-| `math.mod` | `left` を `right` で割った剰余 |
+| `math.div` | `left / right`. **Not integer division** (`7 / 2` is `3.5`) |
+| `math.mod` | the remainder of `left` divided by `right` |
 
-`math.div` を整数除算にしないのは、`Number` が整数型を持たないため。切り捨てが
-必要なら `math.floor` 相当が要るが、未提供（→ 未確定事項）。
+`math.div` is not integer division because `Number` has no integer type. Truncation would
+need something like `math.floor`, which is not provided — see below.
 
-`math.mod` の負数に対する符号は **被除数の符号に従う**（`.NET` の `%` と同じ、
-`-7 mod 3` → `-1`）。数学的な剰余（常に非負）が必要な場合は記述者が補正する。
-この選択は座標の巡回計算（トーラス状の盤面など）で問題になりうるので、
-必要が出たら `math.rem` を別途追加する。
+The sign of `math.mod` on negatives **follows the dividend**, as `%` does in .NET, so
+`-7 mod 3` is `-1`. A rule set needing the mathematical remainder, always non-negative,
+corrects for it.
 
-### エラー
+### Errors
 
-| 条件 | タイミング |
+| Condition | When |
 | --- | --- |
-| `math.div` / `math.mod` の `right` が `0` | 評価時エラー |
+| `right` of `math.div` or `math.mod` is `0` | evaluation |
 
 ---
 
 ## `math.min` / `math.max`
 
-### 形式
+### Form
 
 ```jsonc
-{ "op": "math.min", "of": [<式:Number>, ...] }
+{ "op": "math.min", "of": [<expression:Number>, ...] }
 ```
 
-### 評価規則
+### How it evaluates
 
-全要素を評価し、最小値／最大値を返す。
+Evaluates every element and returns the smallest or largest.
 
-**空配列は評価時エラー。** 単位元（`+∞` / `-∞`）を値モデルが持たないため、
-返せる値がない。`math.add` の空配列が `0` になるのとは扱いが異なる。
+**An empty array is an evaluation fault.** The value model has no infinities to serve as
+identities, so there is nothing to return — which is why this differs from `math.add`,
+where the empty array is `0`.
 
-列に対する最小・最大は `seq.*` 側の責務（未提供）。`math.min` は要素数が静的に
-決まっている場合のためのもの。
+The minimum or maximum *of a sequence* would belong to `seq.*`, and is not provided there
+either. `math.min` is for the case where the number of operands is fixed by the document.
 
 ---
 
 ## `math.abs`
 
-### 形式
+### Form
 
 ```jsonc
-{ "op": "math.abs", "value": <式:Number> }
+{ "op": "math.abs", "value": <expression:Number> }
 ```
 
-絶対値を返す。
+Returns the absolute value.
 
 ---
 
-## null と型の扱い
+## Null and kinds
 
-**すべての算術ノードは、オペランドが `Number` 以外なら評価時エラー。**
-`Null` も例外ではない。
+**Every arithmetic node faults when an operand is not a `Number`**, and `Null` is no
+exception.
 
-[Comparison](Comparison.md) の `cmp.eq` が null 安全なのと対照的だが、これも
-意図的な非対称である。「値が無いものとの等価判定」には `false` という自然な
-答えがあるが、「値が無いものとの加算」には無い。`Null` を `0` として扱う暗黙
-変換は、盤面の空マスを 0 点として数えてしまうような事故に直結する。
+The contrast with [Comparison](Comparison.md)'s null-safe `cmp.eq` is deliberate. "Equal to
+an absent value" has an obvious answer, `false`; "added to an absent value" has none.
+Silently treating `Null` as `0` is exactly how an empty square ends up counted as zero
+points.
 
-`Null` を含みうる値を算術に渡す場合は、`cmp.coalesce` で明示的に潰す。
+A value that might be `Null` gets flattened explicitly with `cmp.coalesce` before it
+reaches arithmetic.
 
-`Text` から `Number` への暗黙変換も行わない（`"1" + 1` はエラー）。
+There is no implicit conversion from `Text` either: `"1" + 1` is a fault.
 
 ---
 
-## 未確定事項
+## Decided
 
-- **`math.floor` / `math.ceil` / `math.round`** — 未提供。`math.div` が
-  実数除算なので、整数を得る手段が現状ない。座標計算を伴うルール（盤面の
-  中心を求めるなど）で必要になる可能性が高い。丸めモードの選択（銀行家丸め
-  か算術丸めか）も含めて要検討。
-- **`math.pow` / `math.sqrt`** — 未提供。`sqrt` は無理数を返すため、十進固定
-  小数の値モデルと相性が悪い。距離計算が必要なら二乗距離で比較させる。
-- **オーバーフロー時の飽和** — 現状エラー。飽和やラップアラウンドを選べる
-  ようにする動機は今のところない。
-- **`seq` に対する集約（`sum` / `minBy` など）** — [Sequence](Sequence.md) 側に
-  置くべきか、`math` 側に置くべきかが未整理。値モデル上は列を受け取る演算に
-  なるので Sequence 側が自然だが、`seq.count` 以外の集約はまだ必要が出ていない。
+- **No `math.floor` / `math.ceil` / `math.round`.** This was expected to be needed soon —
+  `math.div` gives real division, so there is no way to land on an integer, and rules doing
+  coordinate arithmetic looked like they would want one. Five rule sets later, including
+  three board games, none has. The reason is that the questions that looked like they
+  needed division turned out to be reachable another way: chess measures distance to the
+  edge with `seq.count` over a `grid.ray` rather than by dividing coordinates. When one is
+  finally needed, the rounding mode has to be decided with it, and this is where that
+  discussion starts.
+- **No `math.pow` / `math.sqrt`.** `sqrt` returns irrationals, which decimal fixed point
+  represents badly. A rule needing distances should compare squared distances.
+- **No `math.rem`** (the always-non-negative remainder). Recorded as the fix if the sign of
+  `math.mod` ever bites on cyclic coordinates such as a toroidal board. No rule set has a
+  toroidal board.
+- **Overflow stays a fault**, rather than saturating or wrapping. Nothing has wanted
+  either, and both turn a mistake into a plausible wrong answer.
+- **Aggregates over a sequence belong in [Sequence](Sequence.md), not here.** This was
+  filed in both places as unresolved; it is resolved by the value model. An operation
+  taking a sequence is a sequence operation, and `math.min` taking a fixed list of operands
+  is a different node with a similar name. Sequence records what it would take to want one.

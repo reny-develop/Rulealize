@@ -1,62 +1,63 @@
 # Rulealize.Plugin.Grid
 
-| 項目 | 値 |
+| | |
 | --- | --- |
-| 識別子 | `Rulealize.Plugin.Grid` |
-| 名前空間 | `grid` |
-| バージョン | `1.1.0` |
-| 予約プレフィックス | なし |
-| 依存 | [値モデル](../value-model.md) のみ |
+| Identifier | `Rulealize.Plugin.Grid` |
+| Namespace | `grid` |
+| Version | `1.1.0` |
+| Reserved prefix | none |
+| Depends on | [the value model](../value-model.md), and nothing else |
 
-二次元盤面、座標、方向、レイ走査。
+Two-dimensional boards, coordinates, directions, and rays.
 
-**リバーシ専用の語彙は一つも含まない。** 「石を挟む」「裏返す」といった概念は
-Grid には無く、それらは RuleSet 側が `grid.ray` と `seq.takeWhile` の組み合わせ
-として記述する。この境界を守れているかが、プラグイン設計の妥当性を測る基準に
-なっている。
+**Not one item of Reversi-specific vocabulary.** "Sandwich" and "flip" are not concepts
+Grid has; the rule set builds them out of `grid.ray` and `seq.takeWhile`. Whether that
+boundary holds is the measure of whether the plugin design is sound.
 
-同じ Grid で、五目並べ（`grid.ray` + 連続長）、チェッカー、ライフゲームなどが
-記述できるはず。[チェスは 1.1 の追加で書けた](../dsl-example-chess.md)——成りも
-持ち駒も専用プラグインを必要とせず、盤面を値として更新する手段だけで足りた。
+The same Grid should describe gomoku (`grid.ray` plus a run length), draughts, and the game
+of life. [Chess was written with the 1.1 additions](../dsl-example-chess.md) — promotion
+and captured pieces needed no dedicated plugin, only a way to build a new board as a value.
 
-**3 種類のノードをすべて提供する唯一のプラグイン。**
+**The only plugin that provides all three kinds of node.**
 
-## 提供ノード
+## Nodes
 
-| ノード | 種別 | リバーシでの使用 |
+| Node | Kind | Used in Reversi |
 | --- | --- | --- |
-| `grid.board` | スキーマ | ○ `state.schema.board` |
-| `grid.square` | スキーマ | — （1.1 で追加） |
-| `grid.at` | 式 | ○ `flips1`, `canPlace`, `terminal.when` |
-| `grid.coords` | 式 | ○ `hasAnyMove`, `inputs.place.params`, `terminal.when` |
-| `grid.cells` | 式 | ○ `terminal.result` |
-| `grid.ray` | 式 | ○ `flips1` |
-| `grid.directions` | 式 | ○ `flips` |
-| `grid.with` | 式 | — （1.1 で追加） |
-| `grid.withMany` | 式 | — （1.1 で追加） |
-| `grid.set` | 効果 | ○ `inputs.place` |
-| `grid.setMany` | 効果 | ○ `inputs.place` |
+| `grid.board` | schema | ○ `state.schema.board` |
+| `grid.square` | schema | — (added in 1.1) |
+| `grid.at` | expression | ○ `flips1`, `canPlace`, `terminal.when` |
+| `grid.coords` | expression | ○ `hasAnyMove`, `inputs.place.params`, `terminal.when` |
+| `grid.cells` | expression | ○ `terminal.result` |
+| `grid.ray` | expression | ○ `flips1` |
+| `grid.directions` | expression | ○ `flips` |
+| `grid.with` | expression | — (added in 1.1) |
+| `grid.withMany` | expression | — (added in 1.1) |
+| `grid.set` | effect | ○ `inputs.place` |
+| `grid.setMany` | effect | ○ `inputs.place` |
 
-## 1.1 で追加したもの
+## What 1.1 added
 
 ### `grid.with` / `grid.withMany`
 
 ```jsonc
-{ "op": "grid.with",     "grid": <式:盤面>, "coord": <式:座標>,    "value": <式> }
-{ "op": "grid.withMany", "grid": <式:盤面>, "coords": <式:Sequence>, "value": <式> }
+{ "op": "grid.with",     "grid": <expression:board>, "coord": <expression:coord>,     "value": <expression> }
+{ "op": "grid.withMany", "grid": <expression:board>, "coords": <expression:Sequence>, "value": <expression> }
 ```
 
-`grid.set` / `grid.setMany` の**式版**。何も書き込まず、盤面を受け取って別の
-盤面を返す。座標の扱いは効果版と同じく厳格（盤外・`null` は評価時エラー）。
+The **expression form** of `grid.set` / `grid.setMany`. Nothing is written; a board goes in
+and a different board comes out. Coordinates are handled as strictly as in the effect
+versions — off the board or `null` is an evaluation fault.
 
-**`when` が「その手を指した後の局面」を見られないために要る。** `when` は入力
-時の状態に対して評価され、`effects` は `when` を通ってから走る。リバーシの合法
-性は目の前の局面の性質なのでこの順序でよいが、チェスの合法性は「指した後に自玉
-が取られないこと」であり、後の局面を値として組み立てられなければ問えない。
+**Needed because `when` cannot see the position the move leads to.** A guard is evaluated
+against the state as the input found it, and `effects` run only after the guard passes.
+Reversi's legality is a property of the position in front of you, so that order is fine.
+Chess's legality is "and your own king is not then capturable", which cannot be asked
+without building the later position as a value.
 
-答えられるのは**盤面が 1 フィールドの 1 つの値だから**である。遷移後の状態全体
-（複数フィールド）に依存する規則は依然として書けず、それはこのプラグインでは
-なくランタイム側の問題になる。
+That it can be answered at all is because **a board is one value in one field**. A rule
+that depends on the whole state after a transition — several fields at once — still cannot
+be written, and that is a question for the runtime rather than for this plugin.
 
 ### `grid.square`
 
@@ -64,369 +65,376 @@ Grid には無く、それらは RuleSet 側が `grid.ray` と `seq.takeWhile` �
 { "op": "grid.square", "width": 8, "height": 8, "coord": "algebraic", "nullable": true }
 ```
 
-**座標 1 つを保持する状態フィールドのスキーマ。** JSON 形は盤の記法（`"e3"`）。
+**The schema for a state field holding a single coordinate.** Its JSON form is the board's
+notation (`"e3"`).
 
-これが無いと状態は座標を持てない。`type.string` に入れれば `grid.at` は読める
-（[値モデル §1.1](../value-model.md) がテキスト正規形の受理を要求しているため）
-が、`grid.coords` が返した座標と `cmp.eq` で突き合わせられなくなる——Text と
-Opaque は種別が違い、種別が違えば非等価だからである。
+Without it the state cannot hold a coordinate. Putting one in a `type.string` lets
+`grid.at` read it — [value model §1.1](../value-model.md) requires the text form to be
+accepted — but it can no longer be compared with `cmp.eq` against a coordinate that
+`grid.coords` produced, because `Text` and `Opaque` are different kinds and different kinds
+are never equal.
 
-チェスで必要なフィールドはちょうど 1 つ、「直前にポーンが飛び越したマス」。
+Chess needs exactly one such field: the square a pawn just skipped over.
 
-## 導入する Opaque 型
+## The opaque types introduced
 
-| 型タグ | 意味 | テキスト正規形 |
+| Type tag | Meaning | Canonical text |
 | --- | --- | --- |
-| `grid/coord` | 盤上の位置 | 盤の `coord` 記法に従う（例: `"d3"`） |
-| `grid/direction` | 方向ベクトル | `"<dx>,<dy>"`（例: `"1,-1"`） |
+| `grid/coord` | a position on the board | the board's `coord` notation, e.g. `"d3"` |
+| `grid/direction` | a direction vector | `"<dx>,<dy>"`, e.g. `"1,-1"` |
 
-[値モデル §1.1](../value-model.md) のとおり、Opaque はテキスト正規形との相互
-変換を持たねばならない。座標については、これが `GetValidInputs` の出力
-（`{ "at": "d3" }`）と InputRule の入力を成立させている。
+Per [value model §1.1](../value-model.md) these convert to and from text. For coordinates
+that is what makes `GetValidInputs`'s output (`{ "at": "d3" }`) and an input document's
+arguments work at all.
 
 ---
 
 ## `grid.board`
 
-盤面のスキーマ。
+The schema of a board.
 
-### 形式
+### Form
 
 ```jsonc
 {
   "op": "grid.board",
-  "width": <整数>,          // 静的
-  "height": <整数>,         // 静的
-  "coord": "<記法>",        // 静的。省略時 "index"
-  "cell": <スキーマノード>   // 静的
+  "width": <integer>,        // static
+  "height": <integer>,       // static
+  "coord": "<notation>",     // static, "index" if omitted
+  "cell": <schema node>      // static
 }
 ```
 
-**スキーマノード。** `state.schema` の内側にのみ出現できる。
+**A schema node.** It appears only inside `state.schema`.
 
-| キー | 説明 |
+| Key | |
 | --- | --- |
-| `width` / `height` | 盤の寸法。1 以上 |
-| `coord` | 座標のテキスト正規形。下記 |
-| `cell` | 各マスの型。任意のスキーマノード |
+| `width` / `height` | the dimensions, at least 1 |
+| `coord` | the canonical text form of a coordinate; below |
+| `cell` | the type of each square; any schema node |
 
-### `coord` 記法
+### `coord` notations
 
-| 値 | 形式 | 例（8×8 の左上／右下） |
+| Value | Form | Example (top-left / bottom-right of 8×8) |
 | --- | --- | --- |
-| `"algebraic"` | 列を英小文字、行を 1 始まりの数字 | `"a1"` / `"h8"` |
-| `"index"` | `"<x>,<y>"`（0 始まり） | `"0,0"` / `"7,7"` |
+| `"algebraic"` | a lower-case letter for the file, a 1-based number for the rank | `"a1"` / `"h8"` |
+| `"index"` | `"<x>,<y>"`, 0-based | `"0,0"` / `"7,7"` |
 
-`"algebraic"` は `width` が 26 以下の場合のみ使用できる（静的エラー）。
+`"algebraic"` is available only when `width` is 26 or less; otherwise a static error.
 
-原点と軸の向きは `"algebraic"` の場合、**左下が `a1`、y は上向き** とする
-（チェス／リバーシの慣行）。`"index"` は **左上が `0,0`、y は下向き**。
-両者で向きが違うのは混乱の元だが、それぞれの記法の慣行に従うほうが誤解が
-少ないと判断した。
+For `"algebraic"` the origin is **`a1` at bottom-left with y increasing upward**, as chess
+and Reversi have always had it. `"index"` puts **`0,0` at top-left with y increasing
+downward**. Two notations disagreeing about which way is up invites confusion, and
+following each notation's own convention was judged to invite less.
 
-### `cell` と空マス
+### `cell` and the empty square
 
 ```jsonc
 "cell": { "op": "type.enum", "values": ["black", "white"], "nullable": true }
 ```
 
-Grid は [TypeSchema](TypeSchema.md) を参照しない。`cell` に来るのは
-「何らかのスキーマノード」であり、その解釈はコアのノード構築機構が行う。
+Grid does not reference [TypeSchema](TypeSchema.md). What arrives at `cell` is "some schema
+node", and building it is the core's business.
 
-**Grid は `nullable` を要求しないが、`grid.at` が盤外に `Null` を返す以上、
-`cell` が `nullable` でない盤面では「盤外」と「正常なセル値」の区別がつく**
-（正常なセル値は決して `Null` にならないため）。リバーシは `nullable` にして
-両者をあえて同一視している（下記 `grid.at` 参照）。
+**Grid does not require `nullable`, but since `grid.at` answers `Null` off the board, a
+board whose `cell` is not nullable can tell "off the board" from a real cell value** —
+because a real one is then never `Null`. Reversi makes its cell nullable and deliberately
+conflates the two; see `grid.at`.
 
-### JSON 表現
+### The JSON form
 
-盤面の状態は **sparse なオブジェクト** として直列化する。キーは座標の
-テキスト正規形、値はセルの値。
+A board is serialized as a **sparse object**: the keys are coordinates in canonical text,
+the values are cell values.
 
 ```jsonc
 "board": { "d4": "white", "e4": "black", "d5": "black", "e5": "white" }
 ```
 
-`Null` のマスはキーごと省略する。8×8 の全マスを書き下すより短く、差分も読み
-やすい。**この表現は Grid の内部事情であり、[State](State.md) プラグインは
-関知しない。** dense な配列表現へ変えたければ、Grid の実装だけを差し替える。
+`Null` squares are left out entirely. Shorter than writing all 64, and the diffs are
+readable. **This form is Grid's own business and [State](State.md) is not involved** — to
+switch to a dense array, change Grid's implementation and nothing else.
 
-内部表現（メモリ上）が sparse である必要はない。8×8 の配列で保持して、直列化
-時に sparse へ落とすのが自然。
+The in-memory representation need not be sparse. Holding an 8×8 array and flattening to
+sparse on serialization is the natural thing.
 
 ---
 
-## 座標の受理形式
+## What a coordinate may be written as
 
-座標を受け取るすべてのノード（`grid.at` / `grid.set` / `grid.ray` など）は、
-次の 2 つを受理する。
+Every node taking a coordinate — `grid.at`, `grid.set`, `grid.ray` and the rest — accepts
+two things.
 
-| 種別 | 例 | 用途 |
+| Kind | Example | Where it comes from |
 | --- | --- | --- |
-| `Opaque(grid/coord)` | — | `grid.coords` / `grid.ray` の出力を渡す場合 |
-| `Text` | `"d3"` | InputRule の `args` 由来。盤の `coord` 記法で解釈する |
+| `Opaque(grid/coord)` | — | the output of `grid.coords` or `grid.ray` |
+| `Text` | `"d3"` | an input document's `args`, read in the board's notation |
 
-`Text` の解釈に失敗した場合（記法違反）は評価時エラー。**盤の範囲外を指す
-テキストは、解釈には成功する** — 範囲外の扱いは各ノードが定める（下記）。
+Text that does not parse in the board's notation is an evaluation fault. **Text naming a
+square off the board parses successfully** — what happens to an off-board coordinate is
+each node's own business, below.
 
-`Null` を受け取った場合はノードごとに定める。
+What `Null` does is also each node's business.
 
-この二形式受理が、`inputs.place.params.at` の domain が `Opaque` の列を返す
-のに、InputRule には `"at": "d3"` と書ける理由。
+Accepting both forms is why the domain of `inputs.place.params.at` can produce a sequence
+of opaque values while an input document writes `"at": "d3"`.
 
 ---
 
 ## `grid.at`
 
-マスの値を読む。
+Reads a square.
 
-### 形式
+### Form
 
 ```jsonc
-{
-  "op": "grid.at",
-  "grid": <式:盤面>,
-  "coord": <式:座標>
-}
+{ "op": "grid.at", "grid": <expression:board>, "coord": <expression:coord> }
 ```
 
-### 評価規則
+### How it evaluates
 
-| `coord` | 戻り値 |
+| `coord` | Result |
 | --- | --- |
-| 盤内 | そのマスの値（空マスなら `Null`） |
-| **盤外** | **`Null`** |
+| on the board | that square's value (`Null` when empty) |
+| **off the board** | **`Null`** |
 | **`Null`** | **`Null`** |
 
-### 盤外と `Null` 座標を許す理由
+### Why off-board and null coordinates are allowed
 
-これが Grid の設計上もっとも重要な判断。
+The most important judgement in Grid's design.
 
-リバーシの `flips1` は、レイの終端を越えた位置を読む。
+Reversi's `flips1` reads the position one past the end of a run.
 
 ```jsonc
 "coord": { "op": "seq.elementAt", "source": "@ray",
            "index": { "op": "seq.count", "source": "@run" } }
 ```
 
-レイが盤端まで相手石で埋まっていれば、`seq.elementAt` は範囲外となり `Null`
-を返す。ここで `grid.at` が `Null` 座標をエラーにすると、DSL 記述者は
-「レイの長さと `run` の長さを比較する」境界チェックを明示的に書かねばならない。
+When the ray is opponent stones all the way to the edge, `seq.elementAt` goes out of range
+and returns `Null`. Make `grid.at` fault on a `Null` coordinate and whoever writes the rule
+set has to add an explicit "compare the ray's length with the run's length" check.
 
-**盤外・`Null` 座標・空マスの 3 つがすべて `Null` に潰れることで、
-「そこに自分の石は無い」という一つの判定に統一される。** これが
-[Comparison](Comparison.md) の null 安全な `cmp.eq` と噛み合って、`flips1` の
-条件式が 1 段で済んでいる。
+**Off the board, a `Null` coordinate and an empty square all collapse into `Null`, which
+makes them one question: "there is no stone of mine there."** That meshing with
+[Comparison](Comparison.md)'s null-safe `cmp.eq` is what keeps `flips1`'s condition to a
+single level.
 
-ただしこの設計は、**タイプミスした座標が静かに `Null` になる** という代償を
-伴う。座標が静的に書かれることは稀（ほぼ常に `grid.coords` や `grid.ray`
-由来）なので、実害は小さいと判断した。厳格版が必要なら `grid.atStrict` を
-別途追加する。→ 未確定事項。
+The price is that **a mistyped coordinate quietly becomes `Null`**. Coordinates are almost
+never written as literals — nearly all of them come from `grid.coords` or `grid.ray` — so
+the exposure was judged small, and three board games later nothing has been traced to it.
 
 ---
 
 ## `grid.coords`
 
-盤上の全座標。
+Every coordinate on the board.
 
-### 形式
+### Form
 
 ```jsonc
-{ "op": "grid.coords", "of": <式:盤面> }
+{ "op": "grid.coords", "of": <expression:board> }
 ```
 
-### 評価規則
+### How it evaluates
 
-盤上の全座標を `Opaque(grid/coord)` の列として返す。長さは `width × height`。
+Every coordinate as a sequence of `Opaque(grid/coord)`, of length `width × height`.
 
-**列挙順序は決定的でなければならない。** 順序は左上から行優先
-（`"index"` 記法での `(0,0), (1,0), …`）とする。`GetValidInputs` の出力順が
-実行ごとに変わらないようにするため。
+**The enumeration order has to be deterministic.** It is row-major from the top left — in
+`"index"` notation `(0,0), (1,0), …` — so that the order `GetValidInputs` reports does not
+change between runs.
 
-### 例（リバーシ）
+### Example (Reversi)
 
 ```jsonc
-// inputs.place.params — 候補生成の domain
+// inputs.place.params — the domain candidates come from
 "at": { "domain": { "op": "grid.coords", "of": "$board" } }
 
-// hasAnyMove — 全マス走査
+// hasAnyMove — scan every square
 { "op": "seq.any", "source": { "op": "grid.coords", "of": "$board" }, "as": "c",
   "predicate": { "op": "def.call", "def": "canPlace", "args": { "at": "@c" } } }
 ```
 
-domain としての用法が `GetValidInputs` の起点。8×8 なら 64 候補で、
-validationLimit に十分収まる。
+Its use as a domain is where `GetValidInputs` starts. On 8×8 that is 64 candidates, well
+inside any sensible `validationLimit`.
 
 ---
 
 ## `grid.cells`
 
-盤上の全セル値。
+Every cell value on the board.
 
-### 形式
+### Form
 
 ```jsonc
-{ "op": "grid.cells", "of": <式:盤面> }
+{ "op": "grid.cells", "of": <expression:board> }
 ```
 
-座標ではなく値の列を返す。順序は `grid.coords` と同じ。
+Values rather than coordinates. Same order as `grid.coords`.
 
-### 例（リバーシ `terminal.result`）
+### Example (Reversi's `terminal.result`)
 
 ```jsonc
 { "op": "seq.count", "source": { "op": "grid.cells", "of": "$board" },
   "as": "c", "where": { "op": "cmp.eq", "left": "@c", "right": "black" } }
 ```
 
-`grid.coords` + `grid.at` でも書けるが、値だけが要る場合に短くなる。
+`grid.coords` plus `grid.at` writes the same thing; this is shorter when only the values
+are wanted.
 
 ---
 
 ## `grid.ray`
 
-ある座標からある方向へ伸びる座標列。
+The coordinates running from a square in a direction.
 
-### 形式
+### Form
 
 ```jsonc
 {
   "op": "grid.ray",
-  "grid": <式:盤面>,
-  "from": <式:座標>,
-  "dir": <式:方向>,
-  "length": <式:Number>   // 省略可
+  "grid": <expression:board>,
+  "from": <expression:coord>,
+  "dir": <expression:direction>,
+  "length": <expression:Number>   // optional
 }
 ```
 
-### 評価規則
+### How it evaluates
 
-`from` から `dir` 方向へ 1 歩ずつ進んだ座標の列を返す。
+The coordinates reached by stepping from `from` in direction `dir`.
 
-- **`from` 自身は含まない**（1 歩目から始まる）
-- 盤の外へ出た時点で終了する
-- `length` があればその歩数で打ち切る
+- **`from` itself is not included**; it starts one step out.
+- It stops on leaving the board.
+- `length` cuts it off after that many steps.
 
-`from` が盤外または `Null` の場合は空列を返す（エラーにしない）。
+`from` off the board or `Null` gives the empty sequence rather than a fault.
 
-戻り値は `Opaque(grid/coord)` の列。
+The elements are `Opaque(grid/coord)`.
 
-### `from` を含まない理由
+### Why `from` is excluded
 
-含める設計だと、リバーシの `flips1` は毎回先頭を読み飛ばす必要がある。
-「隣から先を見る」がレイの主用途であり、含めないほうが記述が短い。
-起点自体が要るなら `from` を直接使えばよい。
+Include it and Reversi's `flips1` has to skip the first element every time. "Look outward
+from the neighbour" is what a ray is mostly for, and excluding it is shorter. A rule set
+wanting the origin already has `from`.
 
-### 例（リバーシ `flips1`）
+### Example (Reversi's `flips1`)
 
 ```jsonc
 { "op": "grid.ray", "grid": "$board", "from": "@at", "dir": "@dir" }
 ```
 
-8×8 の盤で、この列の長さは最大 7。`seq.takeWhile` と `seq.elementAt` から
-2 回列挙されるため、[Sequence](Sequence.md) の再列挙可能性が要件になる。
+On an 8×8 board this is at most 7 long. It is enumerated twice, by `seq.takeWhile` and
+`seq.elementAt`, which is what makes [Sequence](Sequence.md)'s re-enumerability a
+requirement rather than a nicety.
 
 ---
 
 ## `grid.directions`
 
-方向の集合。
+A set of directions.
 
-### 形式
+### Form
 
 ```jsonc
 {
   "op": "grid.directions",
-  "of": <式:盤面>,
-  "kind": "<種別>"       // 静的
+  "of": <expression:board>,
+  "kind": "<kind>"       // static
 }
 ```
 
 ### `kind`
 
-| 値 | 内容 | 個数 |
+| Value | | Count |
 | --- | --- | --- |
-| `"orthogonal"` | 上下左右 | 4 |
-| `"diagonal"` | 斜め 4 方向 | 4 |
-| `"eight"` | 上記すべて | 8 |
+| `"orthogonal"` | up, down, left, right | 4 |
+| `"diagonal"` | the four diagonals | 4 |
+| `"eight"` | all of the above | 8 |
 
-戻り値は `Opaque(grid/direction)` の列。列挙順序は決定的
-（`"eight"` は `(-1,-1)` から行優先）。
+The elements are `Opaque(grid/direction)`, in a deterministic order (`"eight"` runs
+row-major from `(-1,-1)`).
 
-`of` を取るのは、盤の座標系（軸の向き）に整合した方向を返すため。
+It takes `of` so the directions it returns agree with that board's coordinate system.
 
-### 個別の方向を書く手段
+### Writing a single direction
 
-現状、`{ "op": "grid.directions" }` の集合からしか方向を得られない。
-特定の 1 方向（駒の前方など）を指定する手段は未提供。→ 未確定事項。
+A direction has a canonical text form, so **a rule set writes one as a string literal**:
+`"0,-1"` is a direction wherever a direction is expected, exactly as `"d3"` is a
+coordinate. `grid.directions` is a convenience for the common sets, not the only way to
+obtain one.
 
-リバーシは 8 方向すべてを等しく扱うため、これで足りている。
+Shogi's forward direction is a definition that picks the literal by colour:
+
+```jsonc
+"fwd": { "params": ["colour"], "body":
+  { "op": "branch.match", "value": "@colour", "cases": { "black": "0,-1", "white": "0,1" } } }
+```
 
 ---
 
 ## `grid.set`
 
-1 マスに書き込む。
+Writes one square.
 
-### 形式
+### Form
 
 ```jsonc
 {
   "op": "grid.set",
-  "target": <式:盤面>,
-  "coord": <式:座標>,
-  "value": <式>
+  "target": <expression:board>,
+  "coord": <expression:coord>,
+  "value": <expression>
 }
 ```
 
-**効果ノード。** `inputs.*.effects` の要素としてのみ出現できる。
+**An effect node.** It appears only as an element of `inputs.*.effects`.
 
-### 適用規則
+### How it applies
 
-1. `target` / `coord` / `value` を **スナップショットに対して** 評価する
-2. ドラフト上の該当盤面の `coord` に `value` を書き込む
+1. `target`, `coord` and `value` are evaluated **against the snapshot**.
+2. `value` is written to `coord` of that board in the draft.
 
-`target` は書き込み先の盤面を指す式で、実際には `$board` のような
-`state.get` になる。State プラグインの `path` と対応づけて、ドラフトの
-どこへ書くかを解決する。
+`target` is the expression naming the board to write to, in practice a `state.get` such as
+`$board`. It is matched against the State plugin's path to work out where in the draft the
+write lands.
 
-### 範囲外・`Null` 座標
+### Off the board and `Null` coordinates
 
-**`grid.at` と異なり、評価時エラー。**
+**Unlike `grid.at`, an evaluation fault.**
 
-読みが寛容で書きが厳格、という非対称は意図的である。読みの `Null` は
-「そこには何も無い」という有意味な答えになるが、書きの範囲外に対応する
-有意味な動作は「無視する」しかなく、それはルールの誤りを静かに握り潰す。
+Lenient reads and strict writes is deliberate. A `Null` from a read is a meaningful answer
+— "there is nothing there" — while the only thing a write off the board could meaningfully
+do is nothing at all, and that silently swallows a mistake in the rules.
 
-リバーシの `place` は `when`（`canPlace`）で座標が盤内かつ空であることを確認済み
-なので、この厳格さに抵触しない。
+Reversi's `place` has already established through `when` (`canPlace`) that the square is on
+the board and empty, so it never runs into the strictness.
 
 ---
 
 ## `grid.setMany`
 
-複数マスに同じ値を書き込む。
+Writes one value to several squares.
 
-### 形式
+### Form
 
 ```jsonc
 {
   "op": "grid.setMany",
-  "target": <式:盤面>,
-  "coords": <式:Sequence>,
-  "value": <式>
+  "target": <expression:board>,
+  "coords": <expression:Sequence>,
+  "value": <expression>
 }
 ```
 
-**効果ノード。**
+**An effect node.**
 
-### 適用規則
+### How it applies
 
-`coords` を列挙し、各座標へ `value` を書き込む。`value` は **1 回だけ評価** し、
-全座標へ同じ値を書く（座標ごとに再評価しない）。
+Enumerates `coords` and writes `value` to each. `value` is **evaluated once** and the same
+value goes to every coordinate; it is not re-evaluated per square.
 
-空列なら何もしない。範囲外・`Null` 座標は `grid.set` と同じくエラー。
+An empty sequence does nothing. Off-board and `Null` coordinates fault, as in `grid.set`.
 
-### 例（リバーシ `inputs.place.effects`）
+### Example (Reversi's `inputs.place.effects`)
 
 ```jsonc
 { "op": "grid.setMany", "target": "$board",
@@ -434,44 +442,55 @@ validationLimit に十分収まる。
   "value": "#me" }
 ```
 
-裏返し対象をまとめて自分の色にする。`coords` はスナップショットに対して評価
-されるので、直前の `grid.set`（着手位置への書き込み）の影響を受けない。
-これは [値モデル §5](../value-model.md) のスナップショット意味論が実際に
-効いている箇所。
-
-座標ごとに異なる値を書く手段（`grid.setEach` のようなもの）は未提供。リバーシ
-では不要。→ 未確定事項。
+Turns everything captured to my colour in one go. `coords` is evaluated against the
+snapshot, so it is unaffected by the `grid.set` just before it that put the new stone down
+— which is [value model §5](../value-model.md)'s snapshot semantics doing visible work.
 
 ---
 
-## リバーシで使わなかった概念
+## What Reversi did not need
 
-Grid が意図的に持たない、あるいは未提供のもの。
+Things Grid deliberately lacks, or has not been given.
 
-- **隣接（`grid.neighbors`）** — `grid.ray` の `length: 1` で代替できる
-- **領域・パターンマッチ** — 五目並べの「5 連」は `grid.ray` +
-  `seq.takeWhile` で書ける想定
-- **盤面の回転・反転** — 対称性を使った探索の最適化に有用だが、ルール記述には
-  不要
-- **複数盤面の関係** — 盤面が 2 つ以上ある状態（表裏など）は、State に
-  フィールドを 2 つ持てば表現できる
+- **Adjacency (`grid.neighbors`)** — `grid.ray` with `length: 1` covers it, and shogi's
+  step pieces are written exactly that way.
+- **Regions and pattern matching** — gomoku's "five in a row" is expected to come out of
+  `grid.ray` plus `seq.takeWhile`.
+- **Rotating and reflecting a board** — useful for exploiting symmetry in a search, and not
+  needed to state rules.
+- **Relating two boards** — a state with two boards is two fields.
 
 ---
 
-## 未確定事項
+## Decided
 
-- **`grid.atStrict`** — 範囲外をエラーにする厳格版。上述の代償への対処。
-- **個別方向の指定** — 駒の前方のような特定方向を書く手段。将棋・チェスで
-  必須になる。`{ "op": "grid.direction", "dx": 0, "dy": 1 }` のような形か。
-- **手番相対の方向** — 「自分から見て前」は手番によって向きが変わる。
-  Grid が手番を知るのは越権なので、RuleSet 側で `branch.match` するか、
-  方向を反転する `grid.flip` を置くか。
-- **`grid.setEach`** — 座標ごとに異なる値を書く効果。
-- **非矩形の盤** — 六角盤、穴あき盤など。`width` / `height` の矩形前提を
-  崩すことになるため、別プラグイン（`Rulealize.Plugin.HexGrid` など）に
-  するのが妥当か。
-- **座標の順序** — [Comparison](Comparison.md) の未確定事項と連動。
-  `Opaque(grid/coord)` に順序を与えれば `seq.orderBy` で並べ替えられる。
-- **`grid.coords` の絞り込み版** — `GetValidInputs` の候補数を domain の
-  段階で減らす `grid.coordsWhere`。リバーシ（64 候補）では不要だが、
-  より大きな盤や複数パラメータの入力では必須になる。
+- **No node for building a single direction, and none was ever needed.** This was recorded
+  as something chess and shogi would make unavoidable, with a sketch of
+  `{ "op": "grid.direction", "dx": 0, "dy": 1 }`. **The premise was simply wrong**: a
+  direction has a canonical text form, so `"0,-1"` already is one. The claim that
+  directions could only be got out of `grid.directions` was false when it was written.
+- **No turn-relative directions either**, for the same reason. "Forward from my side"
+  changes with the colour to move, and Grid knowing whose turn it is would be overreach —
+  which was the original objection, and it stands. What was missing was noticing that the
+  rule set can do it in three lines with `branch.match`, which is what shogi's `fwd` above
+  is.
+- **No `grid.atStrict`.** The lenient read has a real cost, a mistyped coordinate becoming
+  `Null`, and after three board games nothing has been traced to it. Coordinates come from
+  `grid.coords` and `grid.ray`, not from typing.
+- **No `grid.setEach`** for writing a different value per coordinate. Chess's castling
+  moves two pieces to two squares and writes two `grid.set` effects, which reads better
+  than one node taking parallel sequences would have.
+- **Non-rectangular boards belong in a different plugin**, if they ever arrive —
+  `Rulealize.Plugin.HexGrid` or the like. Every node here is built on `width` and `height`,
+  and generalizing them would complicate the common case to serve a case nobody has.
+- **Coordinates get no ordering.** Settled in [Comparison](Comparison.md): the motivation
+  was a deterministic output order, which `grid.coords` already provides by enumerating
+  deterministically.
+- **No `grid.coordsWhere` for narrowing a domain.** This was the one expected to become
+  unavoidable on larger boards or with multi-parameter inputs, and both cases then arrived
+  and were solved a different way. Chess would have had 4,096 candidates and has 20; shogi
+  would have had 13,122 and has 30. What did it was a **compound parameter** whose domain
+  computes destinations from origins ([Tuple](Tuple.md)), which narrows far more than a
+  filtered coordinate list could — a predicate over squares cannot express "the squares
+  this piece can reach from there". The remaining case for it, saving a `seq.where` around
+  a `grid.coords`, is spelling.

@@ -1,23 +1,24 @@
 # Rulealize.Plugin.Tuple
 
-| 項目 | 値 |
+| | |
 | --- | --- |
-| 識別子 | `Rulealize.Plugin.Tuple` |
-| 名前空間 | `tuple` |
-| バージョン | `1.0.0` |
-| 予約プレフィックス | なし |
-| 依存 | [値モデル](../value-model.md) のみ |
+| Identifier | `Rulealize.Plugin.Tuple` |
+| Namespace | `tuple` |
+| Version | `1.0.0` |
+| Reserved prefix | none |
+| Depends on | [the value model](../value-model.md), and nothing else |
 
-複数の値を 1 つにまとめ、また取り出す。**正規テキストを持つ複合値**を提供する
-ことがこのプラグインの存在理由であり、それ以外は何もしない。
+Packs several values into one and takes them apart again. **A compound value that has a
+canonical text form** is the reason this plugin exists, and it does nothing else.
 
-## なぜ必要か
+## Why it is needed
 
-`inputs.*.params` の各 domain は互いに独立に評価される（[RuleContext](../../src/RuleContext.cs)
-の `Collect`）。候補は domain の直積であり、どの domain も他のパラメータの値を
-参照できない——まだ値が決まっていないため。
+The domains of `inputs.*.params` are evaluated independently of one another
+([`RuleContext.Collect`](../../src/RuleContext.cs)). Candidates are the product of the
+domains, and no domain can refer to another parameter's value, because that value has not
+been chosen yet.
 
-したがってチェスの手を素直に 2 パラメータで書くと、
+So writing a chess move as two parameters, the obvious way,
 
 ```jsonc
 "params": {
@@ -26,10 +27,11 @@
 }
 ```
 
-どの局面でも候補は 64 × 64 = 4096 個になる。実際の合法手は 20〜40 個であり、
-残りを `when` が 1 つずつ落とす。
+gives 64 × 64 = 4,096 candidates in every position. The real number of legal moves is 20 to
+40, and the guard has to reject the rest one at a time.
 
-1 パラメータにすれば domain は単一の式になり、起点から着点を計算してよくなる。
+Make it one parameter and the domain becomes a single expression, free to compute
+destinations from origins.
 
 ```jsonc
 "params": {
@@ -43,71 +45,89 @@
 }
 ```
 
-[チェスの RuleSet](../../ruleset/chess.json) はこの形を採り、初期局面で
-候補 20 個・`Evaluated` 20（[ChessTests](../../test/ChessTests.cs)）。
+[The chess rule set](../../ruleset/chess.json) takes this shape: 20 candidates in the
+opening position with `Evaluated` of 20 ([ChessTests](../../test/ChessTests.cs)).
 
-## 提供ノード
+## Nodes
 
-| ノード | 種別 | 形式 |
+| Node | Kind | Form |
 | --- | --- | --- |
-| `tuple.of` | 式 | `{ "op": "tuple.of", "of": [ <式>, … ] }` |
-| `tuple.at` | 式 | `{ "op": "tuple.at", "tuple": <式>, "index": <整数> }` |
+| `tuple.of` | expression | `{ "op": "tuple.of", "of": [ <expression>, … ] }` |
+| `tuple.at` | expression | `{ "op": "tuple.at", "tuple": <expression>, "index": <integer> }` |
 
-`index` は**静的**。組の長さは組を作った場所で決まっているので、計算した添字は
-値の形がすでに答えている問いを聞くことになる。範囲外は評価時エラー、`null` の
-組を読むと `null`（`grid.at` の盤外と同じ扱い）。
+`index` is **static**. A tuple's length is fixed where the tuple was built, so a computed
+index would be asking a question the shape of the value has already answered. Out of range
+is an evaluation fault; reading from a `null` tuple gives `null`, the same treatment
+`grid.at` gives a square off the board.
 
-## テキスト正規形
+## The canonical text form
 
-各要素の正規テキストを `|` で連結する。チェスの手は `"e2|e4|-"` と書かれる。
+The canonical text of each element, joined with `|`. A chess move is written `"e2|e4|-"`.
 
-これがこのプラグインの中核である。`Sequence` でも同じ値は運べるが、値モデルは
-`Sequence` に正規テキストを与えていないため、`GetValidInputs` の戻り値にも
-InputRule 文書にも載せられない。
+This is the heart of the plugin. A `Sequence` carries the same values perfectly well, but
+the value model gives `Sequence` no canonical text, so it can appear neither in what
+`GetValidInputs` returns nor in an input document.
 
 ```jsonc
 { "input": "move", "args": { "m": "e2|e4|-" } }
 ```
 
-要素の中に区切り文字が現れても往復できるよう、`|` と `\` はエスケープする。
+`|` and `\` are escaped so the trip survives an element containing the separator.
 
-**正規テキストを持たない要素が 1 つでもあると、組も正規テキストを持たない。**
-`null` もそのひとつなので、省略可能な要素にはセンチネルを使う（チェスは成りの
-無い手を `"-"` と書く）。
+**A tuple has no canonical text if any one of its elements has none.** `null` is one such
+element, so an optional slot needs a sentinel — chess writes `"-"` for a move that is not a
+promotion.
 
-## どちらの経路でも同じ値になる
+## Both routes produce the same value
 
-ランタイムは入力の引数を domain と突き合わせ、**一致した domain 側の値を束縛する**
-（[RuleContext.BindArguments](../../src/RuleContext.cs)）。したがって文書から
-適用した手も domain が作った組そのものであり、`tuple.at` はどちらの経路でも
-作られたときの値を返す（Opaque 座標は Opaque のまま）。
+The runtime resolves an input's arguments against the domain and **binds the value the
+domain produced** ([`RuleContext.BindArguments`](../../src/RuleContext.cs)). A move applied
+from a document is therefore the very tuple the domain built, and `tuple.at` returns what
+was put in whichever route it arrived by — an opaque coordinate stays opaque.
 
-ここに書いておく価値があるのは、**以前はそうではなかった**からであり、複合
-パラメータはその差が最初に出る場所だからである。座標を作ったプラグインへ
-そのまま渡す限りは差が出ない（[値モデル §1.1](../value-model.md)）が、`cmp.eq`
-に渡すと差が出ていた。
+This is worth writing down because **it did not use to be true**, and a compound parameter
+is where the difference showed up first. Handing a coordinate straight back to the plugin
+that made it hides the difference ([value model §1.1](../value-model.md)); handing it to
+`cmp.eq` did not.
 
-**ただし「要素の種別が揃う」ことは保証しない。** 要素は組を作った式が返した値
-そのものなので、`grid.coords` から作った組と、書き下したマスから作った組が
-混在すれば中身の種別も混在する。チェスがまさにそれで（キャスリングの手だけ
-Text）、そこは `branch.match` が正規テキストで一致を見るため、どちらでも答えが
-出る。
+**What is not guaranteed is that the elements agree in kind.** An element is whatever the
+expression that built the tuple returned, so a tuple built from `grid.coords` and one built
+from a written-out square have differently-kinded contents. Chess is exactly that — only
+the castling moves carry `Text` — and it gets away with it because `branch.match` matches
+on canonical text, which both kinds have.
 
 ```jsonc
-// どちらの種別でも答えが出る比較
+// answers either way
 { "op": "branch.match", "value": "@c",
   "cases": { "a1": "a1", "e1": "e1", "h1": "h1" }, "default": "-" }
 ```
 
-## 未確定事項
+---
 
-- **要素数の宣言** — 現状 `tuple.at` は「その組が十分長いか」を評価時にしか
-  検査できない。domain の要素が一定の長さを持つと宣言できれば `CreateContext`
-  時に検査できるが、そのためには型推論が要る（[TypeSchema](TypeSchema.md) の
-  未確定事項と連動）。
-- **State に置けない** — 組は `state.schema` に書ける型を持たない。チェスでは
-  不要（手は状態ではない）だが、履歴やキューを持つ RuleSet では必要になる。
-- **`tuple.text`** — 任意の値の正規テキストを返すノード。引数の正規化で当初の
-  動機は消えたが、種別の混在した列を突き合わせる場面は残る（現状は
-  `branch.match` が代役で、ケースを静的に書き並べる必要がある）。置き場所は
-  Tuple ではない（汎用すぎる）。
+## Decided
+
+- **A tuple cannot be a state field, and does not need to be.** This was recorded as
+  something a rule set with a history or a queue would need. Roster has both — a staff
+  list, a shift list, an assignment list and a bounded audit log — and needed no tuple:
+  the schema-able compound is [`rec.of`](Record.md), inside a
+  [`type.list`](TypeSchema.md). The division that emerged is a clean one. **A tuple exists
+  for the one property a state field never needs — a canonical text form — because that is
+  what an input argument has to survive the round trip.** A record has no canonical text
+  and no need of one, since serializing a state field is the schema node's job. Two
+  compounds, two jobs.
+- **A tuple cannot be an input argument's *value type* beyond that**, which is the same
+  point from the other side: [Record](Record.md) records that a domain returning records
+  fails for want of a text form, and that a compound input should use a tuple.
+- **The length of a tuple is not declared, so `tuple.at` checks its index at evaluation.**
+  Declaring that a domain's elements are all of some length would move the check to
+  `CreateContext`, and that needs inference over expressions, which
+  [TypeSchema](TypeSchema.md) records is not being built yet. This is one of the four
+  things waiting on that.
+- **No `tuple.text`** — a node returning the canonical text of any value. Its original
+  motivation was normalizing arguments, and that disappeared when the runtime started
+  binding the domain's value. What remains is matching values whose kinds are mixed, and
+  `branch.match` already does that; the cost is having to write the cases out statically,
+  which chess does and finds tolerable. If it is ever built it does not belong here — it is
+  a question about any value, not about tuples — and the home would be
+  [Comparison](Comparison.md), which already owns the questions asked across kinds
+  (`cmp.eq` comparing unlike things, `cmp.isNull`) and is loaded by every rule set anyway.

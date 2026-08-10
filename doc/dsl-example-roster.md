@@ -1,47 +1,50 @@
-# JSON DSL 検証 — ゲームでないもの
+# The JSON DSL under test — something that is not a game
 
-リバーシ・チェス・将棋は 3 つとも盤ゲームである。**同じ隅から取った 3 点であって、
-汎用性の証拠ではない。** CLAUDE.md は非ゲーム（シミュレーション、ルールベース
-アプリケーション）も射程に入れているのに、そこは一度も試していなかった。
+Reversi, chess and shogi are three board games. **Three samples from the same corner, which
+is not evidence of generality.** CLAUDE.md puts simulations and rule-based applications
+inside the scope, and none of that had ever been tried.
 
-題材はシフト表／リソース割り当て。**`grid` プラグインを意図的に一切使わない**こと
-で、DSL が盤の形をしていないかを確かめる。
+The subject is a shift roster — assigning resources. **The `grid` plugin is deliberately
+not used at all**, to find out whether the DSL is board-shaped.
 
-- 対象: [ruleset/roster.json](../ruleset/roster.json)
-- 検証: [test/RosterTests.cs](../test/RosterTests.cs)（17 件）
-- 結論: **書けた。** `grid.` の出現回数は 0。
+- Subject: [ruleset/roster.json](../ruleset/roster.json)
+- Checked by: [test/RosterTests.cs](../test/RosterTests.cs), 17 cases
+- Conclusion: **it works.** `grid.` appears zero times.
 
 
-## 1. 何が違うか
+## 1. What is different
 
-| | 盤ゲーム | シフト表 |
+| | Board game | Shift roster |
 | --- | --- | --- |
-| 手番 | ある | **無い**（`actor` を宣言しない） |
-| 相手 | いる | いない |
-| 順序 | 意味がある | 割り当ては可換 |
-| 終局 | 誰が勝ったか | **制約を満たしたか**（`complete` / `stuck`） |
-| 主な問い | 次の一手 | **いま何が割り当て可能か** |
+| turn | there is one | **none** — no `actor` is declared |
+| opponent | yes | no |
+| order | matters | assignments commute |
+| ending | who won | **were the constraints met** (`complete` / `stuck`) |
+| the main question | what is the next move | **what can still be assigned** |
 
-最後の行が本質で、`GetValidInputs` は「シフト表の画面が出したい一覧」であり
-「ソルバが分岐したい候補」でもある。ランタイムはこれが人の話だと知らずに答える。
+The last row is the essential one. `GetValidInputs` is both "the list a rostering screen
+wants to display" and "the candidates a solver wants to branch on", and the runtime answers
+it without knowing that one of those is a conversation with a person.
 
-### 規模
+### The size of it
 
-`state.initial` が置く 1 週間ぶん。**これは RuleSet の性質ではなく、その文書に
-入っているインスタンスである**（→ §4.1）。
+One week's worth, as placed by `state.initial`. **That is a property of the document rather
+than of the rule set** (→ §4.1).
 
-- 4 人（ann / bo / cy / di）、能力上限 3 / 3 / 2 / 2 = 計 10
-- 5 日 × 2 枠 = 10 シフト。うち 3 つは上級者を要求
-- 同じ日の両方の枠には入れない
+- four people (ann / bo / cy / di) with capacities 3 / 3 / 2 / 2, so ten in total
+- five days × two slots = ten shifts, three of which require someone senior
+- nobody can take both slots on one day
 
-上限の合計がシフト数とちょうど等しいので、**完成解は遊びがない**。テストが簡単な
-隅を引き当てて通っているわけではないことを、各人の割当数で確認している。
+The capacities total exactly the number of shifts, so **a complete solution has no slack**.
+The per-person assignment counts are checked, to show the tests are not passing by landing
+in an easy corner.
 
-テストはもう 1 つの週（3 人 / 3 日 / 6 シフト、名前も違う）を**同じ `RuleContext`**
-で処理し、どちらも探索で完成解に到達することを確かめる。
+The tests run a second week — three people, three days, six shifts, different names —
+through **the same `RuleContext`**, and confirm both search their way to a complete
+solution.
 
 
-## 2. 状態は 4 つの列
+## 2. The state is four sequences
 
 ```jsonc
 "staff":    { "op": "type.list", "element": { "op": "rec.of",
@@ -53,29 +56,32 @@
 "log":      { "op": "type.list", "maxLength": 5, "element": … }
 ```
 
-**[コレクション](collections.md)が無ければ、どれ一つ置く場所が無い。** 可変長の
-名簿もシフト表も割当も、スカラのフラットなマップには入らない。非ゲーム用途で
-列が要ると主張した根拠がこれである。
+**Without [collections](collections.md) there is nowhere to put a single one of these.** A
+variable-length roll, shift table and assignment list do not fit in a flat map of scalars.
+This is the evidence behind the claim that non-game uses need sequences.
 
-`day` がシフトのフィールドなのは §4.2 の理由による——名前に構造を埋めない。
+`day` is a field of a shift for the reason in §4.2 — do not bury structure in a name.
 
-監査証跡は追記と切り詰めが 1 つの式に収まる。
+The audit trail appends and truncates in one expression.
 
 ```jsonc
 { "op": "seq.skip",
   "source": { "op": "seq.concat", "of": ["$log", { "op": "seq.of", "of": ["@entry"] }] },
-  "count": { "op": "math.max", "of": [0, { "op": "math.sub", "left": <長さ>, "right": 5 }] } }
+  "count": { "op": "math.max", "of": [0, { "op": "math.sub", "left": <length>, "right": 5 }] } }
 ```
 
-スキーマの `maxLength: 5` は同じ数を二度言っている。切り詰めが間違えば状態文書が
-読めなくなるので、静かに膨らむのではなく落ちる。
+The schema's `maxLength: 5` says the same number twice. Since a transition checks what its
+effects built ([TypeSchema](plugin/TypeSchema.md)), getting the truncation wrong now fails
+at the transition that overran, naming the input — rather than growing quietly and being
+rejected the next time the state is read.
 
 
-## 3. うまくいったこと
+## 3. What went well
 
-### 3.1 domain が状態から来る
+### 3.1 The domains come from the state
 
-パラメータの domain は、RuleSet に書かれた一覧ではなく**状態を読んだ式**である。
+A parameter's domain is **an expression that reads the state**, not a list written into the
+rule set.
 
 ```jsonc
 "names": { "op": "seq.select", "source": "$staff", "as": "s",
@@ -85,115 +91,140 @@
             "shift": { "domain": "#openShifts" } }
 ```
 
-これが §4.1 の修正を成立させている当のものでもある。人員名簿の第 2 のコピーは
-どこにも無く、名簿が変われば候補が変わる。
+This is also the thing that makes the correction in §4.1 work. There is no second copy of
+the roll anywhere, so changing the roll changes the candidates.
 
-### 3.2 `GetValidInputs` が制約エンジンとして使える
+### 3.2 `GetValidInputs` works as a constraint engine
 
-17 件のうち最も価値のあるテストがこれ。呼び出し側は上級者要件も休息規則も知らず、
-「いま何が割り当て可能か」を聞き、1 つ試し、空が返ったら戻る——深さ優先探索が
-そのまま書ける。完成解を 128 ms で見つける。
+The most valuable of the 17 tests. The caller knows nothing about the seniority requirement
+or the rest rule; it asks what can be assigned, tries one, and backtracks when the answer
+comes back empty — depth-first search, written directly. It finds a complete solution in
+128 ms.
 
-**探索を終わらせるものはすべて文書の中にある**（有限の domain、埋まるにつれ締まる
-guard）。ランタイムは何も知らない。
+**Everything that makes the search terminate is in the document** — finite domains, guards
+that tighten as the table fills. The runtime knows none of it.
 
-### 3.3 `terminal` を `GetValidInputs` が参照しないのは、ここでは長所
+### 3.3 That `GetValidInputs` ignores `terminal` is a virtue here
 
-ゲームでは奇妙に見えた性質が、ここでは正しい。行き詰まった表からでも `release` が
-提示されるので、呼び出し側は自分で塗り込んだ隅から出られる。
+The property that looked odd in a game is right here. `release` is still offered from a
+table that has painted itself into a corner, so the caller can get out of it.
 
 
-## 4. 最初の版の間違いと、その訂正
+## 4. What the first version got wrong, and the corrections
 
-**この節がこの文書でいちばん有益な部分である。** 初版で「DSL の穴」として 5 つ
-挙げたが、レビューの結果 **4 つは RuleSet の書き方の問題**だった。取り下げた理由
-ごと残す。同じ間違いを繰り返さないために。
+**This is the most useful section in the document.** The first version listed five "holes in
+the DSL". On review **four of them were problems with how the rule set was written**. The
+reasons for withdrawing them are kept.
 
-### 4.1 インスタンスを `state.schema` に焼き込んでいた（**真の問題。修正済み**）
+### 4.1 The instance was baked into `state.schema` (**a real problem, fixed**)
 
-初版は職員を `type.enum` の 4 名、シフトを `rec.map` の静的キーで宣言していた。
-その結果「来週の当番表は別の RuleSet 文書になる」ことになり、私はこれを DSL の
-制約として報告した。
+The first version declared the staff as a `type.enum` of four names and the shifts as
+static keys of a `rec.map`. The consequence was that "next week's roster is a different
+rule set document", and I reported that as a limitation of the DSL.
 
-**間違いだった。** インスタンスのデータは State 文書に置けばよい。
+**That was wrong.** Instance data goes in the state document.
 
 ```jsonc
-// 初版 — この文書は「今週」を記述している
+// first version — this document describes "this week"
 "roster": { "op": "rec.map", "keys": ["mon-am", …], "value": { "op": "type.enum", "values": ["ann", …] } }
 
-// 現在 — この文書は「勤務表というもの」を記述している
+// now — this document describes "what a roster is"
 "staff":  { "op": "type.list", "element": { "op": "rec.of", "fields": { "name": …, "capacity": …, "senior": … } } }
 "shifts": { "op": "type.list", "element": { "op": "rec.of", "fields": { "id": …, "day": …, "senior": … } } }
 ```
 
-**RuleSet がドメイン、State がインスタンス。** 盤ゲームはこの区別を隠す——チェス盤は
-本当にいつでも 8×8 なので、インスタンスをスキーマに焼き込んでも何も損をしない。
-盤ゲームを 3 つ書いた後にこれを書くと、その習慣がそのまま出る。
+**The rule set is the domain; the state is the instance.** Board games hide the
+distinction — a chess board really is always 8×8, so baking the instance into the schema
+costs nothing there and everything here. Write this after three board games and the habit
+comes with you.
 
-[テスト](../test/RosterTests.cs)が 2 つの週（4 人 5 日 / 3 人 3 日、名前も違う）を
-**同一の `RuleContext`** で処理し、どちらも完成解まで探索できることを確かめている。
-`definitions` 以降に人名もシフト名も 1 つも現れないことも、文書を読んで確認している。
+[The tests](../test/RosterTests.cs) run two weeks — four people over five days, and three
+over three, with different names — through **one `RuleContext`**, and confirm both search
+to a complete solution. That no person's name and no shift's name appears anywhere after
+`definitions` is confirmed by reading the document.
 
-#### 副産物 — `rec.of` と `rec.map` の使い分け
+#### A by-product — when to use `rec.of` and when `rec.map`
 
-初版は `rec.map`（同種の値をキーで引く）を使い、現在は `rec.of`（名前付きの異種
-フィールド）を使っている。**この差はそのまま「インスタンスか、ドメインか」の差**
-である。
+The first version used `rec.map` (like values, looked up by key) and it now uses `rec.of`
+(named, heterogeneous fields). **That difference is exactly the difference between an
+instance and a domain.**
 
-- `rec.map` が正しいのは、**キー集合がドメインによって決まる**とき。将棋の持ち駒の
-  7 駒種は将棋の規則であってその対局の性質ではない。
-- キー集合がインスタンスによって決まるなら、それは列の要素であって、スキーマの
-  キーではない。
+- `rec.map` is right when **the domain fixes the key set.** Shogi's seven kinds in hand are
+  a rule of shogi, not a property of the game being played.
+- If the instance fixes the key set, it is not a key set — it is a sequence element.
 
-### 4.2 文字列操作が無い（**取り下げ**）
+### 4.2 There is no string manipulation (**withdrawn**)
 
-`"mon-am"` から日付を取り出せないので対応表を宣言した、と報告した。しかし
-**関係を宣言するほうが本来正しいデータ定義**であり（現在は `shifts` の `day`
-フィールド）、名前に構造を埋めて後から解析するほうが悪い設計である。
+I reported that `"mon-am"` could not be taken apart to get the day, so I declared a lookup
+table. But **declaring the relationship is the better data definition** — it is now a `day`
+field on a shift — and burying structure in a name to parse it back out later is the worse
+design.
 
-必要かどうかは、他の題材をいくつか書いてから判断すべき事柄。現時点では穴ではない。
+Whether string operations are needed is a question for after a few more subjects. It is not
+a hole today.
 
-### 4.3 良し悪しが言えない（**取り下げ**）
+### 4.3 There is no way to say better or worse (**withdrawn**)
 
-目的関数の置き場所が無い、と報告した。しかし**良し悪しを言いたいなら、それが
-分かる RuleSet を書けばよい**——評価値を状態に持たせ、`terminal` や guard で使う。
-ランタイム API の問題ではない。
+I reported that there was nowhere to put an objective function. But **if you want to talk
+about better and worse, write a rule set that says so** — put a score in the state and use
+it in `terminal` or in a guard. Not a problem with the runtime API.
 
-### 4.4 進捗の概念が無い（**取り下げ**）
+### 4.4 There is no notion of progress (**withdrawn**)
 
-`release` があるので状態空間が循環する、と報告した。探索側が何を前進とみなすかを
-決めるのは呼び出し側の責務であり、規則の側に持たせるべきものではない。
+I reported that `release` makes the state space cyclic. Deciding what counts as progress is
+the caller's responsibility, and does not belong in the rules.
 
-### 4.5 `Arguments[key]` が例外を投げる（**取り下げ**）
+### 4.5 `Arguments[key]` throws (**withdrawn**)
 
-`ImmutableDictionary` が無いキーで `KeyNotFoundException` を投げるという、辞書と
-して正常な挙動。入力が複数ある RuleSet では結果が混在するので `.Input` で絞る
-必要があるが、それは呼び出し側の当然の責務である。
-
-
-## 5. 結論
-
-**DSL は盤の形をしていない。** `grid` 参照ゼロ、手番なし、勝者なしで、シフト割り
-当てが書けて探索もできる。[コレクション](collections.md)がこれを可能にした——
-`type.list` と `rec.of` が無ければ、可変長の職員名簿もシフト表も置く場所が無い。
-
-**そして、書き手が盤ゲームの習慣を持ち込むことのほうが、DSL の制約よりも大きな
-危険だった。** 初版で報告した 5 つの「穴」のうち 4 つは私の設計ミスであり、残る
-1 つも DSL ではなく私の書き方の問題だった。
-
-このことは[プラグインの歯止め](dsl-example-reversi.md)——「ノードは特定の RuleSet
-を参照せずに仕様を書き切れなければならない」——と対になる。**RuleSet の側にも
-同じ問いが要る: この文書は、この問題インスタンスを参照せずに書けているか。**
+`ImmutableDictionary` raising `KeyNotFoundException` for a key it does not have is a
+dictionary behaving correctly. A rule set with several inputs returns mixed results and the
+caller has to narrow with `.Input` first, which is an ordinary responsibility.
+[Shogi §5](dsl-example-shogi.md) had recorded the same thing as a rough edge; this is the
+conclusion that stands.
 
 
-## 6. 未確定事項
+## 5. Conclusion
 
-- **日付・時刻** — 型も算術も無い。当番表が週をまたぐ、あるいは勤務時間を扱うと
-  必要になる。現在の題材は「同じ日か」しか問わないので露見していない。
-- **列の索引付き更新** — `rec` がキーで書けるのと同じことを列の位置に対してできるか。
-  現在の書き方（`seq.where` で除いて `seq.concat` で足す）で足りてはいる。
-- **走査のコスト** — 名前引きが `seq.where` の線形走査になった。当番表の規模では
-  問題にならないが、大きな名簿では効く。
-- **状態文書の検証** — インスタンスを State に移したことで、**壊れた State 文書を
-  受け取る経路が本番になった**。`type.list` / `rec.of` のスキーマ検証がそこを
-  受け持っているが、「職員名簿に同じ名前が 2 回ある」のような制約は書けない。
+**The DSL is not board-shaped.** Zero references to `grid`, no turn, no winner, and a shift
+assignment problem that can be written and searched. [Collections](collections.md) are what
+made it possible — without `type.list` and `rec.of` there is nowhere to put a
+variable-length staff roll or shift table.
+
+**And the writer bringing board-game habits was a larger danger than any limitation of the
+DSL.** Four of the five holes reported in the first version were my design mistakes, and
+the fifth was about how I had written it rather than about the DSL.
+
+That pairs with [the check on plugins](dsl-example-reversi.md) — "a node has to be
+specifiable without reference to any particular rule set". **The same question applies to a
+rule set: is this document written without reference to this problem instance?**
+
+
+## 6. What is still open, and what has closed
+
+- **Dates and times** — there is neither a type nor any arithmetic for them, and the shape
+  of the answer has since emerged from [deploy](dsl-example-deploy.md) rather than from
+  here. **A date is a text field in the state**, and where a rule genuinely has to compute
+  with one, that is a vocabulary the host supplies: `acme.frozen` takes `state.today` as an
+  argument and consults an injected calendar. That covers a working day, a freeze window
+  and an ordering, which is most of what rules actually ask of a date. What is not covered
+  is arithmetic in the rule set itself — a roster spanning a week boundary, or shift
+  durations — and putting a date type into the standard vocabulary means picking a
+  calendar, a time zone policy and a formatting convention, none of which a rule engine
+  should be deciding on everyone's behalf. It stays out until a subject needs date
+  arithmetic that the host cannot reasonably supply.
+- **Updating a sequence at an index** — doing to a position what `rec` does to a key. The
+  present way, removing with `seq.where` and adding with `seq.concat`, does the job and
+  reads as what it is: an assignment list is a set, and "replace the third element" is not
+  a question anyone asks of it. It waits for a subject where position carries meaning.
+- **The cost of scanning** — looking a person up became a linear `seq.where`. Fine at the
+  size of a roster and it would tell on a large roll. There is no index, and adding one
+  means either a keyed collection whose keys come from the instance — which §4.1 says is a
+  sequence, not a record — or the runtime caching a projection, which breaks the rule that
+  a domain is an expression evaluated against the state. Neither is worth doing for a
+  problem that does not exist yet.
+- **Validating the state document** — moving the instance into the state **made receiving a
+  malformed state document the normal path**, and `type.list` and `rec.of` validation
+  carries most of it. What still cannot be said is a constraint like "no name appears twice
+  in the roll". That is the same missing thing as invariants across fields, tracked in
+  [Record](plugin/Record.md): a predicate language for `state.schema`, and a new reserved
+  key in a document whose reserved keys are deliberately eight.

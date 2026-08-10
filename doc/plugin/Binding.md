@@ -1,91 +1,93 @@
 # Rulealize.Plugin.Binding
 
-| 項目 | 値 |
+| | |
 | --- | --- |
-| 識別子 | `Rulealize.Plugin.Binding` |
-| 名前空間 | `bind` |
-| バージョン | `1.0.0` |
-| 予約プレフィックス | `@` |
-| 依存 | [値モデル](../value-model.md) のみ |
+| Identifier | `Rulealize.Plugin.Binding` |
+| Namespace | `bind` |
+| Version | `1.0.0` |
+| Reserved prefix | `@` |
+| Depends on | [the value model](../value-model.md), and nothing else |
 
-局所的な名前に値を束縛し、同じ式を複数回書かずに済ませる。共通部分式の明示
-という側面もある（`bind.let` で束縛した名前を 2 回参照すれば、評価器はそれが
-同一の値であることを構文から知れる）。
+Binds a value to a local name, so the same expression need not be written twice. It also
+makes a common subexpression explicit: bind a name with `bind.let` and refer to it twice,
+and the evaluator knows from the syntax that both are the same value.
 
-分岐（[Branch](Branch.md)）とは独立にロードできる。束縛だけあって分岐が無い
-構成も、その逆も成立する。
+Loads independently of [Branch](Branch.md). A configuration with bindings and no branching
+makes sense, and so does the reverse.
 
-## 提供ノード
+## Nodes
 
-| ノード | 種別 | リバーシでの使用 |
+| Node | Kind | Used in Reversi |
 | --- | --- | --- |
-| `bind.let` | 式 | ○ `flips1`, `terminal.result` |
-| `bind.local` | 式 | ○ 糖衣 `@` として全域 |
+| `bind.let` | expression | ○ `flips1`, `terminal.result` |
+| `bind.local` | expression | ○ everywhere, as the sugar `@` |
 
 ---
 
 ## `bind.let`
 
-逐次スコープで名前を束縛し、本体を評価する。
+Binds names in sequence and evaluates a body under them.
 
-### 形式
+### Form
 
 ```jsonc
 {
   "op": "bind.let",
-  "bind": { "<名前>": <式>, ... },   // 静的キー集合
-  "in": <式>
+  "bind": { "<name>": <expression>, ... },   // the key set is static
+  "in": <expression>
 }
 ```
 
-| キー | 必須 | 説明 |
+| Key | Required | |
 | --- | --- | --- |
-| `bind` | ○ | 名前から式へのマップ。キーは静的（名前を式で決めることはできない） |
-| `in` | ○ | 束縛下で評価される本体。この値が `bind.let` の値になる |
+| `bind` | ○ | names to expressions. The keys are static — a name cannot be computed |
+| `in` | ○ | the body, evaluated under the bindings. Its value is the value of the `bind.let` |
 
-### 評価規則
+### How it evaluates
 
-1. `bind` の各エントリを **宣言順に** 評価し、順次スコープへ追加する
-2. `in` を、全束縛を含むスコープで評価する
-3. `in` の値を返す
+1. Each entry of `bind` is evaluated **in declaration order** and added to the scope.
+2. `in` is evaluated in the scope holding all of them.
+3. The value of `in` is returned.
 
-**束縛は逐次（`let*` 相当）である。** すなわち後続の束縛式は先行する束縛を
-参照できる。リバーシの `flips1` がこれに依存している。
+**Bindings are sequential** — the equivalent of `let*`, so a later binding expression may
+refer to an earlier one. Reversi's `flips1` depends on this.
 
 ```jsonc
 "bind": {
   "ray": { "op": "grid.ray", "grid": "$board", "from": "@at", "dir": "@dir" },
-  "run": { "op": "seq.takeWhile", "source": "@ray", ... }   // ← ray を参照
+  "run": { "op": "seq.takeWhile", "source": "@ray", ... }   // ← refers to ray
 }
 ```
 
-同時束縛（`let` 相当）にすると上の記述が書けず、`bind.let` の入れ子が必要に
-なる。逐次を採る。
+Simultaneous binding would make that unwritable and force a nested `bind.let`. Sequential
+it is.
 
-JSON オブジェクトのキー順序は仕様上は順不同だが、ここでは **文書上の出現順を
-宣言順とみなす**。パーサはキー順序を保持しなければならない。これは
-`System.Text.Json` の `JsonDocument` で満たせる。
+JSON says nothing about the order of an object's keys, but here **the order they appear in
+the document is the declaration order**, and a parser has to preserve it. `JsonDocument` in
+`System.Text.Json` does.
 
-### スコープ
+### Scope
 
-- 束縛は `bind` の後続エントリと `in` の内側でのみ可視
-- 外側の同名束縛をシャドーイングする
-- 定義（`#name`）の本体からは見えない（[値モデル §6](../value-model.md)）
+- A binding is visible to the later entries of `bind` and inside `in`.
+- It shadows an outer binding of the same name.
+- It is invisible from the body of a definition ([value model §6](../value-model.md)).
 
-### 評価回数
+### How often a binding is evaluated
 
-束縛式は **参照回数にかかわらず高々 1 回** 評価される。参照が 0 回の場合に
-評価するかは実装依存とする（全ノードが純粋なので観測上の差は性能のみ）。
+A binding expression is evaluated **at most once**, however many times it is referred to.
+Whether it is evaluated at all when nothing refers to it is left to the implementation —
+every node is pure, so the only observable difference is speed.
 
-### エラー
+### Errors
 
-| 条件 | タイミング |
+| Condition | When |
 | --- | --- |
-| `bind` が空 | 静的エラー（`in` だけなら `bind.let` を書く意味がない） |
-| `bind` 内で同名が重複 | JSON オブジェクトのキー重複として静的エラー |
-| `in` の欠落 | 静的エラー |
+| `bind` is empty | static (`bind.let` with only an `in` says nothing) |
+| a name is bound twice in one `bind` | static, as a duplicate JSON key |
+| `in` is missing | static |
+| a binding refers to itself | static — see below |
 
-### 例（リバーシ `terminal.result`）
+### Example (Reversi's `terminal.result`)
 
 ```jsonc
 {
@@ -108,51 +110,57 @@ JSON オブジェクトのキー順序は仕様上は順不同だが、ここで
 
 ## `bind.local`
 
-ローカル束縛を参照する。
+Refers to a local binding.
 
-### 形式
+### Form
 
 ```jsonc
-{ "op": "bind.local", "name": "<名前>" }   // name は静的
+{ "op": "bind.local", "name": "<name>" }   // name is static
 ```
 
-糖衣: `"@<名前>"`
+Sugar: `"@<name>"`
 
-### 評価規則
+### How it evaluates
 
-現在のスコープから `name` を解決し、その値を返す。内側の束縛が優先される。
+Resolves `name` in the current scope and returns its value. The innermost binding wins.
 
-### 束縛の導入元
+### Where bindings come from
 
-`bind.local` が参照できる名前は、次のいずれかが導入したもの。
+The names `bind.local` can reach are introduced by one of these.
 
-| 導入元 | キー | 可視範囲 |
+| Introduced by | Key | Visible in |
 | --- | --- | --- |
-| `bind.let` | `bind` の各キー | 後続の束縛式と `in` |
-| `seq.*` の反復系 | `as` | そのノードの述語 / 射影の式 |
-| `def.call` | 呼び先定義の `params` | 定義の本体のみ |
+| `bind.let` | each key of `bind` | the later binding expressions and `in` |
+| the iterating `seq.*` nodes | `as` | that node's predicate or projection |
+| `def.call` | the callee's `params` | the definition's body, and nowhere else |
 
-Binding プラグインは `bind.local` という **参照の語彙** を提供するだけで、
-`as` や `params` による束縛の導入は各プラグインの責務。スコープ機構そのものは
-評価コンテキスト（Abstraction）が持つ。
+The Binding plugin provides only **the vocabulary for referring** to a binding; introducing
+one through `as` or `params` belongs to whichever plugin owns that node, and the scope
+machinery itself belongs to the evaluation context in Abstraction.
 
-### エラー
+### Errors
 
-| 条件 | タイミング |
+| Condition | When |
 | --- | --- |
-| 未束縛の名前を参照 | **静的エラー**。スコープは構文から決まるので `CreateContext` 時に解決できる |
-| `name` が式 | 静的エラー |
+| referring to an unbound name | **static.** Scope follows from the syntax, so it resolves at `CreateContext` |
+| `name` is an expression | static |
 
-未束縛参照を静的エラーにできる点は重要で、`GetValidInputs` の候補ごとに実行時
-エラーが出るような事態を防げる。
+That the unbound case is static matters: it is what stops a typo from turning into a run
+time fault once per candidate in a `GetValidInputs` sweep.
 
 ---
 
-## 未確定事項
+## Decided
 
-- **束縛の型注釈** — 現状なし。`state.schema` のようなスキーマを束縛にも書ける
-  ようにするかは、実用上の必要が出てから判断する。
-- **再帰束縛** — `bind` 内で自分自身を参照することは許さない（静的エラー）。
-  定義の再帰と合わせて [Definition](Definition.md) 側で整理する。
-- **`bind.letSeq` のような列に対する束縛** — `seq.*` の `as` で足りているため
-  現時点では不要。
+- **A binding is not a recursive scope.** A binding expression cannot refer to the name
+  being bound; that is the static error listed above, and it is the same decision as
+  [Definition](Definition.md)'s refusal of recursion, for the same reason — without it
+  there is no termination argument, and `GetValidInputs` evaluates a guard thousands of
+  times per call.
+- **No type annotations on bindings.** Writing a schema on a binding the way `state.schema`
+  writes one on a field would only be worth anything with an inference pass to check it
+  against, and that pass is not being built yet
+  ([TypeSchema](TypeSchema.md) records why).
+- **No `bind.letSeq` or other sequence-shaped binding form.** The `as` of the `seq.*` nodes
+  already binds an element where an element is what is wanted, and a second way to do it
+  would be a second thing to learn.

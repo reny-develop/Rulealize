@@ -1,211 +1,220 @@
-# JSON DSL 検証 — 語彙がプラグインだけではないもの
+# The JSON DSL under test — where the vocabulary is not all plugins
 
-リバーシ・チェス・将棋・シフト表の 4 つは、いずれも**語彙のすべてを 12 個の標準
-プラグインから得ている**。それはデプロイされたアプリケーションの正しい姿ではあるが、
-**ライブラリの利用者の姿ではない**。自社の業務ルールにこの DSL を使うプロジェクトには、
-書く価値はあるが NuGet に出す価値はない演算が必ず出てくる。
+Reversi, chess, shogi and the shift roster all take **every bit of their vocabulary from the
+twelve standard plugins**. That is what a deployed application correctly looks like, and
+**it is not what a user of the library looks like.** A project putting this DSL to work on
+its own business rules will always turn up operations worth writing and not worth putting
+on nuget.org.
 
-題材はデプロイパイプライン。3 サービス × 3 ステージを昇格させ、`GetValidInputs` に
-「いま何を出せるか」を答えさせる。
+The subject is a deployment pipeline. Three services × three stages get promoted, and
+`GetValidInputs` answers "what can ship right now".
 
-- 対象: [ruleset/deploy.json](../ruleset/deploy.json)
-- 語彙: [sample/Deploy/DeployVocabulary.cs](../sample/Deploy/DeployVocabulary.cs)（`acme` 名前空間、4 op）
-- 検証: [test/DeployTests.cs](../test/DeployTests.cs)（12 件）
-- 結論: **コア・ランタイムの変更は不要だった。** `AddPlugin` は最初から public で、
-  必要だったのは規約とドキュメントだけ。
+- Subject: [ruleset/deploy.json](../ruleset/deploy.json)
+- Vocabulary: [sample/Deploy/DeployVocabulary.cs](../sample/Deploy/DeployVocabulary.cs) —
+  the `acme` namespace, four ops
+- Checked by: [test/DeployTests.cs](../test/DeployTests.cs), 12 cases
+- Conclusion: **the core runtime needed no change.** `AddPlugin` was public from the start;
+  what was needed was conventions and documentation.
 
 
-## 1. 何が違うか
+## 1. What is different
 
-| | 既存 4 例 | デプロイパイプライン |
+| | The four before | The deployment pipeline |
 | --- | --- | --- |
-| 語彙の出自 | フォルダ走査のみ | 走査 12 個 **＋ ホスト内クラス 1 個** |
-| プラグイン型の名指し | しない | **する**（`new DeployVocabulary(policy)`） |
-| 演算が読むもの | 引数だけ | 引数 ＋ **注入された不変スナップショット** |
-| `requires` | 標準プラグイン名 | 同じ形で `Acme.Deploy.Rules` を含む |
+| where vocabulary comes from | a folder scan | twelve from a scan **plus one class in the host** |
+| naming a plugin type | never | **yes** (`new DeployVocabulary(policy)`) |
+| what an operation reads | its arguments | its arguments **plus an injected immutable snapshot** |
+| `requires` | standard plugin names | the same, including `Acme.Deploy.Rules` |
 
-最終行が要点である。**配布経路が違うだけで、契約は 1 つも変わらない。**
+The last row is the point. **Only the delivery route differs; not one thing about the
+contract does.**
 
-### 規模
+### The size of it
 
-`state.initial` が置く 1 日ぶん（2026-08-12、水曜）。
+One day's worth, as placed by `state.initial` — 2026-08-12, a Wednesday.
 
-- 3 サービス（billing / search / web）、3 ステージ（dev / staging / prod）
-- `building` に 3 バージョン。prod だけが承認 2 名と凍結の対象
-- search は 2 名の承認済みで staging に居る = **prod へ出る直前**
+- three services (billing / search / web), three stages (dev / staging / prod)
+- three versions in `building`. Only prod requires two approvals and is subject to freezes
+- search has two approvals and sits in staging, so it is **one step from prod**
 
-候補空間は deploy 3×3 + promote 3×3 + approve 3×3×4 = **54**、うち合法 19。
+The candidate space is deploy 3×3 + promote 3×3 + approve 3×3×4 = **54**, of which 19 are
+legal.
 
 
-## 2. 4 つの op — なぜ標準語彙で書けないか
+## 2. The four ops — why the standard vocabulary cannot write them
 
-自前語彙のサンプルで一番難しいのは、読み手の「それ State のフィールドで済むのでは」に
-答えることである。ここには 2 種類の答えを置いた。
+The hardest thing about a sample for an in-process vocabulary is answering the reader's
+"couldn't that just be a state field?". There are two kinds of answer here.
 
-### 2.1 `acme.newer` — アルゴリズムだから
+### 2.1 `acme.newer` — because it is an algorithm
 
-セマンティックバージョンの優先順位。**データではなく手続き**なので、State に載せようが
-ない。しかも標準語彙は答えを**間違える**：
+Semantic version precedence. **A procedure rather than data**, so there is nothing to put
+in the state. And the standard vocabulary gets it **wrong**:
 
 ```
-                          2.4.0 と 2.4.0-rc.1 のどちらが新しいか
-cmp.gt                    2.4.0-rc.1    ← 文字列順。"2.4.0" は前方一致で短いので前に来る
-acme.newer                2.4.0         ← 正しい。rc は本番リリースの手前
+                          which is newer, 2.4.0 or 2.4.0-rc.1
+cmp.gt                    2.4.0-rc.1    ← string order; "2.4.0" is a shorter prefix, so it sorts first
+acme.newer                2.4.0         ← correct; a release candidate precedes its release
 ```
 
-そのままの `cmp` を使えば、**リリース候補がリリースを上書きして本番に出る**。これが
-「語彙を足す価値がある」形の典型で、**引き当て表なら大抵 State に押し込めるが、
-アルゴリズムはどこにも押し込めない**。
+Use `cmp` as it comes and **a release candidate overwrites the release and goes to
+production.** This is the archetype of "worth adding a vocabulary for": **a lookup table can
+usually be pushed into the state, and an algorithm cannot be pushed anywhere.**
 
-初期状態で billing の dev には `2.4.0-rc.1` が載っており、`building` には
-`2.3.5` / `2.4.0-rc.1` / `2.4.0` の 3 つがある。提示される `deploy` は
-`2.4.0` の 1 つだけ — これを固定しているのが
-`APrereleaseDoesNotSupersedeTheReleaseItLeadsTo`。
+In the initial state billing's dev holds `2.4.0-rc.1`, and `building` holds `2.3.5`,
+`2.4.0-rc.1` and `2.4.0`. Exactly one `deploy` is offered, for `2.4.0` — pinned by
+`APrereleaseDoesNotSupersedeTheReleaseItLeadsTo`.
 
-### 2.2 `acme.frozen` / `acme.approvers` / `acme.people` — 注入された表だから
+### 2.2 `acme.frozen` / `acme.approvers` / `acme.people` — because they are injected tables
 
-凍結カレンダーと所有者マップ。どちらも
+A freeze calendar and an ownership map. Both are
 
-- 組織が所有し、個々のデプロイの状態ではない
-- 独自の頻度で更新される
-- State 文書に埋めるには大きすぎ、埋める筋合いもない
+- owned by the organisation, and not the state of any individual deployment
+- updated on their own schedule
+- too large to embed in a state document, with no business being there
 
-`acme.people` は所有者マップの全員を返す。これは guard ではなく
-**`approve` の `by` パラメータの domain** である。domain は他のパラメータに依存
-できないので、「全員」を語彙が供給し、guard が `acme.approvers` で当該サービスの
-所有者に絞る、という二段構えになる。
+`acme.people` returns everyone in the ownership map. That is not a guard but **the domain of
+`approve`'s `by` parameter**. A domain cannot depend on another parameter, so it comes in
+two stages: the vocabulary supplies "everyone", and the guard narrows to the owners of that
+service with `acme.approvers`.
 
-### 2.3 これがアプリ内語彙にしかできない理由
+### 2.3 Why only an in-process vocabulary can do this
 
-`PluginProbe` はフォルダ走査で見つけるプラグインに **public かつ引数なしコンストラクタ**
-を要求する。したがって配布プラグインは構造的に無状態であり、上の 3 つを持つ場所が無い。
+`PluginProbe` requires a plugin found by scanning to be **public with a parameterless
+constructor**. A distributed plugin is therefore structurally stateless and has nowhere to
+keep the three above.
 
 ```csharp
-// 走査では書けない。インスタンスを渡す経路でだけ書ける。
+// unwritable by scanning. Writable only on the instance route.
 registry.AddExpression("frozen", context => new FrozenNode(_policy, context.RequireExpression("date")));
 ```
 
-一方 `acme.newer` は引数しか要らないので、標準プラグインと同じくメソッドグループで
-登録している。**同じクラスの中に両方があるのが実態に近い。**
+`acme.newer`, needing nothing but its arguments, is registered from a method group exactly
+as a standard plugin would be. **Having both in one class is closer to how this actually
+goes.**
 
 
-## 3. 純粋性 — ここが唯一の本当の危険
+## 3. Purity — the one real danger here
 
-**`acme.frozen` は日付を引数に取る。** ホストの時計を読まない。
+**`acme.frozen` takes the date as an argument.** It does not read the host's clock.
 
-これは様式の話ではない。`GetValidInputs` は domain の候補ごとに guard を 1 回評価する
-（この RuleSet では 54 回）。演算が時計や DB を読むと、
+This is not a matter of style. `GetValidInputs` evaluates a guard once per candidate in a
+domain — 54 times for this rule set. Let an operation reach outside and
 
-- 候補数ぶんの I/O が飛ぶ（組合せ爆発がそのまま I/O 爆発になる）
-- **同一呼び出しの中で同じ問いに違う答えが返る**
-- 「入力到着時点の State を読む」というスナップショット意味論が破れる
+- one round of I/O per candidate, so combinatorial blow-up becomes I/O blow-up
+- **the same question gets different answers inside one call**
+- snapshot semantics breaks, since "expressions read the state as the input found it" rests
+  on the state being all they read
 
-だから「今日」は `state.today` というフィールドで届く。
+So "today" arrives as the field `state.today`.
 
-> 配布プラグインの作者より、**「ちょっとした業務ルールだから」とアプリ内に書く人**の
-> ほうがこれをやる。公式な経路として文書化する以上、この契約は
-> [プラグイン仕様書の「配布しない語彙」](plugin/README.md) と
-> `AddPlugin` の XML doc の両方に明記した。
+> The person who does this is not the author of a distributed plugin. It is **the person
+> writing a quick business rule inside their application**. Documenting the route officially
+> means writing the contract down in both
+> [the plugin specifications' "a vocabulary that is not distributed"](plugin/README.md) and
+> the XML doc on `AddPlugin`.
 
-`DeployPolicy` が不変なのも同じ理由による。ノードはコンパイル時にこのインスタンスを
-捕捉するので、可変であれば `RuleContext` の並行評価が壊れる。
+`DeployPolicy` is immutable for the same reason. A node captures the instance at build
+time, so a mutable one breaks concurrent evaluation of a `RuleContext`.
 
 
-## 4. 動いたこと
+## 4. What worked
 
-### 4.1 凍結が唯一の障害である状態を作れる
+### 4.1 A state where the freeze is the only obstacle
 
-初期状態で search は「2 名承認済み・staging 在・prod は 2.3.4」であり、
-`promote search prod` は**合法**。
+In the initial state search has two approvals, sits in staging, and prod holds 2.3.4, so
+`promote search prod` is **legal**.
 
 ```
 $ dotnet run --project sample/Deploy -- --state friday
  2026-08-14   target 2.4.0
- search   2.4.0    2.4.0    2.3.4    sign prod/ann, sign prod/di      ← →prod が消えた
+ search   2.4.0    2.4.0    2.3.4    sign prod/ann, sign prod/di      ← →prod is gone
  frozen: nothing ships on a Friday
  18 legal of 54 candidates evaluated
 ```
 
-**State の 1 フィールドだけが違う文書**で、`promote search prod` が消える。理由は
-`deploy.json` にも State にも書かれていない。ホスト内の表にある。
+**One field of the state document differs** and `promote search prod` disappears. The reason
+is written neither in `deploy.json` nor in the state. It is in a table inside the host.
 
-`--auto` を付けると全サービスが staging まで上がり、全員の署名が集まり、そこで
-`blocked` で止まる。**全部整っていて日付だけが理由**という終局が出せるのは、この
-題材を選んだ甲斐があった部分である。
+With `--auto` every service climbs to staging, every signature is collected, and it stops
+at `blocked`. **Everything in order and the date the only thing wrong** is a terminal state
+worth being able to produce, and it is what made this subject worth choosing.
 
-### 4.2 注入した表を差し替えると合法手が変わる
+### 4.2 Replacing the injected table changes what is legal
 
 ```
-             合法 / 評価
-既定         19 / 54
---state friday       18 / 54     凍結（State 由来）
---policy lockdown    10 / 27     凍結 ＋ 承認者 1 名（注入データ由来）
+                     legal / evaluated
+default              19 / 54
+--state friday       18 / 54     the freeze (from the state)
+--policy lockdown    10 / 27     the freeze plus a single approver (from injected data)
 ```
 
-lockdown は**評価数まで減る**（54 → 27）。`by` の domain が `acme.people` から来て
-いるので、承認者が減ると候補空間そのものが縮む。RuleSet も State も 1 文字も変わって
-いない。
+lockdown reduces **even the number evaluated** (54 → 27). `by`'s domain comes from
+`acme.people`, so fewer approvers shrinks the candidate space itself. Neither the rule set
+nor the state changed by one character.
 
-### 4.3 `requires` は意味を保った
+### 4.3 `requires` kept its meaning
 
 ```csharp
-// 12 個だけのランタイムで deploy.json をコンパイルすると
+// compiling deploy.json on a runtime with only the twelve
 RuleSetBuildException: ... Acme.Deploy.Rules ...
 ```
 
-これが「軽い登録 API を作らない」判断の全部である。公開されていない語彙でも
-**宣言された依存**であり続け、フィードに無かったプラグインと同じ失敗をする。
+This is the whole of the case for not building a lighter registration API. A vocabulary
+that was never published **remains a declared dependency**, and fails the same way a plugin
+missing from the feed does.
 
 
-## 5. 規約として決めたこと
+## 5. The conventions this settled
 
 | | |
 | --- | --- |
-| 識別子・名前空間 | ベンダー修飾（`Acme.Deploy.Rules` / `acme`）。素の名前は後発の公開プラグインと衝突する |
-| 予約プレフィックス | **主張しない。** 1 プラグイン 1 文字、使える文字はごく僅かで、利用者 1 人の語彙が消費してよい資源ではない |
-| 演算 | 引数と不変スナップショットだけの純粋関数。外部データはコンストラクタで注入するか State に載せる |
-| バージョン | op を消す／意味を変えるならメジャーを上げる |
+| identifier and namespace | vendor-qualified (`Acme.Deploy.Rules` / `acme`). A plain name collides with a later published plugin |
+| reserved prefix | **claim none.** One character per plugin, very few usable, not a resource for a vocabulary with one user |
+| operations | pure functions of their arguments and an immutable snapshot. External data is injected through the constructor or carried in the state |
+| version | removing an op or changing what one means means a new major |
 
-`DeployVocabulary` はこの 4 つをすべて満たしている。`ReservedPrefix` が `null` で
-あることはテストで固定した。
-
-
-## 6. 副産物 — RuleSet 文書の重複を潰した
-
-この題材に着手する前段として、サンプルとテストが**同じ RuleSet を手動コピーで
-持っていた**問題を片付けた。
-
-- 4 文書 × 2 箇所 = 約 2,400 行の手動同期。改行コードが既に食い違っており、
-  **コピー以降誰も機械的に比較していなかった**
-- [ruleset/](../ruleset/) に 1 つ置き、[RuleSets.props](../RuleSets.props) が
-  テストとサンプルの双方へリンクする形に変更
-
-規則自体は目的の形に言い直した：
-
-> ~~サンプルの RuleSet はテストが扱っているものと同じ~~
-> **このリポジトリに載る RuleSet は、すべてテストで実際に動かされる**
-
-言い直した後なら、テストプロジェクトから `sample/Deploy` へ `ProjectReference` を
-1 本張るだけで deploy.json をテストできる。アプリ内語彙は**ホストが型を名指しすること
-こそが趣旨**なので、これは `StandardPlugins.props` が `ReferenceOutputAssembly="false"`
-で守っている性質（ホストがプラグイン型を名指しできない）に反しない。
+`DeployVocabulary` satisfies all four. That its `ReservedPrefix` is `null` is pinned by a
+test.
 
 
-## 7. 埋まった穴
+## 6. A by-product — the duplicated rule set documents were removed
 
-[PluginLoadingTests](../test/PluginLoadingTests.cs) は `AddPlugin` を既に使っていたが、
-**衝突検査の失敗パスだけ**だった（id 重複、名前空間重複、予約文字重複）。アプリ内語彙が
-実際に op を登録し、それを使う RuleSet がコンパイルされて評価まで通る経路は、どこも
-テストしていなかった。
+Clearing the way for this subject meant dealing with the samples and the tests **holding
+the same rule set as manual copies**.
 
-`DeployTests` の 12 件がそこを塞いでいる。
+- 4 documents × 2 places, about 2,400 lines kept in step by hand. The line endings had
+  already drifted, so **nothing had compared them mechanically since the copy was made**
+- now one copy in [ruleset/](../ruleset/), linked into both the tests and the samples by
+  [RuleSets.props](../RuleSets.props)
+
+The rule itself was restated as what it was actually for:
+
+> ~~a sample's rule set is the same one the tests exercise~~
+> **every rule set in this repository is actually run by a test**
+
+Restated that way, testing `deploy.json` needs one `ProjectReference` from the test project
+to `sample/Deploy`. An in-process vocabulary is **specifically about the host naming the
+type**, so this does not conflict with the property `StandardPlugins.props` protects with
+`ReferenceOutputAssembly="false"` — that a host cannot name a plugin type.
 
 
-## 8. 結論
+## 7. The gap this closed
 
-- **コアの変更は不要。** `AddPlugin(IRulealizePlugin)` は最初から public で、
-  必要だったのは規約とドキュメントとサンプルだけだった
-- **第二の登録機構は作らない。** `requires` が読む価値を持つのは、すべての語彙が
-  マニフェストを持つという一点に依存している
-- 危険は 1 つに集約される。**純粋性**であり、それはアプリ内語彙が
-  「外部を読みたくなる場所」に置かれるからである。文書で守るしかない
+[PluginLoadingTests](../test/PluginLoadingTests.cs) already used `AddPlugin`, but **only on
+the failure paths** of the collision checks: duplicate id, duplicate namespace, duplicate
+reserved character. The path where an in-process vocabulary actually registers ops, and a
+rule set using them compiles and evaluates, was tested nowhere.
+
+The 12 cases in `DeployTests` cover it.
+
+
+## 8. Conclusion
+
+- **No change to the core.** `AddPlugin(IRulealizePlugin)` was public from the start, and
+  what was needed was conventions, documentation and a sample
+- **No second registration mechanism.** `requires` is worth reading only because every
+  vocabulary has a manifest
+- The danger reduces to one thing. **Purity** — and it is a danger because an in-process
+  vocabulary sits exactly where reaching outside is tempting. Documentation is the only
+  defence

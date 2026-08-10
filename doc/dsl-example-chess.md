@@ -1,95 +1,99 @@
-# JSON DSL 検証 — チェスを書いて分かったこと
+# The JSON DSL under test — what writing chess showed
 
-リバーシ（[dsl-example-reversi.md](dsl-example-reversi.md)）は「汎用語彙だけで
-ゲームが書けるか」を確かめた。チェスは別の問いのために書いた。
+[Reversi](dsl-example-reversi.md) established that a game can be written in general
+vocabulary alone. Chess was written to ask something else.
 
-> **着点が起点に依存する入力を、コアを変えずに書けるか。**
+> **Can an input whose destination depends on its origin be written without changing the
+> core?**
 
-`inputs.*.params` の各 domain は互いに独立に評価される（[RuleContext.Collect](../src/RuleContext.cs)）。
-候補は domain の直積であり、どの domain も他のパラメータの値を参照できない。
-チェスの手を `from` / `to` の 2 パラメータで書けば、**どの局面でも候補は
-64 × 64 = 4096 個**になる。実際の合法手は 20〜40 個である。
+The domains of `inputs.*.params` are evaluated independently of one another
+([`RuleContext.Collect`](../src/RuleContext.cs)). Candidates are the product of the
+domains, and no domain may refer to another parameter's value. Write a chess move as
+`from` and `to` and **every position has 64 × 64 = 4,096 candidates**, against 20 to 40
+real legal moves.
 
-- 対象: [ruleset/chess.json](../ruleset/chess.json)
-- 検証: [test/ChessTests.cs](../test/ChessTests.cs)
-- 結論: **書けた。コアの変更は無し。** 足りなかったのは語彙だけで、しかもその
-  すべてが特定の RuleSet を参照せずに仕様を書ける汎用ノードだった。
+- Subject: [ruleset/chess.json](../ruleset/chess.json)
+- Checked by: [test/ChessTests.cs](../test/ChessTests.cs)
+- Conclusion: **it can, and the core did not change.** What was missing was vocabulary, all
+  of which could be specified without reference to any particular rule set.
 
 
-## 1. 結果
+## 1. The results
 
-### 1.1 正しさ
+### 1.1 Correctness
 
-perft（合法手木の葉の数）は公開されている既知の値であり、自己整合では通らない。
+Perft — the leaf count of the legal move tree — has published values, so self-consistency
+does not get you a pass.
 
-| 局面 | 深さ | 期待値 | 結果 |
+| Position | Depth | Expected | |
 | --- | --- | --- | --- |
-| 初期局面 | 1 | 20 | ○ |
-| 初期局面 | 2 | 400 | ○ |
-| 初期局面 | 3 | 8,902 | ○ |
-| 初期局面 | 4 | 197,281 | ○ |
+| opening | 1 | 20 | ○ |
+| opening | 2 | 400 | ○ |
+| opening | 3 | 8,902 | ○ |
+| opening | 4 | 197,281 | ○ |
 | Kiwipete | 1 | 48 | ○ |
 | Kiwipete | 2 | 2,039 | ○ |
 | Kiwipete | 3 | 97,862 | ○ |
 
-Kiwipete（`r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq -`）は
-間違えやすい規則がほぼ全部同時に生きている局面として perft 集で使われる。
-両翼の両者キャスリング、ピン、線を開くポーン取り。
+Kiwipete (`r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq -`) is used in
+perft collections as the position where nearly every easily-mistaken rule is live at once:
+castling on both wings for both sides, pins, and a pawn capture that opens a line.
 
-つまり成り・アンパッサン・キャスリング・ピン・王手回避・ステイルメイトが
-すべて正しい。**チェスは JSON DSL で書ける。**
+So promotion, en passant, castling, pins, getting out of check and stalemate are all
+correct. **Chess can be written in the JSON DSL.**
 
-### 1.2 候補数
+### 1.2 Candidate counts
 
-| 局面 | 2 パラメータなら | 複合パラメータで | 比 |
+| Position | As two parameters | As a compound | Ratio |
 | --- | --- | --- | --- |
-| 初期局面 | 4,096 | 20 | 205× |
+| opening | 4,096 | 20 | 205× |
 | Kiwipete | 4,096 | 48 | 85× |
 
-`ValidInputSet.Evaluated`（＝ `when` を評価した回数）は初期局面で 20、Kiwipete
-で 48。**guard は疑似合法手にしか到達しない。**
+`ValidInputSet.Evaluated` — how many times `when` ran — is 20 in the opening position and
+48 at Kiwipete. **The guard never sees anything but a pseudo-legal move.**
 
 
-## 2. 足りなかった語彙
+## 2. The vocabulary that was missing
 
-いずれも「特定の RuleSet を参照せずに仕様を書ける」という基準を満たす。
-チェス固有のノードは 1 つも作っていない。
+All of it satisfies "the specification can be written without naming a particular rule
+set". Not one chess-specific node was built.
 
-| 追加 | 何のため |
+| Added | For |
 | --- | --- |
-| [`Rulealize.Plugin.Tuple`](plugin/Tuple.md)（新設） | 複合パラメータそのもの。正規テキストを持つ複合値 |
-| [`seq.of`](plugin/Sequence.md)（Sequence 1.1） | 列リテラル。ナイトの 8 オフセット |
-| [`grid.with` / `grid.withMany`](plugin/Grid.md)（Grid 1.1） | 遷移後の盤面を値として組み立てる |
-| [`grid.square`](plugin/Grid.md)（Grid 1.1） | 座標 1 つを保持する状態フィールド |
+| [`Rulealize.Plugin.Tuple`](plugin/Tuple.md) (new) | the compound parameter itself — a compound value with a canonical text form |
+| [`seq.of`](plugin/Sequence.md) (Sequence 1.1) | a sequence literal, for the knight's eight offsets |
+| [`grid.with` / `grid.withMany`](plugin/Grid.md) (Grid 1.1) | building the board after a move, as a value |
+| [`grid.square`](plugin/Grid.md) (Grid 1.1) | a state field holding one coordinate |
 
-`seq.of` が無かったことは、Sequence が[分解の基準 A](dsl-example-reversi.md)
-（独立ロード可能性）を自分では満たしていなかったということでもある。リバーシは
-列がすべて `grid.*` から出てくるので露見しなかった。
+That `seq.of` was missing also means Sequence did not satisfy
+[criterion A, independent loadability](dsl-example-reversi.md), on its own. Reversi never
+noticed because all of its sequences come out of `grid.*`.
 
-**逆に、要らなかったもの**も記録しておく価値がある。
+**What turned out not to be needed** is worth recording too.
 
-- **座標の段・筋を読むノード** — `seq.count(grid.ray(c, dir))` が端までの距離を
-  返すので、ポーンの初期段（後ろが 1 マス）も成りの段（前が 0 マス）も既存語彙で
-  判定できた。
-- **個別方向を作るノード**（[Grid.md の未確定事項](plugin/Grid.md)）— `dir` は
-  `"0,-1"` のような文字列リテラルで書ける。`grid.directions` の集合からしか
-  方向を得られない、というのは誤りだった。
-- **持ち駒・成りの専用プラグイン**（[Grid.md](plugin/Grid.md) の想定）— 成りは
-  盤面の値を差し替えるだけなので不要だった。
+- **A node for reading a rank or a file.** `seq.count(grid.ray(c, dir))` gives the distance
+  to the edge, which decides both a pawn's starting rank (one square behind it) and the
+  promotion rank (zero in front).
+- **A node for building a single direction.** A direction has a canonical text form, so
+  `dir` is written as the string literal `"0,-1"`. [Grid](plugin/Grid.md) had recorded that
+  directions could only be obtained from `grid.directions`, and that was simply false.
+- **A dedicated plugin for promotion or captured pieces**, which [Grid](plugin/Grid.md) had
+  expected. Promotion replaces a value on the board, so a way to update a board as a value
+  was all it took.
 
 
-## 3. 見つかった 3 つの穴
+## 3. The three holes it found
 
-### 3.1 `when` は遷移後の状態を見られない
+### 3.1 `when` cannot see the position the move leads to
 
-**これは domain 依存性とは独立した、別の制約である。**
+**This is a separate constraint from the domain-dependency one.**
 
-`when` は入力時の状態に対して評価され、`effects` は `when` を通ってから走る。
-リバーシの合法性は目の前の局面の性質なのでこの順序でよい。チェスの合法性は
-「指した後に自玉が取られないこと」であり、後の局面を問う手段が要る。
+A guard evaluates against the state as the input found it, and `effects` run only after it
+passes. Reversi's legality is a property of the position in front of you, so that order
+suits it. Chess's legality is "and your own king is not then capturable", which needs a way
+to ask about the later position.
 
-チェスでは `grid.with` で解決できた。**盤面が 1 フィールドの 1 つの値だから**
-である。
+`grid.with` answered it, **because a board is one value in one field.**
 
 ```jsonc
 "legal": { "params": ["m"], "body": {
@@ -101,101 +105,108 @@ Kiwipete（`r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq -`）
       "by": "#foe" } } } } }
 ```
 
-**遷移後の状態全体（複数フィールドの組）に依存する規則は依然として書けない。**
-`effects` を投機的に適用して結果の状態を式として得る手段が無いためで、これは
-プラグインでは埋まらない。チェスが逃げ切れたのは偶然に近い。
+**A rule that depends on the whole state after a transition — several fields at once — is
+still unwritable.** There is no way to apply `effects` speculatively and get the resulting
+state as an expression, and no plugin can supply one. Chess getting away with it was close
+to luck. [Shogi §4](dsl-example-shogi.md) pushed the same trick as far as it goes.
 
-### 3.2 `ApplyToState` が domain を検査していなかった（**解決済み**）
+### 3.2 `ApplyToState` was not checking the domain (**fixed**)
 
-**今回いちばん重要な発見であり、コアを直した。**
+**The most important thing this exercise found, and it changed the core.**
 
-発見時の [`RuleContext.Apply`](../src/RuleContext.cs) は入力文書の引数を直接
-束縛し、domain を一度も評価していなかった。文書と遷移の間に立つのは `when`
-だけである。
+As written at the time, [`RuleContext.Apply`](../src/RuleContext.cs) bound the input
+document's arguments directly and never evaluated the domain at all. The only thing
+standing between a document and a transition was `when`.
 
-リバーシは無傷だった。domain が全 64 マスで、着手に関する規則はすべて guard に
-あるからである。チェスでは駒の動きの規則が **domain 側**にある——複合パラメータ
-とはそういうものだ——ので、`when` は王手安全性フィルタでしかない。結果、
-ポーンが 3 マス進む手が例外も出ずに通っていた。
+Reversi was unharmed: its domain is all 64 squares and every rule about placement is in the
+guard. In chess the rules about how pieces move are **in the domain** — that is what a
+compound parameter is — so `when` is only a check-safety filter. A pawn advancing three
+squares went through without so much as an exception.
 
-#### 決着: **domain は規則の一部である**
+#### The resolution: **a domain is part of the rules**
 
-二択だった。
+Two options.
 
-| | 内容 | 帰結 |
+| | | Consequence |
 | --- | --- | --- |
-| A | domain は候補空間の**ヒント**であり、権威は `when` | 組合せ爆発を避けるために domain を絞った RuleSet は、同じ規則を guard で二度書く責任を負う |
-| B | domain は**規則そのもの**。ランタイムが適用時に検査する | 適用のたびに domain の評価コストがかかる |
+| A | a domain is a **hint** about the candidate space; `when` is the authority | a rule set that narrowed its domain to avoid blow-up owes a second copy of the rule in its guard |
+| B | a domain **is the rule**, and the runtime checks it when applying | applying a move costs a walk of the domain |
 
-**B を採った。** A は「絞る動機があるのは組合せ爆発が起きるときだけ」であり、
-まさにそのときに規則の二重記述が最も高くつく——書く側にとっても、走らせる側に
-とっても。チェスの guard に疑似合法手判定を書き直させるのは、移動生成をもう一本
-書けということに等しい。
+**B.** Under A, the only reason to narrow is combinatorial blow-up, and that is exactly
+when writing the rule twice costs most — to write and to run. Making chess restate
+pseudo-legality in its guard is asking for a second move generator.
 
-実装は [`RuleContext.BindArguments` / `Resolve` / `Matches`](../src/RuleContext.cs)。
-併せて 3 つ決めた。
+Implemented in
+[`RuleContext.BindArguments` / `Resolve` / `Matches`](../src/RuleContext.cs). Three things
+were settled along with it.
 
-1. **突き合わせは「値が等しい」か「Text が Opaque の正規テキストである」か。**
-   後者だけが [`ValidInput.ToInputDocument`](../src/ValidInput.cs) が開いた往復の
-   復路であり、それより広げない。**`"2"` は依然として `2` に一致しない**
-   （[値モデル §2](value-model.md) の「異なる種別は非等価」を境界でも守る）。
-2. **束縛するのは domain 側の値**（→ §3.3）。
-3. **失敗は `IllegalInputException`。** guard による拒否と区別しない。呼び出し側
-   から見れば「ここで指せる手ではない」という同じ答えだからである。
+1. **A match is equal values, or text that is an opaque value's canonical form.** Only the
+   latter is the return leg of the trip [`ValidInput.ToInputDocument`](../src/ValidInput.cs)
+   opens, and it goes no wider. **`"2"` still does not match `2`** — [value model
+   §2](value-model.md)'s "different kinds are unequal" holds at the boundary too.
+2. **What gets bound is the domain's value** (→ §3.3).
+3. **Failure is `IllegalInputException`**, not distinguished from rejection by the guard.
+   To the caller both mean "not a move you can make here".
 
-domain は最初の一致で打ち切る。列は遅延評価なので、実際に払うのは「引数が
-domain の何番目にあるか」までの分だけになる。
+The domain stops at the first match. Sequences are lazy, so what is actually paid for is
+the part of the domain up to the argument.
 
-#### コスト（実測）
+#### What it cost, measured
 
-深い perft（初期局面 4 手 + Kiwipete 3 手、約 30 万局面）で **32 秒 → 35 秒、
-約 9%**。予想した 2 倍にはならなかった。
+Over a deep perft — opening to depth 4 plus Kiwipete to depth 3, about 300,000 positions —
+**32 s → 35 s, about 9%.** Not the doubling that was expected.
 
-理由は §5 にある。`ApplyToState` は元から遷移のたびに `terminal` を評価し、
-それが `hasLegalMove`（疑似手の全生成 + 各手の合法性判定）を含んでいる。
-**支配的なコストが先にあったので、短絡付きの部分生成 1 回はその陰に隠れた。**
-終局判定が合法手の存在に依存しないゲームでは、比率はもっと大きく出るはず。
+The reason is in §5. `ApplyToState` already evaluated `terminal` on every transition, and
+that includes `hasLegalMove`, which generates every pseudo-legal move and tests each for
+legality. **A dominant cost was already there, so one short-circuited partial generation
+hid behind it.** In a game whose ending does not depend on whether a legal move exists, the
+ratio would be worse.
 
-### 3.3 値の種別が入口によって変わっていた（**解決済み**）
+### 3.3 The kind of a value depended on how it arrived (**fixed**)
 
-§3.2 の決着 2 の帰結。**束縛されるのは domain 側の値**なので、`GetValidInputs`
-が提示した候補と、それを文書から適用したときとで、式が見る値は完全に一致する。
+A consequence of point 2 above. **What gets bound is the domain's value**, so the candidate
+`GetValidInputs` offered and the same move applied from a document put exactly the same
+value in front of every expression.
 
-発見時はそうではなく、`GetValidInputs` 経由では Opaque、`ApplyToState` 経由では
-Text だった。チェスはこれを**手の種別をタグに持たせる**ことで回避していた。
+Before the fix they did not: opaque via `GetValidInputs`, text via `ApplyToState`. Chess
+had worked around it by **carrying the kind of move in a tag**.
 
 ```
-"-"  ふつうの手 / "2"  ポーンの 2 歩 / "ep"  アンパッサン
-"q" "r" "b" "n"  成り / "0-0" "0-0-0"  キャスリング
+"-"  ordinary / "2"  pawn double step / "ep"  en passant
+"q" "r" "b" "n"  promotion / "0-0" "0-0-0"  castling
 ```
 
-タグ方式は解決後も残してある。座標を比較せずに手の種類が言えるのは、非対称と
-無関係にそれ自体で良い設計だからである。
+The tag survives the fix. Being able to say what kind of move it is without comparing
+coordinates is good design on its own terms, independent of the asymmetry it was working
+around.
 
-**残る注意点**: 正規化は「両経路で同じ値になる」ことを保証するが、
-「**要素の種別が揃う**」ことは保証しない。チェスの手の座標は、通常手では
-`grid.coords` 由来の Opaque、キャスリングでは書き下した Text である。これは
-RuleSet 自身の作りであって入口の問題ではない。突き合わせには `branch.match`
-（正規テキストで一致を見る）を使う——[`corner` 定義](../ruleset/chess.json)が
-キャスリング権の更新でこれをやっている。
-
-
-## 4. 書けなかったもの
-
-- **三回同形反復** — 状態は局面であり、反復は棋譜の性質。State に履歴を持たせ
-  れば書けるが、`state.schema` に列を置く型（`type.list`）が無い。
-- **駒不足による引き分け** — 書けるが、組み合わせの列挙が長くなるだけなので
-  省いた。表現力の問題ではない。
+**What remains true**: normalization guarantees both routes produce the same value, and it
+does **not** guarantee that **the elements agree in kind**. The coordinates in a chess move
+are opaque, from `grid.coords`, in an ordinary move and written-out text in a castling
+move. That is the rule set's own doing rather than anything about the entry point. Matching
+them uses `branch.match`, which compares canonical text — the
+[`corner` definition](../ruleset/chess.json) does this when updating castling rights.
 
 
-## 5. コスト
+## 4. What could not be written
 
-初期局面 perft(4) と Kiwipete perft(3) を合わせて約 30 秒。約 30 万局面なので
-1 局面あたり 0.1 ミリ秒前後で、DSL 解釈の実行としては妥当な範囲にある。
+- **Threefold repetition** — a state is a position, and repetition is a property of the
+  game record. Writable with a history in the state, and `state.schema` had no type for a
+  sequence. It has one now: [`type.list`](plugin/TypeSchema.md), which
+  [collections §6](collections.md) sketches the repetition rule against.
+- **Draws by insufficient material** — writable, and left out because it is a long
+  enumeration of combinations and nothing else. Not a question of expressiveness.
 
-ただし**構造的に倍払っている**箇所がある。`ApplyToState` は遷移のたびに
-`terminal` を評価し、`terminal.when` は `hasLegalMove` を含む。つまり 1 手指す
-たびに合法手探索が丸ごと 1 回走る。
+
+## 5. Cost
+
+The opening position to perft(4) and Kiwipete to perft(3) together take about 30 seconds
+for roughly 300,000 positions, so 0.1 ms or so per position — a reasonable range for
+interpreting a DSL.
+
+But there is a place where it is **structurally paying twice**. `ApplyToState` evaluates
+`terminal` on every transition, and `terminal.when` includes `hasLegalMove`. Every move
+made therefore runs a whole legal-move search.
 
 ```jsonc
 "terminal": { "when": { "op": "logic.or", "any": [
@@ -203,58 +214,75 @@ RuleSet 自身の作りであって入口の問題ではない。突き合わせ
   { "op": "logic.not", "value": "#hasLegalMove" } ] } }
 ```
 
-`logic.or` の短絡順序で安い判定を先に置いてはあるが、`idle >= 100` はほとんど
-常に偽なので効かない。チェックメイトとステイルメイトを終局条件に持つ以上これは
-避けられず、**「終局判定が合法手の存在に依存するゲームでは遷移コストが 2 倍に
-なる」**は仕様として理解しておくべき性質である。
+The cheap test is placed first for `logic.or`'s short-circuit, but `idle >= 100` is almost
+never true so it never helps. With checkmate and stalemate as terminal conditions this is
+unavoidable, and **"a game whose ending depends on whether a legal move exists pays double
+per transition" is a property worth understanding as specified behaviour.**
 
 
-## 6. コア改修（domain のパラメータ依存）への含意
+## 6. What this implies for the core change to make domains parameter-dependent
 
-複合パラメータで済むなら改修は不要か——という問いへの答え。
+Is the change unnecessary if a compound parameter suffices?
 
-> **その後**: [将棋を書いて結論が出た](dsl-example-shogi.md)。下の 2 番目の
-> 予測は**外れている**——将棋の手も 3 要素で収まり、第 4 要素を要求すると見て
-> いた駒打ちは、独立した 2 つの domain を持つ別入力だった。結論は §6 末尾を
-> 参照。
+> **Since**: [shogi settled it](dsl-example-shogi.md). The second prediction below is
+> **wrong** — a shogi move also fits in three elements, and the drops that were expected to
+> demand a fourth turned out to be a separate input with two independent domains.
 
-**必要な理由（改修を支持する側）**
+**Reasons for the change**
 
-- 戻り値の構造が失われる。`{"m": "e2|e4|-"}` であって `{"from":"e2","to":"e4"}`
-  ではない。利用側は文字列を分解する。
-- ~~タグ方式は §3.3 の回避策であって設計ではない。第 4 要素が要る規則（将棋の
-  成り選択と打ち場所を同時に持つ手など）では入れ子になって破綻する。~~ 外れ。
-- `tuple.of` / `tuple.at` という語彙が、本来は入力の形の問題である事柄を
-  値モデルの側に押し出している。
+- The structure of the return value is lost. It is `{"m": "e2|e4|-"}`, not
+  `{"from":"e2","to":"e4"}`, so the caller takes a string apart.
+- ~~The tag scheme is a workaround for §3.3 rather than a design. A rule that needs a
+  fourth element — a shogi move carrying both a promotion choice and a drop square — would
+  nest and fall apart.~~ Wrong.
+- `tuple.of` and `tuple.at` push into the value model something that is really a question
+  about the shape of an input.
 
-**不要な理由（改修を待つ側）**
+**Reasons to wait**
 
-- 4096 → 20 という削減は実際に達成された。性能上の動機はこれで消える。
+- The reduction from 4,096 to 20 was actually achieved, which removes the performance
+  motive entirely.
 
-§3.2 を「domain は規則の一部」で決着させたことで、**前提が一つ整った**。domain
-に規則が乗ることがランタイムの公式な立場になったので、domain 依存性の追加は
-「規則を書ける場所を広げる」という一貫した変更になる。決着前は、同じ改修が
-検査されない領域を広げるだけの変更になっていた。
+Settling §3.2 as "a domain is part of the rules" **put one premise in place**: it is now
+the runtime's official position that rules live in domains, so extending them is a coherent
+change that widens where a rule may be written. Before that, the same change would only
+have widened an unchecked area.
 
-したがって残る判断材料は書き味だけであり、それは将棋を書いた時点で結論が出る
-はずである。
+What is left is how it reads to write, and shogi is where that gets decided.
 
-→ [出た](dsl-example-shogi.md)。将棋の手も 3 要素で収まり、要素数で破綻する
-という予測は外れた。書き味の論拠は残るが弱く、将棋が実際に露呈させたのは
-**持ち駒を置く場所が無い**ことだった。同じ労力なら状態の表現力に使う方が広く
-効く、というのが現時点の結論である。
+→ [It did](dsl-example-shogi.md). A shogi move fits in three elements too, so the
+prediction about element counts was wrong. The readability argument survives but is weak,
+and what shogi actually exposed was **nowhere to put the captured pieces**. The same effort
+spent on the expressiveness of the state goes further.
 
 
-## 7. 未確定事項
+## 7. What is still open, and what has closed
 
-- **遷移後の状態全体を問う手段** — §3.1 の残り。`effects` の投機適用をランタイム
-  が提供するかどうか。
-- **`type.list` / `type.record`** — 三回同形反復、持ち駒、非ゲーム用途の履歴。
-- **終局判定のコスト** — §5。`terminal` の評価を呼び出し側が省略できる余地が
-  あってよいかもしれない。§3.2 の検査コストがその陰に隠れている以上、こちらを
-  先に触ると検査コストが相対的に浮き上がる。
-- **`tuple.text`（任意の値の正規テキスト）** — 種別の混在した値を突き合わせる
-  手段。現状は `branch.match` が代役。
-- **適用時 domain 検査の省略** — `GetValidInputs` から得た手をそのまま適用する
-  呼び出し側にとっては、検査は既知の答えの再計算である。実測 9% なので今は
-  入れないが、必要になったときに後から足せる形にはなっている。
+- **Asking about the whole state after a transition** — the remainder of §3.1, and the
+  largest thing the DSL still cannot say. The shape of an answer is known: the core already
+  holds `inputs` the way it holds `definitions`, so the precedent is available — the core
+  applies an input's effects speculatively and a plugin provides the vocabulary for asking,
+  returning the resulting state as a `Record` for `rec.at` to read. It would take an
+  Abstraction hook, core support, and a thirteenth plugin. It is not being built, because
+  across five rule sets nothing is actually blocked: chess and shogi both reach far enough
+  with `grid.with`, and neither roster nor deploy asks the question at all. **The trigger is
+  a rule set that cannot be written** — a rule where the board and another field both
+  matter after the move, which shogi came within one step of needing
+  ([shogi §4](dsl-example-shogi.md)).
+- ~~**`type.list` / `type.record`**~~ — resolved. Threefold repetition, captured pieces and
+  the histories of non-game uses all needed them, and they became
+  [`type.list` and `rec.of` / `rec.map`](collections.md).
+- **The cost of the terminal test** — §5. Letting a caller skip evaluating `terminal` would
+  help most in exactly this shape of game, and nothing has asked for it: the perft harness
+  is the heaviest user in the repository and finds 30 seconds acceptable. Worth doing when
+  a caller is measured against it, and it is a public API addition rather than a design
+  question. Note that §3.2's checking cost hides behind this one, so touching this first
+  makes that one relatively larger.
+- **`tuple.text`** — settled in [Tuple](plugin/Tuple.md): not built, and if it ever is, it
+  belongs in Comparison rather than Tuple. `branch.match` covers the case at the price of
+  writing the cases out.
+- **Skipping the domain check when applying** — for a caller feeding back a move it got
+  from `GetValidInputs`, the check recomputes a known answer. Measured at 9%, which is not
+  enough to justify an opt-out that would let a caller turn off a rule check by mistake.
+  The shape it would take, if wanted, is a flag on the call rather than a change to the
+  rules.

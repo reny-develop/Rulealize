@@ -1,91 +1,90 @@
-# 状態にコレクションを置く — 設計と結果
+# Putting collections in the state — the design, and what came of it
 
-[将棋](dsl-example-shogi.md)が突きつけた穴への回答。`state.schema` はスカラの
-フラットなマップであり、多重集合も列も置けない。
+The answer to the hole [shogi](dsl-example-shogi.md) opened up: `state.schema` was a flat
+map of scalars, with nowhere to put a multiset or a sequence.
 
-**実装済み。** [`type.list`](plugin/TypeSchema.md)（TypeSchema 1.1）、
-[`Rulealize.Plugin.Record`](plugin/Record.md)、[Sequence 1.2](plugin/Sequence.md)、
-`SchemaNode.Normalize`（Abstraction 0.2.0）。将棋を書き直して perft は変わっていない。
+**Built.** [`type.list`](plugin/TypeSchema.md) (TypeSchema 1.1),
+[`Rulealize.Plugin.Record`](plugin/Record.md), [Sequence 1.2](plugin/Sequence.md), and
+`SchemaNode.Normalize` (Abstraction 0.2.0). Shogi was rewritten and its perft numbers did
+not move.
 
-- 前提: [値モデル](value-model.md)、[State プラグイン](plugin/State.md)
+- Assumes: [the value model](value-model.md), [the State plugin](plugin/State.md)
 
 
-## 1. いま払っているもの
+## 1. What it was costing
 
-`shogi.json` は 925 行。うち**持ち駒の定型句が 72 行（約 8%）**を占める。
+`shogi.json` was 925 lines, of which **72 — about 8% — were boilerplate for the hand**.
 
-| 内訳 | 行数 |
+| | Lines |
 | --- | --- |
-| `state.schema` の `bP`〜`wR` 14 フィールド | 14 |
-| `move` / `drop` の持ち駒更新 effects（14 × 2） | 28 |
-| `held` の 2 段 `branch.match` と `handKinds` | 30 |
+| the fourteen fields `bP` … `wR` in `state.schema` | 14 |
+| the hand-updating effects of `move` and `drop` (14 × 2) | 28 |
+| `held`'s two-level `branch.match`, and `handKinds` | 30 |
 
-しかもこれは削れない。`state.set` の `path` はリテラルなので「駒種 `@kind` の
-カウンタを増やす」とは書けず、14 個すべてを並べるしかない。
+And none of it could be trimmed. `state.set`'s `path` is a literal, so "increment the
+counter for piece kind `@kind`" is unsayable and all fourteen have to be written out.
 
-チェスの三回同形反復も、将棋の千日手も、非ゲーム用途の履歴・キュー・明細も、
-同じ壁の向こうにある。
+Chess's threefold repetition, shogi's perpetual check, and the histories, queues and line
+items of anything that is not a game were all on the far side of the same wall.
 
+## 2. The principle — paths stay literal
 
-## 2. 設計原理 — パスはリテラルのままにする
+**`state.set` is not going to accept `"hand.P"`.** That gives up the three things
+[the State plugin](plugin/State.md) names: checking every path up front, reading which
+field an input writes off the document, and not carrying schema validation into run time.
 
-**`state.set` に `"hand.P"` を書けるようにはしない。** [State プラグイン](plugin/State.md)
-が挙げる 3 つの利点（全パスの事前検査、どのフィールドを書くかが文書から読める、
-スキーマ検証を実行時に持ち越さない）を手放すことになるためである。
+Instead, **follow the precedent `grid.board` already set.**
 
-代わりに **`grid.board` の前例をそのまま踏む。**
+> The inside of a board is not reachable by path. To the state a board is one opaque value,
+> and reading and writing squares belongs to `grid.at` and `grid.set`.
 
-> 盤の内側はパスで到達できない。盤は State から見れば 1 つの Opaque 値であり、
-> マスの読み書きは `grid.at` / `grid.set` が持つ。
+Collections take the same seam. **A path names the whole field; the inside is touched with
+the vocabulary of the plugin that defined it.**
 
-コレクションも同じ縫い目にする。**フィールド全体を指すパスはリテラル、内側は
-そのコレクションを定義したプラグインの語彙で触る。**
+## 3. Lists and records are not symmetric
 
+The temptation is to build two things of the same shape. The value model says otherwise.
 
-## 3. List と Record は対称にしない
-
-同じ形の 2 つを作りたくなるが、値モデルの側で事情が違う。
-
-| | 値の種別 | 既存の語彙 | 必要なもの |
+| | Kind of value | Existing vocabulary | What is needed |
 | --- | --- | --- | --- |
-| List | `Sequence` | **`seq.*` がすべて使える** | スキーマノードだけ |
-| Record | `Record` | **無い** | スキーマ + 読み + 書き |
+| List | `Sequence` | **all of `seq.*` already works** | a schema node, and nothing else |
+| Record | `Record` | **none** | a schema, a way to read, a way to write |
 
-列を `Sequence` として持てば、`seq.count` / `seq.any` / `seq.where` /
-`seq.elementAt` がその日から動く。専用の読み出し語彙を作るのは、同じ意味の
-ノードを二重に持つことにしかならない。
+Hold a sequence as a `Sequence` and `seq.count`, `seq.any`, `seq.where` and
+`seq.elementAt` work on day one. Building a dedicated reading vocabulary would only mean
+owning two nodes that mean the same thing.
 
-したがって、
+Therefore:
 
-- **`type.list` は [TypeSchema](plugin/TypeSchema.md) に置く。** 式ノードを
-  持たない純粋なスキーマノードであり、TypeSchema の性格（「提供するのは式ノード
-  ではなくスキーマノード」）を壊さない。「スカラの語彙」という説明文だけ改める。
-- **レコードは新プラグイン `Rulealize.Plugin.Record`（名前空間 `rec`）。**
-  スキーマ・式・効果の 3 種を提供する。Grid と同じ構えになる。
+- **`type.list` goes in [TypeSchema](plugin/TypeSchema.md).** It is a pure schema node with
+  no expressions, which does not violate TypeSchema's character — the line that plugin
+  holds is "no expression nodes", not "scalars only". Only its one-line description needed
+  rewording.
+- **Records become a new plugin, `Rulealize.Plugin.Record`, namespace `rec`.** It provides
+  all three kinds of node, the same posture as Grid.
 
-非対称は不格好に見えるが、**理由のある非対称**であり、`requires` の発見可能性
-（[分解の基準](dsl-example-reversi.md)）にも合う。列を持つだけの RuleSet が
-`Rulealize.Plugin.Record` を要求せずに済む。
-
+The asymmetry looks untidy and **is an asymmetry with a reason**, which also serves the
+discoverability `requires` is for ([the criteria](dsl-example-reversi.md)): a rule set that
+only needs a sequence does not have to require `Rulealize.Plugin.Record`.
 
 ## 4. `type.list`
 
-### 形式
+### Form
 
 ```jsonc
 {
   "op": "type.list",
-  "element": <スキーマノード>,      // 必須
-  "minLength": <整数>,              // 省略可。静的
-  "maxLength": <整数>               // 省略可。静的
+  "element": <schema node>,      // required
+  "minLength": <integer>,        // optional, static
+  "maxLength": <integer>         // optional, static
 }
 ```
 
-### 値
+### The value
 
-`Sequence`。要素はすべて `element` を満たす。
+A `Sequence` whose every element satisfies `element`.
 
-`Sequence` にしたので、読み出しに新しい語彙は要らない。
+Because it is a `Sequence`, reading it needs no new vocabulary.
 
 ```jsonc
 { "op": "seq.count", "source": "$history" }
@@ -93,63 +92,59 @@
   "predicate": { "op": "cmp.eq", "left": "@j", "right": "@target" } }
 ```
 
-### JSON 形
+### The JSON form
 
-配列。`element` のスキーマノードが各要素の形を決める。
+An array. The `element` schema node decides the shape of each entry.
 
 ```jsonc
 "history": [ { "board": { … }, "turn": "white" }, … ]
 ```
 
-### 書き込み
+### Writing
 
-`state.set` に `Sequence` を返す式を渡す。専用の効果ノードは置かない。
+Hand `state.set` an expression returning a `Sequence`. There is no dedicated effect node.
 
 ```jsonc
 { "op": "state.set", "path": "history",
   "value": { "op": "seq.concat", "of": ["$history", { "op": "seq.of", "of": ["@position"] }] } }
 ```
 
-`seq.concat` は現在未提供（`seq.of` + `seq.selectMany` で書けるという理由で
-見送られている）。**追加を推奨する** — §7 参照。
+### `maxLength` is not decoration
 
-### `maxLength` は飾りではない
+`GetValidInputs` walks a sequence end to end, and the state is serialized on every
+transition. An unbounded history grows the document with the square of the move count.
 
-`GetValidInputs` は列を全走査するし、状態は毎遷移で直列化される。上限の無い
-履歴は文書サイズを手数の 2 乗で膨らませる。
-
-チェスの三回同形反復には**原理的な上限がある**。反復は最後の非可逆手（駒取り
-またはポーンの動き）以降にしか成立せず、それは 50 手ルールの 100 手で頭打ちに
-なる。`maxLength: 100` は妥協ではなく規則そのものである。
-
+Chess's threefold repetition **has a bound in principle.** A repetition can only be
+established since the last irreversible move — a capture or a pawn move — and the
+fifty-move rule caps that at a hundred plies. `maxLength: 100` is the rule itself, not a
+compromise.
 
 ## 5. `Rulealize.Plugin.Record`
 
-| 項目 | 値 |
+| | |
 | --- | --- |
-| 識別子 | `Rulealize.Plugin.Record` |
-| 名前空間 | `rec` |
-| 予約プレフィックス | なし |
+| Identifier | `Rulealize.Plugin.Record` |
+| Namespace | `rec` |
+| Reserved prefix | none |
 
-### 5.1 スキーマノード 2 種
+### 5.1 Two schema nodes
 
-**閉じたキー集合**を前提にする。開いたマップにしない理由は、`type.enum` を
-`type.string` + 正規表現より優先したのと同じで、**宣言されているものは検査
-できる**からである。
+Built on a **closed key set**. Not an open map, on the same judgement that put `type.enum`
+ahead of `type.string` plus a regular expression: **what is declared can be checked.**
 
 ```jsonc
-// 異種のフィールドを持つレコード
-{ "op": "rec.of", "fields": { "<名前>": <スキーマ>, … } }
+// a record of heterogeneous fields
+{ "op": "rec.of", "fields": { "<name>": <schema>, … } }
 
-// 同種の値をキーで引くレコード
-{ "op": "rec.map", "keys": ["<キー>", …], "value": <スキーマ> }
+// a record of like values, looked up by key
+{ "op": "rec.map", "keys": ["<key>", …], "value": <schema> }
 ```
 
-`rec.map` を別に置くのは、それが**言えることが違う**ため。「すべての値が同じ型
-である」は `rec.of` では表現できず、将棋の持ち駒はまさにそれである。
+`rec.map` is separate because **it says something different**. "Every value is of the same
+type" cannot be expressed by `rec.of`, and shogi's hand is precisely that.
 
 ```jsonc
-// 14 フィールドが 4 行になる
+// fourteen fields become four lines
 "hand": {
   "op": "rec.map", "keys": ["black", "white"],
   "value": { "op": "rec.map", "keys": ["P", "L", "N", "S", "G", "B", "R"],
@@ -157,58 +152,59 @@
 }
 ```
 
-キーの順序は宣言順。直列化の決定性のため（`state.schema` と同じ規則）。
+Keys are serialized in declaration order, so that the output is deterministic — the rule
+`state.schema` already follows.
 
-### 5.2 式ノード
+### 5.2 Expression nodes
 
 ```jsonc
-{ "op": "rec.at",   "record": <式>, "key": <式:Text> }
-{ "op": "rec.has",  "record": <式>, "key": <式:Text> }
-{ "op": "rec.with", "record": <式>, "key": <式:Text>, "value": <式> }
-{ "op": "rec.keys", "of": <式> }
+{ "op": "rec.at",   "record": <expression>, "key": <expression:Text> }
+{ "op": "rec.has",  "record": <expression>, "key": <expression:Text> }
+{ "op": "rec.with", "record": <expression>, "key": <expression:Text>, "value": <expression> }
+{ "op": "rec.keys", "of": <expression> }
 ```
 
-> **`rec.has` は実装中に足した。** 設計案には無かったが、`rec.at` を無いキーで
-> エラーにすると決めた以上、**安全に問う手段が無い**ことになる。将棋が取った駒を
-> 持ち駒に入れるとき、それが持ち駒になる駒種かを先に確かめる必要があり、無ければ
-> RuleSet がスキーマとは別に 7 種のリストを抱えることになった。使ってみるまで
-> 見えなかった穴である。
+> **`rec.has` was added during implementation.** It was not in the design. Having decided
+> that `rec.at` faults on an absent key, there was then **no safe way to ask** — and shogi,
+> putting a captured piece into a hand, has to establish first that the piece is a kind
+> that can be held. Without it the rule set carries a list of the seven kinds alongside the
+> schema. Not visible until it was used.
 
-- **`rec.at`** — 値を返す。`record` が `Null` なら `Null`（`tuple.at` と同じ）。
-  **宣言されていないキーは評価時エラー。** ここは `grid.at` と分ける。盤には
-  「存在しないマス」が正当に存在する（盤外）が、閉じたレコードに存在しない
-  キーは書き手の誤りでしかなく、それに依存する規則も無い。
-- **`rec.with`** — キー 1 つを差し替えた新しいレコードを返す。純粋。
-  `grid.with` と同じ役割で、**遷移後の状態を問う規則**（[チェス §3.1](dsl-example-chess.md)）
-  に要る。宣言されていないキーへの書き込みは評価時エラーであり、これによって
-  **レコードは構成上つねにスキーマを満たす。**
-- **`rec.keys`** — キーの `Sequence`（Text）。反復の入口。
+- **`rec.at`** — returns the value. `Null` when `record` is `Null`, matching `tuple.at`.
+  **An undeclared key is an evaluation fault**, and this is where it parts company with
+  `grid.at`. A board legitimately has squares that do not exist; a closed record's absent
+  key is only ever the writer's mistake, and no rule depends on it.
+- **`rec.with`** — a new record with one key replaced. Pure, the counterpart of `grid.with`,
+  and needed by [rules that ask about the position after a move](dsl-example-chess.md).
+  Writing an undeclared key is a fault, which is what makes **a record satisfy its schema by
+  construction.**
+- **`rec.keys`** — the keys as a `Sequence` of `Text`. The way in to iterating.
 
 ```jsonc
-// 将棋の handKinds が 1 つの式になる
+// shogi's handKinds collapses to one expression
 { "op": "seq.where", "source": { "op": "rec.keys", "of": "#myHand" }, "as": "k",
   "predicate": { "op": "cmp.gt",
                  "left": { "op": "rec.at", "record": "#myHand", "key": "@k" }, "right": 0 } }
 ```
 
-### 5.3 効果ノード
+### 5.3 Effect nodes
 
 ```jsonc
-{ "op": "rec.set",    "target": "$<フィールド>", "key": <式>, "value": <式> }
-{ "op": "rec.update", "target": "$<フィールド>", "key": <式>, "as": "<名前>", "value": <式> }
+{ "op": "rec.set",    "target": "$<field>", "key": <expression>, "value": <expression> }
+{ "op": "rec.update", "target": "$<field>", "key": <expression>, "as": "<name>", "value": <expression> }
 ```
 
-`target` は `grid.set` と同じ解決（`IStateLocation` からパスを取り、スキーマが
-レコードであることをビルド時に検査）。
+`target` resolves as `grid.set`'s does — the path comes off an `IStateLocation`, and that
+the schema there is a record is checked at build time.
 
-**現在の値はドラフトから読む。** `grid.set` がそうしているのと同じ理由で、
-同一入力の複数の効果が積み上がる必要があるため。1 手で持ち駒が増えかつ減る
-規則（将棋には無いが、一般には普通にある）はこれを要求する。
+**The current value is read from the draft**, the same reason `grid.set` does it: several
+effects of one input have to pile up. A rule where one move both adds to and removes from a
+hand — shogi has none, but they are ordinary enough — requires it.
 
-`rec.update` は現在値を `as` で束縛する。`state.update` のキー付き版。
+`rec.update` binds the current value to `as`. The keyed version of `state.update`.
 
 ```jsonc
-// 28 ブロックが 1 つになる
+// twenty-eight blocks become one
 { "op": "rec.update", "target": "$hand", "key": "#me", "as": "h",
   "value": {
     "op": "branch.if",
@@ -221,102 +217,107 @@
     "else": "@h" } }
 ```
 
-### 5.4 入れ子
+### 5.4 Nesting
 
-`rec.of` / `rec.map` / `type.list` の要素はどれも任意のスキーマノードなので、
-レコードのレコード、レコードの列、列の盤面がそのまま書ける。深いところへの
-書き込みは `rec.update` + `rec.with` の組み合わせで到達する（上の例が
-`$hand` → 手番 → 駒種の 2 段）。
+The `element` of a `type.list` and the fields of `rec.of` and `rec.map` are all arbitrary
+schema nodes, so a record of records, a sequence of records, and a sequence of boards are
+all directly writable. Reaching deep to write is `rec.update` composed with `rec.with` —
+the example above goes two levels, `$hand` to the colour to the piece kind.
 
+## 6. What actually shrank
 
-## 6. 何がどう縮んだか（実測）
+`shogi.json` went **925 lines → 880**.
 
-`shogi.json` は **925 行 → 880 行**。
-
-| | 前 | 後 |
+| | Before | After |
 | --- | --- | --- |
-| スキーマ | 14 フィールド | `rec.map` 7 行 |
-| 更新 effects | **28 ブロック** | **`rec.update` 2 つ** |
-| `gained` / `spent` | 34 行 | 不要（削除） |
-| `held` | 2 段 `branch.match` 17 行 | `rec.at` 2 段 8 行 |
-| `handKinds` | `seq.of` に 7 種を直書き | `rec.keys` |
+| schema | 14 fields | 7 lines of `rec.map` |
+| update effects | **28 blocks** | **two `rec.update`** |
+| `gained` / `spent` | 34 lines | gone |
+| `held` | 17 lines of two-level `branch.match` | 8 lines of two `rec.at` |
+| `handKinds` | seven kinds written into a `seq.of` | `rec.keys` |
 
-**当初「72 行 → 約 12 行」と見積もったのは楽観的すぎた。** 45 行しか減っていない。
-行数が実態を映していない面はある——消えた 28 行はどれも 200 字近い 1 行だった——が、
-それを差し引いても見積もりは外れている。
+**The original estimate of "72 lines down to about 12" was far too optimistic.** Only 45
+lines went. Line count does misrepresent it somewhat — the 28 that vanished were each
+close to 200 characters — but even allowing for that, the estimate was wrong.
 
-減り方の質のほうが大きい。`rec.has` のおかげで**7 種の駒種リストが RuleSet から
-消えた**。以前は `handKinds` がスキーマとは別に 7 個を並べており、いずれ食い違う
-場所だった。今はレコード自身のキーを引いている。
+The quality of the reduction matters more. Thanks to `rec.has`, **the list of seven piece
+kinds disappeared from the rule set.** `handKinds` used to spell them out separately from
+the schema, which was a disagreement waiting to happen. It now asks the record for its own
+keys.
 
-チェスの三回同形反復も届く。局面を「盤面 + 手番 + キャスリング権 + アンパッサン」の
-`rec.of` にして `type.list` に積めば、比較は**値の構造的等価**でそのままできる
-（`BoardValue` の等価性は幾何とマス目で定義済み）。局面の指紋を作るノードは要らない。
+Chess's threefold repetition is within reach too. Stack "board + turn + castling rights +
+en passant" as a `rec.of` inside a `type.list` and comparison is **structural equality of
+values**, directly (`BoardValue`'s equality is already defined over geometry and squares).
+No node for fingerprinting a position is needed.
 
-チェスの三回同形反復も届く。局面を「盤面 + 手番 + キャスリング権 + アンパッサン」
-の `rec.of` にして `type.list` に積めば、比較は**値の構造的等価**でそのまま
-できる（`BoardValue` の等価性は幾何とマス目で定義済み）。局面の指紋を作る
-ノードは要らない。
+## 7. What else this pulled in
 
+### 7.1 Sequence 1.2 — built
 
-## 7. 波及して必要になるもの
-
-### 7.1 Sequence（1.2）
-
-| ノード | 用途 |
+| Node | For |
 | --- | --- |
-| `seq.concat` | 履歴への追加。現在は `seq.of` + `selectMany` で書けるが、最も普通の操作がいちばん読みにくい |
-| `seq.take` / `seq.skip` | 履歴を直近 N 手に切り詰める。`maxLength` を守るために要る |
+| `seq.concat` | appending to a history. Writable as `seq.of` plus `selectMany`, which made the most ordinary operation the least readable |
+| `seq.take` / `seq.skip` | trimming a history to the last N, which is how a `maxLength` is kept |
 
-### 7.2 `SchemaNode.Normalize`（Abstraction 0.2.0）— 採用
+### 7.2 `SchemaNode.Normalize` (Abstraction 0.2.0) — built
 
 ```csharp
 public virtual RuleValue Normalize(RuleValue value) => value;
 ```
 
-`StateDraft.Commit` が各フィールドに対して呼ぶ。狙いは 2 つ。
+`StateDraft.Commit` calls it per field. It had two aims.
 
-1. **遅延列の実体化。** `type.list` に書かれる `Sequence` は遅延でありうる。
-   状態に遅延列が入ると、その値は評価コンテキスト（＝ひとつ前のスナップショット）
-   を捕まえたままになる。現在の実装では遷移のたびに文書へ直列化されるので
-   実害は出ないが、**誰も書き留めていない性質に依存している。**
-2. **`maxLength` のような制約を書き込み時に検査する余地。** 現状スキーマ検証は
-   読み込み時にしか走らず（[TypeSchema の未確定事項](plugin/TypeSchema.md)）、
-   壊れた状態は呼び出し側に返ってから次の読み込みで初めて露見する。
+1. **Settling a lazy sequence.** What gets written into a `type.list` may be lazy, and a
+   lazy sequence stored in the state holds on to the evaluation context it was built from
+   — the previous snapshot. Serializing on every transition meant no harm came of it in
+   practice, but **it depended on a property nobody had written down.**
+2. **Somewhere for a constraint like `maxLength` to be checked on the way in.** At the time,
+   schema validation ran only when a document was read, so a broken state went back to the
+   caller and surfaced on the next read.
 
-既定実装は恒等なので、**既存プラグインは無改修**。`StateDraft.Commit` が書かれた
-フィールドにだけ呼ぶ（誰も触らなかったフィールドは、文書か前回の commit で一度
-settle 済みである）。
+The second aim is now met, and not by `Normalize`: a transition **settles each written
+field and then checks it against its schema**. `Normalize` does what its name says and
+nothing more, and rejecting is `Validate`'s job — see
+[TypeSchema](plugin/TypeSchema.md) for why the objection to running it was mistaken.
 
+The default implementation is the identity, so **no existing plugin needed changing**.
+`StateDraft.Commit` calls it only for fields that were written; a field nobody touched came
+out of a document or an earlier commit and has settled once already.
 
-## 8. 決めたこと・決めていないこと
+## 8. What was decided, and what was learned
 
-### 決めた
+### Decided
 
-- パスはリテラルのまま。内側はプラグインが持つ（`grid.board` の縫い目を踏襲）
-- `type.list` は `Sequence` を保持し、TypeSchema に置く。読み出し語彙は作らない
-- レコードは閉じたキー集合。`rec.with` が未宣言キーを拒むことで、**構成上つねに
-  スキーマを満たす**
-- `rec.at` の未宣言キーは評価時エラー（`grid.at` の寛容さは継がない）
-- 効果ノードはドラフトから読む（`grid.set` と同じ）
+- Paths stay literal; the inside belongs to the plugin (following `grid.board`'s seam)
+- `type.list` holds a `Sequence` and lives in TypeSchema, with no reading vocabulary
+- Records have a closed key set, and `rec.with` refusing an undeclared key makes them
+  **satisfy their schema by construction**
+- An undeclared key read by `rec.at` is an evaluation fault (`grid.at`'s leniency is not
+  inherited)
+- Effect nodes read from the draft, as `grid.set` does
 
-### 実装して分かったこと
+### Learned by building it
 
-- **`rec.has` が要る**（§5.2）。`rec.at` を厳格にした帰結で、設計時には見落として
-  いた。
-- **`rec.keys` は序数順**にした。レコードは値であり、どのスキーマも見ていない
-  リテラルから作られうるので、宣言順は常に存在するとは限らない。
-- **見積もりは外れた**（§6）。72 → 12 のつもりが 925 → 880 行。
+- **`rec.has` is necessary** (§5.2), as a consequence of making `rec.at` strict. Missed at
+  design time.
+- **`rec.keys` is in ordinal order.** A record is a value, and it may have been built from a
+  literal that never saw a schema, so declaration order does not always exist.
+- **The estimate was wrong** (§6). 72 → 12 was the guess; 925 → 880 was the outcome.
 
-### 未確定事項
+### Since settled
 
-- **開いたキー集合** — 外部データを写すような非ゲーム用途では、キーを事前に
-  宣言できない状態が現れうる。閉じた形で始め、必要が出てから考える。
-- **レコードと入力引数** — `Record` は正規テキストを持たないので、domain が
-  レコードを返すと[引数の解決](dsl-example-chess.md)が「テキスト形が無い」で
-  落ちる。正しい挙動だが、複合の入力が要るなら `tuple` を使うことになる、と
-  明記しておく必要がある。
-- **列の要素の等価性コスト** — 局面の列に対する `seq.any` は盤面同士の比較を
-  繰り返す。三回同形反復には十分だが、長い履歴では効いてくる。
-- **`rec.of` と型推論** — 異種フィールドを持つレコードは、`rec.at` の戻り値の型
-  が静的に決まる数少ない場所である。型推論を入れるならここが足がかりになる。
+- **An open key set is not wanted.** The case for it was copying external data, and when
+  that case arrived — roster, assigning real people to real shifts — it wanted a list of
+  records rather than an open record. **A key set fixed by the instance is not a key set,
+  it is a list**; [roster §4.1](dsl-example-roster.md) works the distinction out.
+- **Records cannot be input arguments**, which is correct: `Record` has no canonical text,
+  so a domain returning one fails when the argument is resolved. A compound input uses
+  [`tuple`](plugin/Tuple.md), and [Tuple](plugin/Tuple.md) records why the division between
+  the two compounds is a clean one rather than a gap.
+- **Comparing sequence elements is as expensive as it looked, and bounded.** `seq.any` over
+  a sequence of positions compares boards repeatedly. What keeps it in hand is the same
+  `maxLength` argued for in §4: the histories that make sense to keep are the ones a rule
+  bounds, and a hundred positions is not a problem. A rule set that wants an unbounded
+  history has a bigger problem than the comparison cost.
+- **`rec.of` is where inference would start**, and inference is not being built yet;
+  [TypeSchema](plugin/TypeSchema.md) records the condition for starting.

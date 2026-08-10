@@ -1,32 +1,33 @@
-# JSON DSL 設計メモ — リバーシを題材にした検討
+# The JSON DSL — working the design out on Reversi
 
-`Rulealize.Abstraction` の API を設計する前段として、「どんな JSON が書けれ
-ば十分か」をリバーシで具体化した検討メモ。ここで確定した DSL の形から、
-Abstraction 側のインタフェースを逆算する。
+The design memo that came before `Rulealize.Abstraction` had an API, written to make
+"what would be enough JSON to write" concrete by writing it. The interfaces on the
+Abstraction side were then worked backwards out of the shape settled here.
 
-- 対象: RuleSet / State / InputRule の 3 文書
-- 前提: `Rulealize.Abstraction` は未実装（この設計の帰結として今後開発する）
+- Subject: the three documents — RuleSet, State, InputRule
+- Written when `Rulealize.Abstraction` did not yet exist. It does now, and §7 records what
+  it ended up needing.
 
 
-## 1. 構造原理
+## 1. The structural principles
 
-CLAUDE.md の制約から、DSL の形はかなり絞られる。
+The constraints in CLAUDE.md narrow the shape of the DSL a long way.
 
-| 制約 | DSL への帰結 |
+| Constraint | What follows for the DSL |
 | --- | --- |
-| コアはプラグイン固有型を一切知らない | **ノードは「`op` キーを持つ JSON オブジェクト」だけがコアの知識**。`op` の値でレジストリを引き、あとはプラグインの Factory に丸投げする |
-| プラグインは Rulealize を参照しない | Factory が依存するのは `Rulealize.Abstraction` のみ |
-| `GetValidInputs(state, limit)` が成立する | **入力は「名前 + パラメータ」であり、各パラメータは列挙可能な domain を持つ**必要がある。ここが DSL 設計の最大の制約になる |
+| the core knows no plugin-specific type | **all the core knows about a node is that it is a JSON object with an `op`**. The value of `op` selects from a registry, and the rest goes to the plugin's factory |
+| plugins do not reference Rulealize | a factory depends on `Rulealize.Abstraction` and nothing else |
+| `GetValidInputs(state, limit)` has to work | **an input is a name plus parameters, and each parameter needs an enumerable domain.** This is the sharpest constraint on the design |
 
-コアが構造的に予約するキーは以下だけとする。
+The keys the core reserves structurally are only these:
 
 ```
 $schema / id / version / requires / state / definitions / inputs / terminal
 ```
 
-加えて、ノード判別用の `op`。**それ以外はすべてプラグインの語彙**。
+plus `op`, which tells a node from anything else. **Everything else is plugin vocabulary.**
 
-### 参照記法（糖衣）
+### The reference sugar
 
 ```jsonc
 "$board"    // = { "op": "state.get",  "path": "board" }
@@ -34,61 +35,60 @@ $schema / id / version / requires / state / definitions / inputs / terminal
 "#opponent" // = { "op": "def.ref",    "name": "opponent" }
 ```
 
-この desugar もコアには持たせない。**プラグインが「先頭 1 文字」を予約宣言
-して文字列糖衣を登録する**方式にすれば、コアは糖衣の存在すら知らずに済む
-（`$` は State プラグイン、`@` と `#` は Binding / Definition プラグインが
-それぞれ登録する）。プレフィックスの衝突検出はロード時のランタイムの責務。
+The core does not do this desugaring either. **A plugin reserves a leading character and
+registers the expansion**, so the core need not know sugar exists — `$` belongs to the
+State plugin, `@` and `#` to Binding and Definition. Detecting a collision between prefixes
+is the runtime's job, at load time.
 
 
-## 2. プラグイン分解
+## 2. Decomposing the plugins
 
-### 2.1 分解の判断基準
+### 2.1 What the cuts are made on
 
-「Core」のような包括名を避けるため、次の 3 基準で切る。
+To avoid a catch-all name like "Core", the cuts follow three criteria.
 
-- **基準 A — 独立ロード可能性**: その語彙だけをロードして意味が通るか。
-  分岐だけあって束縛が無い構成は成立するので、両者は別プラグイン。
-- **基準 B — 差し替え動機**: 別実装に置き換えたくなるか。`seq` を遅延評価版
-  や並列評価版に差し替えたい動機は現実にあるので、独立させる価値がある。
-- **基準 C — 値モデルのみで相互運用できるか**: プラグイン間が互いの CLR 型に
-  依存していないか。`grid.coords` が返す列を `seq.any` が受け取れるのは、
-  Abstraction 側に共有値モデルがあるからで、Grid が Sequence を参照している
-  わけではない（→ 6.1）。
+- **A — can it be loaded on its own?** Does the vocabulary mean anything by itself?
+  Branching without bindings is a coherent configuration, so the two are separate plugins.
+- **B — is there a reason to replace it?** There are real reasons to want `seq` lazy, or
+  parallel, so it is worth being able to swap.
+- **C — do they interoperate through the value model alone?** No plugin may depend on
+  another's CLR types. `seq.any` consumes what `grid.coords` produced because Abstraction
+  holds a shared value model, not because Grid references Sequence (→ 6.1).
 
-そして最も実務的な理由として、**`requires` を読めばその RuleSet がどんな語彙
-を使うか把握できる**こと。`Rulealize.Plugin.Core` という名前はこの発見可能性
-を丸ごと潰してしまう。
+And the most practical reason of all: **`requires` should tell you what vocabulary a rule
+set uses.** A `Rulealize.Plugin.Core` would destroy that discoverability outright.
 
-### 2.2 一覧
+### 2.2 The ten
 
-各プラグインの詳細仕様は [plugin/](plugin/README.md) にある。
+Reversi needed ten. Chess later added [Tuple](plugin/Tuple.md) and shogi added
+[Record](plugin/Record.md), for the twelve that exist now; the specifications are in
+[plugin/](plugin/README.md).
 
-| プラグイン | 名前空間 | 提供するもの |
+| Plugin | Namespace | Provides |
 | --- | --- | --- |
-| [`Rulealize.Plugin.Binding`](plugin/Binding.md) | `bind` | `let` / `local`（糖衣 `@`）— スコープ付き束縛 |
-| [`Rulealize.Plugin.Branch`](plugin/Branch.md) | `branch` | `if` / `match` — 分岐 |
-| [`Rulealize.Plugin.Definition`](plugin/Definition.md) | `def` | `ref`（糖衣 `#`）/ `call` — `definitions` の参照と適用 |
+| [`Rulealize.Plugin.Binding`](plugin/Binding.md) | `bind` | `let` / `local` (sugar `@`) — scoped bindings |
+| [`Rulealize.Plugin.Branch`](plugin/Branch.md) | `branch` | `if` / `match` |
+| [`Rulealize.Plugin.Definition`](plugin/Definition.md) | `def` | `ref` (sugar `#`) / `call` |
 | [`Rulealize.Plugin.Logic`](plugin/Logic.md) | `logic` | `and` / `or` / `not` / `xor` |
 | [`Rulealize.Plugin.Comparison`](plugin/Comparison.md) | `cmp` | `eq` / `ne` / `lt` / `lte` / `gt` / `gte` / `compare` / `isNull` / `coalesce` |
 | [`Rulealize.Plugin.Arithmetic`](plugin/Arithmetic.md) | `math` | `add` / `sub` / `mul` / `div` / `mod` / `min` / `max` / `abs` |
-| [`Rulealize.Plugin.TypeSchema`](plugin/TypeSchema.md) | `type` | `enum` / `int` / `bool` / `string` — `state.schema` を書くための語彙 |
+| [`Rulealize.Plugin.TypeSchema`](plugin/TypeSchema.md) | `type` | `enum` / `int` / `bool` / `string` |
 | [`Rulealize.Plugin.Sequence`](plugin/Sequence.md) | `seq` | `any` / `count` / `empty` / `takeWhile` / `elementAt` / `select` / `selectMany` / `where` |
-| [`Rulealize.Plugin.State`](plugin/State.md) | `state` | `get`（糖衣 `$`）/ `set` / `update` — 状態の読み書き |
+| [`Rulealize.Plugin.State`](plugin/State.md) | `state` | `get` (sugar `$`) / `set` / `update` |
 | [`Rulealize.Plugin.Grid`](plugin/Grid.md) | `grid` | `board` / `at` / `set` / `setMany` / `coords` / `cells` / `ray` / `directions` |
 
-プラグイン識別子と名前空間は 1 対 1 に対応させ、対応表はプラグイン側のマニ
-フェストが宣言する。名前空間の衝突検出はロード時に行う。
+Identifier and namespace correspond one to one, declared by the plugin's own manifest.
+Namespace collisions are detected at load.
 
-### 2.3 配布単位はプラグイン単位と分ける
+### 2.3 What is distributed is not what is decomposed
 
-`requires` が 10 行になるのは冗長だが、これは**配布の問題であって DSL の問題
-ではない**。`Rulealize.Plugin.StandardLibrary` のような NuGet メタパッケージ
-（実体を持たず上記を参照するだけのパッケージ）を用意すれば、導入は 1 行で済む。
-`requires` に「プロファイル名」を書けるようにする案もあるが、それは 2.1 で
-挙げた発見可能性を再び潰すので採らない。
+A ten-line `requires` is verbose, but that is **a distribution problem, not a DSL problem**.
+A NuGet metapackage — `Rulealize.Plugin.StandardLibrary`, holding nothing and referencing
+these — makes installation one line. Letting `requires` name a profile instead was
+considered and rejected, since it destroys the discoverability of 2.1 all over again.
 
 
-## 3. RuleSet JSON（リバーシ）
+## 3. The rule set (Reversi)
 
 ```jsonc
 {
@@ -109,7 +109,7 @@ $schema / id / version / requires / state / definitions / inputs / terminal
     { "plugin": "Rulealize.Plugin.Grid",       "version": "^1.0" }
   ],
 
-  // ── 状態のスキーマと初期値 ────────────────────────────────
+  // ── the shape of the state, and where it starts ───────────────
   "state": {
     "schema": {
       "board": {
@@ -127,7 +127,7 @@ $schema / id / version / requires / state / definitions / inputs / terminal
     }
   },
 
-  // ── 再利用可能な式（非再帰の純粋関数）──────────────────────
+  // ── reusable expressions (non-recursive, pure) ────────────────
   "definitions": {
     "me":       { "op": "state.get", "path": "turn" },
     "opponent": {
@@ -136,7 +136,7 @@ $schema / id / version / requires / state / definitions / inputs / terminal
       "cases": { "black": "white", "white": "black" }
     },
 
-    // 1 方向ぶんの裏返し対象セル列
+    // the cells to flip in one direction
     "flips1": {
       "params": ["at", "dir"],
       "body": {
@@ -154,7 +154,7 @@ $schema / id / version / requires / state / definitions / inputs / terminal
         },
         "in": {
           "op": "branch.if",
-          // 相手石の連なりの「次」が自分の石なら、その連なりが確定する
+          // if what follows the run of opponent stones is mine, that run is settled
           "cond": {
             "op": "cmp.eq",
             "left": {
@@ -172,7 +172,7 @@ $schema / id / version / requires / state / definitions / inputs / terminal
       }
     },
 
-    // 8 方向の合算
+    // all eight directions together
     "flips": {
       "params": ["at"],
       "body": {
@@ -202,12 +202,12 @@ $schema / id / version / requires / state / definitions / inputs / terminal
     }
   },
 
-  // ── 入力（＝状態遷移の入口）────────────────────────────────
+  // ── inputs, which are where transitions get in ────────────────
   "inputs": {
     "place": {
       "actor": "#me",
       "params": {
-        "at": { "domain": { "op": "grid.coords", "of": "$board" } }   // ← 列挙可能性の源
+        "at": { "domain": { "op": "grid.coords", "of": "$board" } }   // ← where enumerability comes from
       },
       "when": { "op": "def.call", "def": "canPlace", "args": { "at": "@at" } },
       "effects": [
@@ -232,7 +232,7 @@ $schema / id / version / requires / state / definitions / inputs / terminal
     }
   },
 
-  // ── 終局判定と結果 ─────────────────────────────────────────
+  // ── when it ends, and how it came out ─────────────────────────
   "terminal": {
     "when": {
       "op": "logic.or",
@@ -262,15 +262,13 @@ $schema / id / version / requires / state / definitions / inputs / terminal
 }
 ```
 
-**この RuleSet にリバーシ専用プラグインは 1 つも登場しない。** 汎用語彙だけで
-リバーシが記述できている点が、この設計の妥当性の主な根拠。将棋であれば、
-`grid` に加えて「持ち駒」を表す汎用プラグイン（多重集合）を足す、という
-積み上げになるはず。
+**Not one Reversi-specific plugin appears in this document.** That general vocabulary alone
+describes Reversi is the main evidence that the design holds together.
 
 
-## 4. State / InputRule
+## 4. State and InputRule
 
-### State JSON
+### The state document
 
 ```jsonc
 {
@@ -284,10 +282,10 @@ $schema / id / version / requires / state / definitions / inputs / terminal
 }
 ```
 
-`board` は sparse 表現。密表現（8×8 配列）にするかは `grid.board` プラグイン
-の責務であり、コアは関知しない。
+`board` is sparse. Whether it is instead dense — an 8×8 array — belongs to the `grid.board`
+plugin, and the core is not involved.
 
-### InputRule JSON
+### The input document
 
 ```jsonc
 {
@@ -298,9 +296,9 @@ $schema / id / version / requires / state / definitions / inputs / terminal
 }
 ```
 
-パスは `{ "input": "pass", "args": {} }`。
+A pass is `{ "input": "pass", "args": {} }`.
 
-### `ApplyToState` の戻り値
+### What `ApplyToState` returns
 
 ```jsonc
 {
@@ -313,7 +311,7 @@ $schema / id / version / requires / state / definitions / inputs / terminal
 }
 ```
 
-### `GetValidInputs` の戻り値（初期局面）
+### What `GetValidInputs` returns from the opening position
 
 ```jsonc
 [
@@ -325,88 +323,111 @@ $schema / id / version / requires / state / definitions / inputs / terminal
 ```
 
 
-## 5. validationLimit の意味づけ
+## 5. What `validationLimit` means
 
-候補は「各パラメータ domain の直積」で生成され、`when` で篩われる。
-リバーシの場合は `place` が 64、`pass` が 1 で計 65 候補。
+Candidates are the product of the parameter domains, sifted by `when`. For Reversi that is
+64 for `place` and 1 for `pass`, so 65.
 
-なお domain と `when` はどちらも規則であり、`ApplyToState` は両方を検査する
-（[値モデル §4.1](value-model.md)）。リバーシは規則をすべて `when` に置いて
-いるので、この RuleSet に限れば domain は実質ヒントとして働く。チェスは逆に
-規則の大半を domain に置いており、そちらが検査の必要性を出した。
+Both the domain and `when` are rules, and `ApplyToState` enforces both
+([value model §4.1](value-model.md)). Reversi puts all of its rules in `when`, so for this
+rule set alone the domain does behave like a hint. Chess is the opposite — most of its
+rules are in the domain — and that is what made enforcing them necessary.
 
-limit は **「`when` を評価する候補数の上限」** と定義するのが素直で、超過時は
-`Truncated = true` を返す。ただし将棋の `move(from, to, promote)` は
-81 × 81 × 2 ≒ 13k になるため、domain 側で事前に絞り込める仕組み
-（例: `grid.coordsWhere`）を用意できるかが実用性の分かれ目になる。
+The limit is defined as **the most candidates whose `when` may be evaluated**, with
+`Truncated = true` when it is hit. Shogi's `move(from, to, promote)` would be 81 × 81 × 2,
+about 13k, which is what made narrowing before the guard the deciding question — and the
+answer turned out to be a compound parameter rather than a narrowing node
+([Tuple](plugin/Tuple.md), [Grid](plugin/Grid.md)).
 
 
-## 6. 未確定の設計判断
+## 6. The design decisions this raised, and how they went
 
-### 6.1 プラグイン間相互運用は共有値モデルが担保する（→ Abstraction の要件）
+### 6.1 Interoperation rests on a shared value model — settled
 
-→ [値モデルとノード種別](value-model.md) に分離した。以下は要旨。
+Split out into [the value model and the three kinds of node](value-model.md). In summary:
+`seq.any` has to be able to consume what `grid.coords` returned, and Grid referencing
+Sequence would defeat the decomposition, so **the shared value model lives in Abstraction**.
+The minimum is `null / bool / number / text / sequence / record / opaque`, where `opaque`
+holds plugin-specific values such as coordinates and directions and the core never looks
+inside.
 
-`grid.coords` が返した列を `seq.any` が受け取れる必要がある。ここで Grid が
-Sequence を参照すると分解の意味が失われるので、**Abstraction 側に共有値モデル**
-を置く。最小構成は `null / bool / number / string / sequence / record / opaque`。
-`opaque` はプラグイン固有値（座標、方向など）の格納先で、コアは中身を見ない。
+Null propagation belongs to the value model too, and Reversi's `flips1` depends on it.
 
-null 伝播の規則も値モデルの責務。リバーシの `flips1` はこれに依存している。
-
-- `seq.elementAt` の範囲外 → `null`
-- `grid.at` に `null` 座標 → `null`
+- `seq.elementAt` out of range → `null`
+- `grid.at` with a `null` coordinate → `null`
 - `cmp.eq(null, "black")` → `false`
 
-これにより「レイの終端まで相手石が続く」ケースが自然に `else` へ落ちる。
-明示的な境界チェックを DSL に書かずに済んでいるので、この規則は仕様として
-固定する価値がある。
+This is what drops "the ray is opponent stones to the edge" naturally into `else`, and it
+is fixed in the specification because it keeps boundary checks out of the DSL.
 
-### 6.2 effects はスナップショット意味論にすべき
+### 6.2 Effects have snapshot semantics — settled
 
-`place` は「石を置く」→「裏返す」の順だが、逐次適用だと 2 番目の `flips` が
-変更後の盤面を再走査してしまう。**全 effect の式は入力時の状態に対して評価し、
-書き込みはドラフトに溜めて一括適用**、と決めるのが安全。
+`place` puts a stone down and then flips, and applied one at a time the second effect's
+`flips` would rescan a board that already has the new stone. **Every expression in every
+effect evaluates against the state as the input found it; writes pile up in a draft and
+land together.**
 
-逐次意味論にするなら `flips` を `bind.let` で先に束縛させる必要があり、DSL
-記述者への負担が増える。
+The sequential reading would force `flips` into a `bind.let` first, which is work pushed
+onto whoever writes the rule set.
 
-### 6.3 `flips` が `when` と `effects` で二重評価される
+### 6.3 `flips` is evaluated twice, from `when` and from `effects` — settled
 
-`Internal/Node` の評価器に、同一ノード＋同一環境のメモ化（共通部分式除去）を
-入れる余地がここに出る。`GetValidInputs` では 64 候補 × 8 方向のレイ走査が
-走るので、効き方が大きい。
+This is where memoisation earns its place, and it was built: results are cached per
+evaluation session, keyed by the definition and its argument values. A session covers a
+whole `GetValidInputs` sweep, over which 64 candidates × 8 directions of ray walking is
+roughly halved. [Definition](plugin/Definition.md) records why the cache key needs nothing
+to identify the snapshot.
 
-### 6.4 パスを明示入力にするか自動にするか
+### 6.4 Explicit pass, or automatic — settled on explicit
 
-本来のリバーシは「打てる手がなければ自動的に手番が飛ぶ」。上記は明示入力モデル
-（`GetValidInputs` が `pass` だけを返す）を採っている。自動化するなら
-遷移後フック（`"after"` フェーズのようなもの）を RuleSet に足す必要があり、
-これは DSL の表現力に関わる分岐点。
+Real Reversi skips the turn automatically when there is no move. The model above is the
+explicit one, where `GetValidInputs` returns nothing but `pass`.
 
-### 6.5 `definitions` は再帰を許すか
+**It stays explicit.** Making it automatic means adding something like an `"after"` phase
+to the rule set — a hook that runs after a transition and may fire another — and that is a
+real extension of what the DSL can express, not a convenience. The reason not to is that
+it moves a rule out of `inputs` and into a mechanism: the automatic pass would no longer be
+visible as a thing that happens, and `GetValidInputs` would stop being the whole account of
+what may happen next, which is the property [roster](dsl-example-roster.md) turns out to
+depend on most. The cost is one extra ply in the caller's loop, which the
+[Reversi sample](../sample/Reversi/) pays without comment.
 
-`params` を持たせた時点で実質は純粋関数。再帰を許すと停止性が保証できない。
-リバーシ程度なら**非再帰に限定**で十分で、そのほうが `GetValidInputs` のコスト
-見積もりも立つ。
+### 6.5 May definitions recurse — settled on no
 
-### 6.6 `state.schema` は必須か
+Once they take `params` they are pure functions in all but name, and recursion forfeits any
+termination argument. Non-recursive was judged sufficient for Reversi, and it has held for
+four more rule sets — shogi needed a one-ply search into the opponent's reply and got it by
+splitting the definition in two ([shogi §4](dsl-example-shogi.md)) rather than by
+recursing. [Definition](plugin/Definition.md) has the reasoning.
 
-`initial` だけでも動くが、domain 推論と外部入力 State の検証のために宣言が
-あったほうが堅牢。スキーマ記述自体もプラグイン語彙（`grid.board` /
-`type.enum`）になっている点は一貫している。
+### 6.6 Is `state.schema` required — settled on yes
+
+Running from `initial` alone was conceivable, and it is not what was built: a rule set
+needs both `schema` and `initial`, and a schema declaring no fields is a build error.
+Validating states from outside is not optional once the state document is a public
+interface, and [roster](dsl-example-roster.md) is the case that proves it — once instance
+data moved into the state, **receiving a malformed state document became the normal path
+rather than an edge case**. That schema descriptions are themselves plugin vocabulary
+(`grid.board`, `type.enum`) is consistent with everything else here.
 
 
-## 7. Abstraction への逆算メモ
+## 7. What Abstraction turned out to need
 
-この DSL を成立させるために Abstraction が最低限持つべきもの。
+This section was written as a forecast, before Abstraction existed. It held up, and what
+is listed here is what got built.
 
-- **値モデル** — 6.1 の型と null 伝播規則
-- **`INodeFactory`** — `op` 名の宣言と、JSON オブジェクトからノードを構築
-- **`INodeBuilder`** — Factory に渡される再帰ビルダ（子ノードの構築を委譲）
-- **`IRuleNode`** — 評価コンテキストを受け取り値を返す
-- **評価コンテキスト** — 状態への読み取りアクセス、ローカル束縛スコープ、
-  `definitions` の解決
-- **効果適用インタフェース** — 6.2 のドラフトへの書き込み
-- **文字列糖衣の登録** — プレフィックス予約（`$` / `@` / `#`）
-- **プラグインマニフェスト** — 識別子・バージョン・提供名前空間の宣言
+- **the value model** — the kinds and the null propagation of 6.1
+- **`INodeFactory`** — declaring an `op` name, and building a node from a JSON object
+- **`INodeBuilder`** — the recursive builder handed to a factory, which it delegates child
+  construction to
+- **`IRuleNode`** — takes an evaluation context, returns a value
+- **the evaluation context** — read access to the state, the scope of local bindings,
+  resolving `definitions`
+- **the effect interface** — writing to the draft of 6.2
+- **registering string sugar** — reserving a prefix (`$` / `@` / `#`)
+- **the plugin manifest** — identifier, version, namespace
+
+Two things were added later that this list did not foresee. `SchemaNode.Normalize`, so that
+a lazy sequence written into the state settles instead of holding on to the snapshot it was
+built from ([collections §7.2](collections.md)); and `SchemaNode.Validate`, which checks a
+value rather than a document and is what lets a transition check what its effects built.

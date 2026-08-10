@@ -1,50 +1,52 @@
 # Rulealize.Plugin.Record
 
-| 項目 | 値 |
+| | |
 | --- | --- |
-| 識別子 | `Rulealize.Plugin.Record` |
-| 名前空間 | `rec` |
-| バージョン | `1.0.0` |
-| 予約プレフィックス | なし |
-| 依存 | [値モデル](../value-model.md) のみ |
+| Identifier | `Rulealize.Plugin.Record` |
+| Namespace | `rec` |
+| Version | `1.0.0` |
+| Reserved prefix | none |
+| Depends on | [the value model](../value-model.md), and nothing else |
 
-状態にレコードを置き、**計算されたキー**で読み書きする。設計の経緯は
-[コレクション設計案](../collections.md)、動機は[将棋](../dsl-example-shogi.md)。
+Puts a record in the state and reads and writes it by a **computed key**. How the design
+was arrived at is in [collections](../collections.md); what asked for it is
+[shogi](../dsl-example-shogi.md).
 
-## パスはリテラルのまま
+## Paths stay literal
 
-`state.set` の `path` をドット記法に拡張する案は採らなかった。[State プラグイン](State.md)
-が挙げる 3 つの利点——全パスの事前検査、どのフィールドを書くかが文書から読める、
-スキーマ検証を実行時に持ち越さない——を失うためである。
+Extending `state.set`'s `path` to dotted notation was considered and rejected. It gives up
+the three things [the State plugin](State.md) lists — checking every path up front, reading
+which field an input writes straight off the document, and not carrying schema validation
+into run time.
 
-代わりに **`grid.board` と同じ縫い目**を使う。フィールド全体を指すパスはリテラル、
-内側はそれを定義したプラグインの語彙で触る。`"hand.black.P"` は書けない。
-`"board.d3"` が書けないのと同じ理由で。
+Instead it uses **the same seam as `grid.board`**: the path names the whole field, and the
+inside is touched with the vocabulary of whichever plugin defined it. `"hand.black.P"` is
+not writable, for the same reason `"board.d3"` is not.
 
-## 提供ノード
+## Nodes
 
-| ノード | 種別 | 形式 |
+| Node | Kind | Form |
 | --- | --- | --- |
-| `rec.of` | スキーマ | `{ "op": "rec.of", "fields": { "<キー>": <スキーマ>, … } }` |
-| `rec.map` | スキーマ | `{ "op": "rec.map", "keys": ["<キー>", …], "value": <スキーマ> }` |
-| `rec.at` | 式 | `{ "op": "rec.at", "record": <式>, "key": <式:Text> }` |
-| `rec.has` | 式 | `{ "op": "rec.has", "record": <式>, "key": <式:Text> }` |
-| `rec.with` | 式 | `{ "op": "rec.with", "record": <式>, "key": <式>, "value": <式> }` |
-| `rec.keys` | 式 | `{ "op": "rec.keys", "of": <式> }` |
-| `rec.set` | 効果 | `{ "op": "rec.set", "target": "$<フィールド>", "key": <式>, "value": <式> }` |
-| `rec.update` | 効果 | `{ "op": "rec.update", "target": "$<フィールド>", "key": <式>, "as": "<名前>", "value": <式> }` |
+| `rec.of` | schema | `{ "op": "rec.of", "fields": { "<key>": <schema>, … } }` |
+| `rec.map` | schema | `{ "op": "rec.map", "keys": ["<key>", …], "value": <schema> }` |
+| `rec.at` | expression | `{ "op": "rec.at", "record": <expression>, "key": <expression:Text> }` |
+| `rec.has` | expression | `{ "op": "rec.has", "record": <expression>, "key": <expression:Text> }` |
+| `rec.with` | expression | `{ "op": "rec.with", "record": <expression>, "key": <expression>, "value": <expression> }` |
+| `rec.keys` | expression | `{ "op": "rec.keys", "of": <expression> }` |
+| `rec.set` | effect | `{ "op": "rec.set", "target": "$<field>", "key": <expression>, "value": <expression> }` |
+| `rec.update` | effect | `{ "op": "rec.update", "target": "$<field>", "key": <expression>, "as": "<name>", "value": <expression> }` |
 
-## キー集合は閉じている
+## The key set is closed
 
-`rec.of` も `rec.map` も、キーを宣言する。開いたマップにしないのは、`type.enum` を
-`type.string` + 正規表現より優先したのと同じ判断で、**宣言されているものは検査
-できる**からである。
+`rec.of` and `rec.map` both declare their keys. Not an open map, on the same judgement that
+put `type.enum` ahead of `type.string` plus a regular expression: **what is declared can be
+checked**.
 
-`rec.map` を別に置くのは、それが**言えることが違う**ため。「すべての値が同じ型で
-ある」は `rec.of` では表現できない。
+`rec.map` is separate because **it says something different**. "Every value has the same
+type" cannot be expressed with `rec.of`, and shogi's hand is exactly that.
 
 ```jsonc
-// 将棋の持ち駒。以前は 14 フィールド
+// shogi's hand. Fourteen fields, once
 "hand": {
   "op": "rec.map", "keys": ["black", "white"],
   "value": { "op": "rec.map", "keys": ["P", "L", "N", "S", "G", "B", "R"],
@@ -52,31 +54,31 @@
 }
 ```
 
-## 無いキーを読むのは評価時エラー
+## Reading an absent key is a fault
 
-**`grid.at` の寛容さは継がない。** 盤には「存在しないマス」（盤外）が正当に存在し、
-リバーシの規則はそれを読んで `null` を得ることに依存している。レコードのキーは
-すべて宣言されているので、無いキーを引くのは書き手の誤りでしかなく、それに依存
-する規則も無い。
+**The leniency of `grid.at` is not inherited.** A board legitimately has squares that do
+not exist — off the board — and Reversi's rules depend on reading one and getting `null`.
+Every key of a record is declared, so asking for another one is a mistake, and no rule
+depends on it being quiet.
 
-聞く前に聞く手段が `rec.has`。将棋は取った駒を持ち駒に入れるとき、それが持ち駒に
-なる駒種かを先に確かめる。`rec.has` が無ければ RuleSet はスキーマとは別に 7 種の
-リストを持つことになり、いずれ食い違う。
+The way to ask first is `rec.has`. Shogi, adding a captured piece to a hand, has to check
+that the piece is a kind that can be held; without `rec.has` the rule set carries a list of
+the seven kinds separately from the schema, and the two eventually disagree.
 
-`record` が `Null` なら `rec.at` は `Null`（`tuple.at` と同じ）。これは別の問いで
-ある——引くべきレコードが無い。
+`rec.at` on a `Null` record gives `Null` — that is a different question, namely that there
+is no record to look in. It matches `tuple.at`.
 
-## レコードはキーを増やせない
+## A record cannot gain a key
 
-`rec.with` / `rec.set` / `rec.update` は、そのレコードが持っていないキーを拒む。
-したがって**スキーマを満たして始まったレコードは、RuleSet がどう書き換えても
-満たしたままである。** 下流での検査が要らない。
+`rec.with`, `rec.set` and `rec.update` all refuse a key the record does not have.
+Therefore **a record that started out satisfying its schema still satisfies it however the
+rule set rewrites it**, and nothing downstream has to check.
 
-## 効果はドラフトから読む
+## Effects read from the draft
 
-`grid.set` と同じ理由。1 つのレコードの別々のキーを書く 2 つの効果が積み上がり、
-2 番目が 1 番目を消さない。効果の中の式は入力時の状態を読む（スナップショット
-意味論は変わらない）。
+The same reason `grid.set` does. Two effects writing different keys of one record pile up,
+and the second does not erase the first. The expressions inside an effect still read the
+state as the input found it; snapshot semantics is unchanged.
 
 ```jsonc
 { "op": "rec.update", "target": "$hand", "key": "#me", "as": "h",
@@ -85,27 +87,43 @@
                         "left": { "op": "rec.at", "record": "@h", "key": "@piece" }, "right": 1 } } }
 ```
 
-## `rec.keys` は序数順
+## `rec.keys` is in ordinal order
 
-宣言順ではない。レコードは値であり、どのスキーマも見ていないリテラルから作られた
-かもしれないので、**宣言順は常に存在するとは限らない**。ソート順だけが常に存在する。
-`GetValidInputs` の出力が実行ごとに変わらないためにも要る。
+Not declaration order. A record is a value, and it may have been built from a literal that
+never saw a schema, so **declaration order does not always exist**. Sort order always does.
+It is also what keeps `GetValidInputs` from reordering its output between runs.
 
-## 列は別
+## Sequences are different
 
-列フィールドは `Sequence` を保持する。`Sequence` は値モデルの種別であり、
-`seq.count` / `seq.any` / `seq.where` がすでにそれを読む。だから
-[`type.list`](TypeSchema.md) はスキーマノード 1 つだけで、演算を持たない。
-**レコードには何も無かった**というのが、このプラグインが存在する理由のすべてである。
+A sequence field holds a `Sequence`, which is a kind of the value model, and `seq.count`,
+`seq.any` and `seq.where` already read one. That is why [`type.list`](TypeSchema.md) is a
+single schema node with no operations at all. **A record had nothing**, and that is the
+entire reason this plugin exists.
 
-## 未確定事項
+---
 
-- **開いたキー集合** — 外部データを写す非ゲーム用途では、キーを事前に宣言できない
-  状態が現れうる。閉じた形で始めた。
-- **レコードは入力引数になれない** — 正規テキストを持たないため、domain がレコードを
-  返すと[引数の解決](../dsl-example-chess.md)が「テキスト形が無い」で落ちる。正しい
-  挙動だが、複合の入力が要るなら [Tuple](Tuple.md) を使う。
-- **`rec.of` と型推論** — 異種フィールドのレコードは `rec.at` の戻り値の型が静的に
-  決まる数少ない場所であり、型推論を入れるなら足がかりになる。
-- **フィールドをまたぐ不変条件** — 「盤上と両者の持ち駒の歩の合計は 18」のような
-  制約は依然として書けない。
+## Decided
+
+- **The key set stays closed.** The case for opening it is copying external data, where the
+  keys may not be known in advance. That case then arrived — roster assigns real people to
+  real shifts — and did not want an open record: the people belong in a
+  [`type.list`](TypeSchema.md) of `rec.of`, because **a key set fixed by the instance is not
+  a key set at all, it is a list**. Roster's [notes §4.1](../dsl-example-roster.md) work
+  through the distinction, and it is the same one that decides between `rec.of` and
+  `rec.map`: `rec.map`'s keys are right when the domain fixes them, as shogi's seven piece
+  kinds are fixed by the rules of shogi.
+- **A record cannot be an input argument, and that is correct.** It has no canonical text,
+  so a domain returning records fails when an argument is resolved. A compound input uses
+  [Tuple](Tuple.md), which exists for exactly that.
+- **Invariants across fields still cannot be written.** "The pawns on the board and in both
+  hands total eighteen" has no home: `rec.of` and `rec.map` constrain one field, and there
+  is no predicate language for `state.schema`. Since a transition now checks what its
+  effects built ([TypeSchema](TypeSchema.md)), there is at last a *place* such a check would
+  run — which is the part that used to be missing — but the language to write one in is
+  not there, and adding it means a new reserved key in a document whose reserved keys are
+  deliberately eight. Both shogi and roster record wanting it, neither is blocked by not
+  having it, and it stays unbuilt until one is.
+- **`rec.of` is where inference would start.** A record of heterogeneous fields is one of
+  the few places where the type of what `rec.at` returns is statically determined, so it is
+  the natural foothold. It waits on inference generally
+  ([TypeSchema](TypeSchema.md) records the condition).

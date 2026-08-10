@@ -1,151 +1,150 @@
 # Rulealize.Plugin.State
 
-| 項目 | 値 |
+| | |
 | --- | --- |
-| 識別子 | `Rulealize.Plugin.State` |
-| 名前空間 | `state` |
-| バージョン | `1.0.0` |
-| 予約プレフィックス | `$` |
-| 依存 | [値モデル](../value-model.md) のみ |
+| Identifier | `Rulealize.Plugin.State` |
+| Namespace | `state` |
+| Version | `1.0.0` |
+| Reserved prefix | `$` |
+| Depends on | [the value model](../value-model.md), and nothing else |
 
-状態の読み取りと書き込み。
+Reading and writing the state.
 
-**読み（式ノード）と書き（効果ノード）を同一プラグインに置く。** 両者は同じ
-パス解決規則を共有しており、片方だけロードする意味がないため。読み書きで
-プラグインを分けると、パス構文の仕様が 2 箇所に分裂する。
+**Reading (an expression node) and writing (an effect node) live in one plugin** because
+they share one path syntax and there is no sense in loading half of it. Split them and the
+specification of a path splits in two along with them.
 
-このプラグインは状態の **構造** を知らない。`board` が盤面であることも、
-`turn` が列挙値であることも解釈しない。パスで指した位置の値を値モデルの値
-として出し入れするだけであり、盤面としての解釈は [Grid](Grid.md) が行う。
+This plugin does not know the **structure** of the state. It does not interpret `board` as
+a board or `turn` as an enumeration. It moves the value at a path in and out as a value of
+the value model, and reading it as a board is [Grid](Grid.md)'s business.
 
-## 提供ノード
+## Nodes
 
-| ノード | 種別 | リバーシでの使用 |
+| Node | Kind | Used in Reversi |
 | --- | --- | --- |
-| `state.get` | 式 | ○ 糖衣 `$` として全域 |
-| `state.set` | 効果 | ○ `inputs.place`, `inputs.pass` |
-| `state.update` | 効果 | — |
+| `state.get` | expression | ○ everywhere, as the sugar `$` |
+| `state.set` | effect | ○ `inputs.place`, `inputs.pass` |
+| `state.update` | effect | — |
 
 ---
 
-## パス
+## Paths
 
-### 構文
+### What a path is
 
-ドット区切りのフィールド名列。
+**The name of a field of `state.schema`, and nothing more.**
 
 ```
 "turn"
 "board"
-"players.black.score"
+"hand"
 ```
 
-パスは **静的**。式で組み立てることはできない。理由は 3 つ。
+A path is **static**; it cannot be assembled by an expression. Three reasons.
 
-- `CreateContext` 時に `state.schema` と突き合わせて存在検証ができる
-- 静的解析で「この入力がどのフィールドを書き換えるか」が判る
-- 動的パスを許すと、スキーマ検証を実行時まで持ち越すことになる
+- It can be checked against `state.schema` at `CreateContext`.
+- Static analysis can say which fields an input writes.
+- Dynamic paths would push schema validation out to run time.
 
-### 解決規則
+### A path does not reach inside a field
 
-`state.schema` のトップレベルのフィールド名から始め、`Record` を辿る。
+`"board.d3"` is not a path. Neither is `"hand.black.P"`. The inside of a field belongs to
+whichever plugin declared its schema — squares are `grid.at` and `grid.set`, record keys
+are `rec.at` and `rec.set` — and this plugin treats the field as one opaque value.
 
-現状 `state.schema` の直下は「フィールド名 → スキーマノード」のマップに限られ、
-入れ子の Record は書けない（[TypeSchema](TypeSchema.md) の未確定事項）。
-したがってリバーシで有効なパスは `board` / `turn` / `passes` の 3 つのみ。
-ドット記法は将来の入れ子に備えた予約。
+**This is the seam the decomposition turns on.** If State knew a board's internal
+representation — sparse or dense, which coordinate notation — Grid could no longer be
+replaced. [Record](Record.md) follows the same seam deliberately, and
+[collections](../collections.md) is where the choice is argued out.
 
-### 盤面の内部へはパスで到達しない
-
-`"board.d3"` のようなパスは **提供しない**。盤面の内部構造は
-[Grid](Grid.md) の管轄であり、State プラグインは `board` を 1 つの不透明な値
-として扱う。マスの参照は `grid.at`、書き込みは `grid.set` を使う。
-
-これは分解の要。State が盤面の内部表現（sparse か dense か、座標記法は何か）を
-知ってしまうと、Grid を差し替えられなくなる。
+There is no dotted syntax and none is reserved. An earlier version of this document
+reserved one against future nested schemas, which was written before records existed;
+records arrived, they nest, and the way to reach into one is `rec.at` rather than a path.
+Reserving a syntax that the design has since decided against is worse than having none.
 
 ---
 
 ## `state.get`
 
-### 形式
+### Form
 
 ```jsonc
-{ "op": "state.get", "path": "<パス>" }   // path は静的
+{ "op": "state.get", "path": "<path>" }   // path is static
 ```
 
-糖衣: `"$<パス>"`
+Sugar: `"$<path>"`
 
-### 評価規則
+### How it evaluates
 
-現在の **状態スナップショット** から `path` の値を読んで返す。
+Reads `path` out of the current **state snapshot**.
 
-「現在のスナップショット」の意味は文脈で決まる。
+Which snapshot that is depends on context.
 
-| 文脈 | 読む対象 |
+| Context | What is read |
 | --- | --- |
-| `inputs.*.when` | `GetValidInputs` / `ApplyToState` に渡された State |
-| `inputs.*.effects` | **同上**（効果適用前の State） |
-| `definitions` の本体 | 呼び出し元の文脈に従う |
-| `terminal` | 判定対象の State |
+| `inputs.*.when` | the state handed to `GetValidInputs` or `ApplyToState` |
+| `inputs.*.effects` | **the same** — the state before any effect ran |
+| the body of a definition | whatever the caller's context is |
+| `terminal` | the state being judged |
 
-`effects` の中で `state.get` が **効果適用前** の値を読むのは、
-[値モデル §5](../value-model.md) のスナップショット意味論による。リバーシの
-`inputs.pass` がこれに依存している。
+That `state.get` inside `effects` reads the value from **before** the effects is the
+snapshot semantics of [value model §5](../value-model.md). Reversi's `inputs.pass` depends
+on it.
 
 ```jsonc
 { "op": "state.set", "path": "passes",
   "value": { "op": "math.add", "of": ["$passes", 1] } }
 ```
 
-同じ `effects` 配列内の他の要素が `passes` を書き換えていても、`$passes` は
-入力時の値を返す。
+Even if another element of the same `effects` array writes `passes`, `$passes` returns the
+value the input arrived at.
 
-### エラー
+### Errors
 
-| 条件 | タイミング |
+| Condition | When |
 | --- | --- |
-| `path` がスキーマに存在しない | 静的エラー |
-| `path` が式 | 静的エラー |
+| `path` is not in the schema | static |
+| `path` is an expression | static |
 
-値が `Null` であることはエラーではない（スキーマが `nullable` を許していれば
-正常）。
+A value being `Null` is not an error, as long as the schema allows it.
 
-### 例（リバーシ）
+### Example (Reversi)
 
 ```jsonc
 "me": { "op": "state.get", "path": "turn" }
 ```
 
-`$board` は `grid.*` ノードの `grid` / `of` / `target` キーに渡される。
-State プラグインは盤面値を取り出すだけで、中身は見ない。
+`$board` is what gets handed to the `grid` / `of` / `target` keys of the `grid.*` nodes.
+State takes the board value out and never looks inside it.
 
 ---
 
 ## `state.set`
 
-### 形式
+### Form
 
 ```jsonc
-{ "op": "state.set", "path": "<パス>", "value": <式> }   // path は静的
+{ "op": "state.set", "path": "<path>", "value": <expression> }   // path is static
 ```
 
-**効果ノード。** `inputs.*.effects` の要素としてのみ出現できる。
+**An effect node.** It appears only as an element of `inputs.*.effects`.
 
-### 適用規則
+### How it applies
 
-1. `value` を **スナップショットに対して** 評価する
-2. 評価した値を、ドラフトの `path` へ書き込む
+1. `value` is evaluated **against the snapshot**.
+2. The result is written to `path` in the draft.
 
-同一パスへの書き込みが複数回あれば **後勝ち**。
+Two writes to one path: **the last one wins**.
 
-### スキーマ検証
+### Schema validation
 
-書き込む値がパスのスキーマに適合するかを検証するかは未確定
-（[TypeSchema](TypeSchema.md) の「効果適用後の検証」）。`GetValidInputs` が
-数百候補を試す場面ではコストが問題になる。
+The value written **is checked against the field's schema** when the transition commits,
+after the schema has settled it. A rule set whose effects assemble a state the schema
+forbids fails at the transition responsible, with the input named, rather than handing that
+state back and failing on the next read. See [TypeSchema](TypeSchema.md) for what this
+costs and why the earlier worry about the cost was misplaced.
 
-### 例（リバーシ `inputs.place.effects`）
+### Example (Reversi's `inputs.place.effects`)
 
 ```jsonc
 [
@@ -156,40 +155,40 @@ State プラグインは盤面値を取り出すだけで、中身は見ない�
 ]
 ```
 
-`#opponent` は `#me`（＝`$turn`）から導かれるので、スナップショット意味論に
-より入力時の手番の相手が入る。逐次適用だと、直前の効果が `turn` を書き換えて
-いた場合に結果が変わりうる。
+`#opponent` derives from `#me` (that is, `$turn`), so snapshot semantics puts the opponent
+of the colour that moved into the field. Applied one at a time, the result would depend on
+whether an earlier effect had already written `turn`.
 
 ---
 
 ## `state.update`
 
-現在値を参照して更新する。
+Updates a field by reference to its current value.
 
-### 形式
+### Form
 
 ```jsonc
 {
   "op": "state.update",
-  "path": "<パス>",     // 静的
-  "as": "<名前>",       // 静的
-  "value": <式>
+  "path": "<path>",     // static
+  "as": "<name>",       // static
+  "value": <expression>
 }
 ```
 
-**効果ノード。**
+**An effect node.**
 
-### 適用規則
+### How it applies
 
-1. スナップショットから `path` の値を読み、`as` の名前に束縛する
-2. その束縛下で `value` を評価する
-3. 結果をドラフトの `path` へ書き込む
+1. `path` is read from the snapshot and bound to `as`.
+2. `value` is evaluated under that binding.
+3. The result is written to `path` in the draft.
 
-`state.set` に `state.get` を組み合わせても同じことができる。リバーシの
-`inputs.pass` は後者の形で書いている。
+`state.set` combined with `state.get` does the same thing, and Reversi's `inputs.pass` is
+written the latter way.
 
 ```jsonc
-// 等価
+// equivalent
 { "op": "state.set", "path": "passes",
   "value": { "op": "math.add", "of": ["$passes", 1] } }
 
@@ -197,14 +196,13 @@ State プラグインは盤面値を取り出すだけで、中身は見ない�
   "value": { "op": "math.add", "of": ["@n", 1] } }
 ```
 
-パスが長い場合に重複を避けられる、という程度の利点しかない。リバーシでは
-使用しない。
+The advantage is avoiding a repeated long path, which is not much. Reversi does not use it.
 
 ---
 
-## 状態文書の形式
+## The state document
 
-`ApplyToState` が受け取り、返す JSON。
+What `ApplyToState` takes and returns.
 
 ```jsonc
 {
@@ -218,30 +216,49 @@ State プラグインは盤面値を取り出すだけで、中身は見ない�
 }
 ```
 
-`data` の直下のキーが `state.schema` のフィールドに対応する。
+The keys directly under `data` are the fields of `state.schema`.
 
-各フィールドの値をどう JSON へ落とすかは、そのフィールドのスキーマノードを
-提供したプラグインが決める。`board` の sparse 表現は `grid.board`
-（[Grid](Grid.md)）の責務であり、State プラグインは関知しない。
+How each field's value becomes JSON is decided by the schema node that declared it. The
+sparse form of `board` is `grid.board`'s doing ([Grid](Grid.md)); this plugin is not
+involved.
 
-State プラグインが定めるのは `$schema` / `ruleSet` / `data` という外枠だけ。
+What State fixes is the frame — `$schema`, `ruleSet`, `data` — and no more.
 
-### `ruleSet` の照合
+### Matching the `ruleSet`
 
-State 文書の `ruleSet` が `RuleContext` の RuleSet と一致しない場合はエラー。
-バージョンの互換性判定規則は未確定（→ 未確定事項）。
+A state document that names a `ruleSet` is read when **the identifier matches exactly and
+the major version matches**. `reversi@1.0.0` and `reversi@1.4.2` are interchangeable;
+`reversi@2.0.0` and `chess@1.0.0` are refused, with both names in the message.
+
+The major version is the unit because it is where this project says meaning changed — the
+same reading `requires` gives a plugin version with `^`. Nothing finer can be asserted
+here: a minor revision may well have added a state field, and a document written before it
+will be missing one. But that is a missing field, and the schema check names it. **Identity
+is decided here and shape is decided there**, so a document from a compatible revision that
+no longer fits says which field is wrong instead of collapsing into a version mismatch that
+names none of them.
+
+A document that names no `ruleSet` at all is accepted and checked against the schema like
+any other. Declining to claim an identity is not the same as claiming the wrong one, and a
+state written by hand has no reason to be forced into one.
 
 ---
 
-## 未確定事項
+## Decided
 
-- **バージョン互換** — `reversi@1.0.0` で作られた State を `reversi@1.1.0` の
-  コンテキストで読めるか。RuleSet のバージョニング方針と合わせて決める。
-- **入れ子 Record へのパス** — ドット記法は予約済みだが、
-  [TypeSchema](TypeSchema.md) が入れ子スキーマを持たないため現状使えない。
-- **効果適用後のスキーマ検証** — 上述。
-- **状態の差分表現** — `ApplyToState` が状態全体を返す設計。長い対局で
-  状態を積み上げる用途では差分が欲しくなるが、盤面が小さいリバーシでは不要。
-- **読み取り専用の派生フィールド** — 石数のような値を状態に持たせるか、
-  `definitions` で都度計算するか。現状は後者（`terminal.result` が
-  `seq.count` で数えている）。
+- **State version compatibility is identifier plus major version**, as above. This was
+  open, and in the meantime the runtime compared the whole `id@version` string, so a state
+  written by `reversi@1.0.0` could not be read by `reversi@1.1.0` — a revision that changed
+  nothing about the state still invalidated every stored state.
+- **Effects are validated against the schema on commit.** Was open; see
+  [TypeSchema](TypeSchema.md) for why the objection to it did not hold up.
+- **Paths do not nest, and no nesting syntax is reserved.** Recorded above.
+- **No delta representation for states.** `ApplyToState` returns the whole state. A long
+  game accumulating states would rather have diffs, and none of the five rule sets
+  accumulates states — the one with a history, roster, bounds it at five entries and
+  truncates. Worth revisiting when a rule set stores its own history unbounded, which the
+  `maxLength` argument in [TypeSchema](TypeSchema.md) suggests should not happen.
+- **No read-only derived fields.** Whether a value like a stone count should live in the
+  state or be recomputed is settled in favour of recomputing: `terminal.result` counts with
+  `seq.count`, and a derived field in the state is a second copy of a fact that
+  [`state.schema` cannot check against the first](TypeSchema.md).

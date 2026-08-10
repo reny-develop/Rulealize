@@ -1,171 +1,194 @@
-# 値モデルとノード種別
+# The value model, and the three kinds of node
 
-全プラグインが共有する前提。各プラグイン仕様書はこのドキュメントを参照する。
+What every plugin assumes. Each plugin specification refers back to this document, so read
+this one first.
 
-`Rulealize.Abstraction` が定義し、プラグイン間の相互運用はここだけで担保される。
-**プラグインが他のプラグインを参照してはならない**ため、`grid.coords` が返した
-列を `seq.any` が受け取れるのは、両者が同じ値モデルを介しているからである。
+`Rulealize.Abstraction` defines it, and it is the only thing that holds plugins together.
+**No plugin may reference another plugin**, so the reason `seq.any` can consume what
+`grid.coords` produced is that both are speaking in terms of the model described here and
+neither has heard of the other.
 
 
-## 1. 値の種類
+## 1. The kinds of value
 
-| 種別 | 説明 | JSON リテラル表現 |
+| Kind | What it is | As a JSON literal |
 | --- | --- | --- |
-| `Null` | 値の不在 | `null` |
-| `Bool` | 真偽値 | `true` / `false` |
-| `Number` | 数値。整数と小数を区別しない | `42`, `1.5` |
-| `Text` | 文字列 | `"black"` |
-| `Sequence` | 順序付き有限列 | （リテラルなし） |
-| `Record` | 文字列キーのマップ | `{ "a": 1 }`（`op` キーを含まない場合） |
-| `Opaque` | プラグイン固有値 | （リテラルなし。テキスト正規形経由） |
+| `Null` | the absence of a value | `null` |
+| `Bool` | a truth value | `true` / `false` |
+| `Number` | a number; integers and fractions are not distinguished | `42`, `1.5` |
+| `Text` | a string | `"black"` |
+| `Sequence` | a finite ordered run of values | (none) |
+| `Record` | a map keyed by strings | `{ "a": 1 }`, when it carries no `op` |
+| `Opaque` | a plugin's own value | (none — travels as canonical text) |
 
-`Sequence` と `Opaque` には直接の JSON リテラルがなく、ノードの評価結果として
-のみ得られる。
+`Sequence` and `Opaque` have no JSON literal of their own and can only arrive as the
+result of evaluating a node.
 
 ### 1.1 Opaque
 
-座標・方向のようなプラグイン固有の値を格納する。コアは中身を解釈しない。
-Opaque 値は **型タグ**（例: `grid/coord`）を持ち、型タグが異なる Opaque 同士は
-常に非等価。
+Holds what belongs to one plugin and means nothing to the core — a coordinate, a
+direction. An opaque value carries a **type tag** such as `grid/coord`, and two opaque
+values with different tags are never equal.
 
-**`inputs.*.params` に現れうる Opaque は、テキスト正規形を持たなければならない。**
-理由は次の 2 つ。
+**An opaque value that can appear in `inputs.*.params` must have a canonical text form.**
+Two reasons, and they are the two directions of one trip.
 
-- `GetValidInputs` の戻り値に含まれる `args` は JSON 文書として外部へ出る
-  （`{ "at": "d3" }`）。Opaque 座標をテキストへ落とせないと直列化できない。
-- 逆に `ApplyToState` に渡される InputRule の `args` は Text で届く。
-  これを Opaque へ復元できないとパラメータとして使えない。
+- The `args` in what `GetValidInputs` returns leave as a JSON document (`{ "at": "d3" }`).
+  A coordinate that cannot be written as text cannot be serialized.
+- The `args` in an input document arrive as text. A coordinate that cannot be recovered
+  from text cannot be used as a parameter.
 
-したがって Opaque を受け取るノードは、**同じ型タグの Opaque と、そのテキスト
-正規形の Text の両方を受理する**（→ 各プラグイン仕様の「座標の受理形式」）。
+So a node that accepts an opaque value **accepts both the opaque value itself and the text
+that is its canonical form** — see "what a coordinate may be written as" in each plugin's
+specification.
 
-一方、**State の中だけに存在する Opaque にはこの要件がない**。盤面がその例で、
-直列化はスキーマノード（`grid.board`）が担当するため、値そのものがテキスト化
-できる必要はない。当初は全 Opaque の必須要件としていたが、実装時に過剰と判明
-した。`Rulealize.Abstraction` では `RuleValue.GetCanonicalText()` が既定で
-`null` を返し、必要な型だけが override する。
+**A value that only ever lives inside the state carries no such requirement.** A board is
+the example: serializing it belongs to the schema node (`grid.board`), so the value itself
+never has to become text. This was a requirement of every opaque value to begin with, and
+turned out to be more than the design needed. `RuleValue.GetCanonicalText()` returns
+`null` by default, and only the types that need one override it.
 
-### 1.2 Sequence は再列挙可能でなければならない
+### 1.2 A sequence has to survive being enumerated twice
 
-遅延評価は許されるが、**同一の Sequence 値を複数回列挙したとき同じ結果を返す**
-ことを要求する。リバーシの `flips1` は `@ray` を 2 回列挙している
-（`seq.takeWhile` と `seq.elementAt`）ため、これは実装上の努力目標ではなく仕様。
+Laziness is allowed, but **enumerating one sequence value more than once must produce the
+same run of values each time**. Reversi's `flips1` enumerates `@ray` twice — once through
+`seq.takeWhile` and once through `seq.elementAt` — so this is a rule rather than something
+an implementation should try to achieve.
 
-全ノードが純粋（副作用なし）なので、この要件は再評価またはバッファリングの
-どちらでも満たせる。
-
-
-## 2. 等価性
-
-`cmp.eq` などが依拠する規則。
-
-- 異なる種別同士は常に非等価（`1` と `"1"` は非等価）
-- `Null` と `Null` は等価
-- `Number` は数値としての等価（`1` と `1.0` は等価）
-- `Sequence` は要素ごとの等価（長さと順序を含む）
-- `Record` はキー集合が一致し、対応する値がすべて等価
-- `Opaque` は型タグが一致し、かつプラグインが定義する等価性を満たす
+Every node is pure, so either strategy satisfies it: re-run the computation on each
+enumeration, or buffer on the first. What is ruled out is a one-shot iterator.
 
 
-## 3. null 伝播
+## 2. Equality
 
-**一律の規則は設けない。** ノードごとに定義し、各プラグイン仕様に明記する。
-方針は次のとおり。
+What `cmp.eq` and everything like it rests on.
 
-| 分類 | 方針 | 例 |
+- Values of different kinds are never equal (`1` and `"1"` are not).
+- `Null` equals `Null`.
+- `Number` compares numerically (`1` equals `1.0`).
+- `Sequence` compares element by element, including length and order.
+- `Record` compares by key set, and then value by value.
+- `Opaque` compares by type tag, and then by whatever the defining plugin says.
+
+
+## 3. How null travels
+
+**There is no blanket rule.** Each node states its own, and each plugin specification
+writes it down. The policy behind those choices:
+
+| Situation | What happens | Examples |
 | --- | --- | --- |
-| 「存在しない」が正常な参照 | `Null` を返す | `grid.at` の盤外、`seq.elementAt` の範囲外 |
-| 等価判定 | `Null` を値として扱う | `cmp.eq(null, "black")` → `false` |
-| 順序・算術 | 評価エラー | `cmp.lt(null, 1)`, `math.add(null, 1)` |
+| a lookup where "not there" is a normal answer | returns `Null` | `grid.at` off the board, `seq.elementAt` out of range |
+| equality | `Null` is just another value | `cmp.eq(null, "black")` is `false` |
+| ordering and arithmetic | an evaluation fault | `cmp.lt(null, 1)`, `math.add(null, 1)` |
 
-この組み合わせによって、リバーシの `flips1` は明示的な境界チェックを書かずに
-「レイが盤端まで相手石で埋まっている」ケースを `else` へ落とせる。
+Together these let Reversi's `flips1` drop the "the ray is opponent stones all the way to
+the edge" case into its `else` branch without a boundary check anywhere in the rule set.
 
 ```
-seq.elementAt(範囲外) → null
+seq.elementAt(out of range) → null
   → grid.at(coord: null) → null
     → cmp.eq(null, "black") → false
-      → branch.if の else 枝
+      → the else branch of branch.if
 ```
 
-この連鎖は仕様として固定する。
+That chain is fixed, and rule sets are written on the strength of it.
 
 
-## 4. ノード種別
+## 4. The three kinds of node
 
-プラグインが提供するノードは 3 種類ある。同一プラグインが複数種別を提供して
-よい（`Rulealize.Plugin.Grid` は 3 種すべてを提供する）。
+A plugin provides three kinds of node. One plugin may provide more than one kind
+(`Rulealize.Plugin.Grid` provides all three).
 
-| 種別 | 役割 | 出現位置 |
+| Kind | What it does | Where it may appear |
 | --- | --- | --- |
-| **式ノード** | 評価して値を返す。純粋 | `when` / `effects` の引数 / `definitions` の本体 / `params[].domain` / `terminal` |
-| **効果ノード** | 状態ドラフトへの書き込みを表す | `inputs.*.effects` の各要素のみ |
-| **スキーマノード** | 状態の型を記述する | `state.schema` のみ |
+| **expression** | evaluates to a value; pure | `when`, the arguments of `effects`, the body of a `definitions` entry, `params[].domain`, `terminal` |
+| **effect** | describes a write to the state draft | only as an element of `inputs.*.effects` |
+| **schema** | describes the type of a state field | only inside `state.schema` |
 
-出現位置が不正なノードは RuleSet 読み込み時（`CreateContext`）に検証エラーと
-する。実行時ではない。
+A node in a position its kind does not allow is a build error, raised while the rule set is
+compiled (`CreateContext`), never at run time.
 
-### 4.1 domain ノードは式ノード
+### 4.1 A domain is an expression node
 
-`params[].domain` に置かれるのは「`Sequence` を返す式ノード」であって、専用の
-種別ではない。`GetValidInputs` はこれを列挙して候補を作る。
+What sits in `params[].domain` is an expression node that returns a `Sequence`, not a
+fourth kind of node. `GetValidInputs` enumerates it to form candidates.
 
-**domain は規則の一部であり、候補探索のためのヒントではない。** `ApplyToState`
-も引数を domain と突き合わせ、含まれない値を拒否する。したがって RuleSet は
-規則を domain と `when` のどちらに書いてもよく、組合せ爆発を避けるために
-domain 側へ寄せても、guard で同じことを二度書く必要はない。
-（→ [チェスでの検討 §3.2](dsl-example-chess.md)）
+**A domain is part of the rules, not a hint for the candidate search.** `ApplyToState`
+resolves each argument against its domain too, and refuses a value the domain does not
+produce. A rule set may therefore state a rule in a domain or in `when` as it prefers, and
+one that moves work into a domain to keep the candidate count down does not owe a second
+copy of that rule in the guard. (→ [what chess made of this, §3.2](dsl-example-chess.md))
 
-突き合わせで束縛されるのは **domain 側の値**である。文書の引数は JSON なので
-Opaque はテキストで届くが、一致した Opaque に置き換えられてから評価に入る。
-`GetValidInputs` が提示した候補と、それを適用したときとで、式が見る値は一致する。
-
-
-## 5. 効果の適用意味論
-
-`effects` は **スナップショット意味論** を採る。
-
-1. 入力時の状態を読み取り専用のスナップショットとして固定する
-2. `effects` の各要素の式は **すべてスナップショットに対して** 評価する
-3. 書き込みはドラフトに蓄積し、全要素の処理後に一括適用する
-
-逐次適用にすると、リバーシの `place` で「石を置く」効果の後に評価される `flips`
-が変更後の盤面を再走査してしまう。スナップショット意味論はこの種の記述順序
-依存をなくすためのもの。
-
-同一パスへの書き込みが複数回発生した場合は **後勝ち**。
+What gets bound is **the value the domain produced**. An argument arrives from a document
+as JSON, so an opaque value arrives as text, and it is replaced by the value it matched
+before anything evaluates. The candidate `GetValidInputs` offered and the move applied
+from a document put exactly the same value in front of every expression downstream.
 
 
-## 6. スコープ
+## 5. What applying effects means
 
-評価コンテキストが持つスコープは 3 層。
+`effects` has **snapshot semantics**.
 
-| 層 | 参照方法 | 可視範囲 |
+1. The state as the input found it is fixed as a read-only snapshot.
+2. Every expression in every element of `effects` is evaluated **against that snapshot**.
+3. Writes accumulate in a draft and are applied together once every element has run.
+
+Applying them one at a time would mean that in Reversi's `place`, the `flips` evaluated
+after the "put the stone down" effect would rescan a board that already has the new stone
+on it. Snapshot semantics is what removes that kind of dependence on the order the effects
+were written in.
+
+Where two writes land on one path, **the last one wins**.
+
+An effect that needs to build on what an earlier effect wrote reads the field back from the
+draft — which is a different question from what its expressions see, and both are in play
+at once when two effects edit one board.
+
+When the transition commits, each written field is settled by its schema node
+(`SchemaNode.Normalize`) and then **checked against that schema**. A rule set whose effects
+can assemble a state the schema forbids is told so at the transition that did it, naming
+the input; without that check the state would go back to the caller intact and the fault
+would surface on the next read, one transition away from the effect responsible. Fields no
+effect touched are not rechecked: they came out of a document or out of an earlier commit,
+and either way they have been through this once already.
+
+
+## 6. Scope
+
+An evaluation context has three layers of scope.
+
+| Layer | How it is referred to | Where it is visible |
 | --- | --- | --- |
-| 状態 | `$path`（State プラグイン） | 常に可視 |
-| 定義 | `#name`（Definition プラグイン） | 常に可視 |
-| ローカル束縛 | `@name`（Binding プラグイン） | 導入したノードの指定部分のみ |
+| state | `$path` (the State plugin) | everywhere |
+| definitions | `#name` (the Definition plugin) | everywhere |
+| local bindings | `@name` (the Binding plugin) | only the part of the introducing node that says so |
 
-ローカル束縛は **シャドーイングを許す**（内側の束縛が外側を隠す）。
+Local bindings **may shadow** — an inner binding hides an outer one of the same name.
 
-**定義の本体は呼び出し元のローカル束縛を参照できない**（衛生的）。定義に値を
-渡す手段は `def.call` の `args` のみ。これにより定義は呼び出し位置に依存せず、
-単体で意味が決まる。
+**The body of a definition cannot see the caller's local bindings.** Bodies are hygienic,
+and `def.call`'s `args` is the only way to pass a value in. This is what fixes a
+definition's meaning independently of where it is called from.
 
 
-## 7. 文字列糖衣
+## 7. String sugar
 
-プラグインは先頭 1 文字を予約して、文字列リテラルを自前のノードへ展開できる。
-コアは糖衣の存在を知らない。
+A plugin may reserve a leading character and expand string literals that begin with it into
+nodes of its own. The core does not know sugar exists.
 
-| プレフィックス | 予約者 | 展開先 |
+| Prefix | Reserved by | Expands to |
 | --- | --- | --- |
 | `$` | `Rulealize.Plugin.State` | `{ "op": "state.get", "path": "…" }` |
 | `@` | `Rulealize.Plugin.Binding` | `{ "op": "bind.local", "name": "…" }` |
 | `#` | `Rulealize.Plugin.Definition` | `{ "op": "def.ref", "name": "…" }` |
 
-プレフィックスの衝突はプラグインロード時に検出してエラーとする。
+Colliding prefixes are detected when plugins are loaded.
 
-予約文字で始まる **リテラル文字列** を書く必要がある場合のエスケープ手段は
-未確定（`{ "op": "…literal", "value": "$x" }` 形式のノードを Text 系プラグインに
-持たせる案がある）。リバーシでは不要。
+**There is no way to write a literal string that begins with a reserved character**, and
+none is provided. Nothing in five rule sets has needed one, and the hole is narrower than
+it looks: only a literal in the rule set document is expanded, so text arriving in a state
+document, a key in `branch.match`'s `cases`, and any value computed at run time are all
+unaffected. If a rule set does need one, the answer is for the plugin that reserved the
+character to unescape a doubled one (`$$x` meaning `$x`) rather than for a new node or a
+new plugin to appear — the character is that plugin's to spend, and the core still gets to
+know nothing about any of it.
