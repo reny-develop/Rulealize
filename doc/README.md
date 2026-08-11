@@ -55,3 +55,14 @@ In the order written. Each is self-contained, and each names its subject rule se
 Reversi and chess come first for a reason: Reversi is where the design is worked out, and
 chess is the first thing it had to survive that it was not designed against. The rest can be
 read in any order.
+
+### One that is not here
+
+[The registry](https://github.com/reny-develop/Rulealize.Registry/blob/main/doc/design.md) —
+an index of the plugins and rule sets other people publish, and the ledger of which
+namespaces and shorthand characters are already taken — is a design record of the same kind,
+and it is kept in its own repository. Its subject is the ecosystem around this library
+rather than this library, so it belongs with the thing it describes, for the reason
+[a plugin's specification does](plugin.md#why-the-specifications-are-not-in-this-repository).
+The one thing it asks of this repository is a way to enumerate a runtime's operations, which
+does not exist yet.
