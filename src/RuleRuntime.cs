@@ -56,6 +56,20 @@ namespace Rulealize
         /// <summary>Gets what each loaded plugin declares about itself, in load order.</summary>
         public ImmutableArray<PluginManifest> Plugins => _operations.Manifests;
 
+        /// <summary>Gets every operation the loaded plugins provide, in registration order.</summary>
+        /// <remarks>
+        /// <para>
+        /// <see cref="Plugins"/> says which vocabularies are loaded; this says what is in
+        /// them. Nothing here is declared anywhere — a plugin's operations exist only as the
+        /// calls it made while registering, so this is the sole account of what a runtime can
+        /// do, and it cannot disagree with what a rule set will be compiled against.
+        /// </para>
+        /// <para>
+        /// A name registered as two kinds appears twice; see <see cref="OperationDescriptor"/>.
+        /// </para>
+        /// </remarks>
+        public ImmutableArray<OperationDescriptor> Operations => _operations.Operations;
+
         /// <summary>Adds one plugin.</summary>
         /// <param name="plugin">The plugin.</param>
         /// <returns>This runtime, so calls can be chained.</returns>

@@ -6,7 +6,7 @@ using Rulealize.Abstraction.Plugin;
 
 namespace Rulealize.Tests
 {
-    /// <summary>What a runtime accepts as a set of plugins, and what it refuses.</summary>
+    /// <summary>What a runtime accepts as a set of plugins, what it refuses, and what it then reports.</summary>
     /// <remarks>
     /// The refusals all happen when a plugin is added, not when a rule set first reaches for
     /// a contested name. A namespace collision is a fault in how the application is
@@ -47,6 +47,70 @@ namespace Rulealize.Tests
             Assert.Equal(
                 new Dictionary<char, string> { ['$'] = "state", ['@'] = "bind", ['#'] = "def" },
                 reserved);
+        }
+
+        [Fact]
+        public void ARuntimeWithNoPluginsProvidesNoOperations() =>
+            // The claim the whole design rests on, stated as an assertion: the core provides
+            // no operations at all, not even booleans.
+            Assert.Empty(new RuleRuntime().Operations);
+
+        [Fact]
+        public void EveryOperationIsQualifiedByTheNamespaceOfThePluginThatRegisteredIt()
+        {
+            // A plugin registers an unqualified name and the namespace is taken from its
+            // manifest, so an operation cannot be reported under a namespace its plugin does
+            // not own — the same property that makes the collision check at load time worth
+            // anything.
+            RuleRuntime runtime = new RuleRuntime().LoadPluginsFrom(StandardRuntime.PluginFolder);
+
+            Assert.NotEmpty(runtime.Operations);
+            Assert.All(
+                runtime.Operations,
+                static operation => Assert.StartsWith(
+                    $"{operation.Plugin.Namespace}.", operation.Op, StringComparison.Ordinal));
+        }
+
+        [Fact]
+        public void TheThreeKindsAreReportedApart()
+        {
+            RuleRuntime runtime = new RuleRuntime().LoadPluginsFrom(StandardRuntime.PluginFolder);
+
+            Assert.Contains(
+                runtime.Operations,
+                static operation => operation.Op == "grid.at"
+                    && operation.Kind == OperationKind.Expression
+                    && operation.Plugin.Id == "Rulealize.Plugin.Grid");
+            Assert.Contains(
+                runtime.Operations,
+                static operation => operation.Op == "state.set" && operation.Kind == OperationKind.Effect);
+            Assert.Contains(
+                runtime.Operations,
+                static operation => operation.Op == "type.int" && operation.Kind == OperationKind.Schema);
+        }
+
+        [Fact]
+        public void OneNameRegisteredAsTwoKindsIsTwoOperations()
+        {
+            // The tables are separate on purpose: where a node is written is what tells an
+            // expression from an effect, never the name. Reported once, whichever kind
+            // happened to be found first, a caller could not learn that both exist.
+            StubPlugin plugin = new("A", "one")
+            {
+                Registration = static registry =>
+                {
+                    registry.AddExpression("thing", static context => throw new NotSupportedException());
+                    registry.AddEffect("thing", static context => throw new NotSupportedException());
+                }
+            };
+
+            RuleRuntime runtime = new RuleRuntime().AddPlugin(plugin);
+
+            Assert.Equal(
+                [OperationKind.Expression, OperationKind.Effect],
+                runtime.Operations
+                    .Where(static operation => operation.Op == "one.thing")
+                    .Select(static operation => operation.Kind));
         }
 
         [Fact]

@@ -30,9 +30,18 @@ namespace Rulealize.Internal.Plugin
         private readonly Dictionary<string, PluginManifest> _byNamespace = new(StringComparer.Ordinal);
         private readonly Dictionary<char, PluginManifest> _byPrefix = [];
         private readonly List<PluginManifest> _manifests = [];
+        private readonly List<OperationDescriptor> _operations = [];
 
         /// <summary>Gets the manifests of every loaded plugin, in load order.</summary>
         public ImmutableArray<PluginManifest> Manifests => [.. _manifests];
+
+        /// <summary>Gets a description of every operation registered, in registration order.</summary>
+        /// <remarks>
+        /// Kept alongside the four dictionaries rather than reconstructed from them, because
+        /// which plugin registered a name is not recoverable from a factory, and a name
+        /// registered as two kinds has to appear twice.
+        /// </remarks>
+        public ImmutableArray<OperationDescriptor> Operations => [.. _operations];
 
         /// <summary>Records a plugin's claims and rejects it when they clash with another's.</summary>
         /// <param name="manifest">The plugin's manifest.</param>
@@ -79,21 +88,21 @@ namespace Rulealize.Internal.Plugin
         /// <param name="name">The unqualified name.</param>
         /// <param name="factory">The factory.</param>
         public void AddExpression(PluginManifest manifest, string name, ExpressionNodeFactory factory) =>
-            Add(_expressions, manifest, name, factory, "expression");
+            Add(_expressions, manifest, name, factory, OperationKind.Expression);
 
         /// <summary>Registers an effect operation.</summary>
         /// <param name="manifest">The registering plugin.</param>
         /// <param name="name">The unqualified name.</param>
         /// <param name="factory">The factory.</param>
         public void AddEffect(PluginManifest manifest, string name, EffectNodeFactory factory) =>
-            Add(_effects, manifest, name, factory, "effect");
+            Add(_effects, manifest, name, factory, OperationKind.Effect);
 
         /// <summary>Registers a schema operation.</summary>
         /// <param name="manifest">The registering plugin.</param>
         /// <param name="name">The unqualified name.</param>
         /// <param name="factory">The factory.</param>
         public void AddSchema(PluginManifest manifest, string name, SchemaNodeFactory factory) =>
-            Add(_schemas, manifest, name, factory, "schema");
+            Add(_schemas, manifest, name, factory, OperationKind.Schema);
 
         /// <summary>Registers a shorthand expander for the character a plugin reserved.</summary>
         /// <param name="manifest">The registering plugin.</param>
@@ -160,12 +169,19 @@ namespace Rulealize.Internal.Plugin
             return _schemas.ContainsKey(op) ? "a schema" : null;
         }
 
-        private static void Add<TFactory>(
+        private static string Describe(OperationKind kind) => kind switch
+        {
+            OperationKind.Expression => "expression",
+            OperationKind.Effect => "effect",
+            _ => "schema"
+        };
+
+        private void Add<TFactory>(
             Dictionary<string, TFactory> target,
             PluginManifest manifest,
             string name,
             TFactory factory,
-            string kind)
+            OperationKind kind)
         {
             ArgumentException.ThrowIfNullOrEmpty(name);
             ArgumentNullException.ThrowIfNull(factory);
@@ -173,8 +189,12 @@ namespace Rulealize.Internal.Plugin
             string qualified = $"{manifest.Namespace}.{name}";
             if (!target.TryAdd(qualified, factory))
             {
-                throw new ArgumentException($"{manifest.Id} has already registered the {kind} '{qualified}'.", nameof(name));
+                throw new ArgumentException(
+                    $"{manifest.Id} has already registered the {Describe(kind)} '{qualified}'.",
+                    nameof(name));
             }
+
+            _operations.Add(new OperationDescriptor(qualified, kind, manifest));
         }
     }
 }
