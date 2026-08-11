@@ -44,10 +44,9 @@ Rule set: reversi@1.0.0   inputs: place, pass
 Nothing in that sample knows the rules of Reversi. It loads a folder of plugins, compiles a
 document, asks what is legal and applies what was chosen.
 
-> **Status — pre-release.** Requires `net10.0`. Neither `Rulealize` nor
-> `Rulealize.Abstraction` is published to nuget.org yet, and each of the twelve standard
-> plugins lives in its own repository, so there is no `dotnet add package` route today.
-> [Try it](#try-it) has the clone-and-build path.
+> Requires `net10.0`. `Rulealize` is on nuget.org and so is each of the twelve standard
+> plugins, because a plugin is an ordinary package: the runtime finds its assembly by
+> scanning a folder, and nothing else about it is special.
 
 ## Why you might want this
 
@@ -72,6 +71,19 @@ list says which vocabularies that was.
 
 ## Try it
 
+```sh
+dotnet add package Rulealize
+dotnet add package Rulealize.Plugin.Grid    # and the others, or only the ones a rule set requires
+```
+
+A package reference puts a plugin's assembly in the application's own output folder, and
+`LoadPluginsFrom` skips assemblies with no plugin in them, so the whole of the wiring is
+`new RuleRuntime().LoadPluginsFrom(AppContext.BaseDirectory)`. The twelve, and what each
+provides, are in [the standard vocabulary](doc/plugin.md); a rule set's `requires` says which
+of them that document actually needs.
+
+### Working on the project itself
+
 Fourteen repositories, all cloned side by side: this one, the abstraction, and the twelve
 standard plugins.
 
@@ -84,8 +96,10 @@ for p in Binding Branch Definition Logic Comparison Arithmetic \
 done
 ```
 
-`Rulealize.Abstraction` is consumed as a package, and [`NuGet.config`](NuGet.config) points
-at a folder feed named `LocalNuGet` beside the repositories. Produce it, then run anything:
+`Rulealize.Abstraction` is consumed as a package, and it restores from nuget.org like any
+other. [`NuGet.config`](NuGet.config) adds a folder feed named `LocalNuGet` beside the
+repositories — added to nuget.org rather than replacing it — which is how a change to the
+abstraction is tried out before it is published. Pack it when you have changed it:
 
 ```sh
 dotnet pack Rulealize.Abstraction/src/Rulealize.Abstraction -c Release -o LocalNuGet
