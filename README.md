@@ -44,9 +44,9 @@ Rule set: reversi@1.0.0   inputs: place, pass
 Nothing in that sample knows the rules of Reversi. It loads a folder of plugins, compiles a
 document, asks what is legal and applies what was chosen.
 
-> Requires `net10.0`. `Rulealize` is on nuget.org and so is each of the twelve standard
-> plugins, because a plugin is an ordinary package: the runtime finds its assembly by
-> scanning a folder, and nothing else about it is special.
+> Requires `net10.0`. `Rulealize`, `Rulealize.Cli` and each of the twelve standard plugins
+> are on nuget.org — a plugin is an ordinary package, because the runtime finds its assembly
+> by scanning a folder and nothing else about it is special.
 
 ## Why you might want this
 
@@ -72,15 +72,33 @@ list says which vocabularies that was.
 ## Try it
 
 ```sh
-dotnet add package Rulealize
-dotnet add package Rulealize.Plugin.Grid    # and the others, or only the ones a rule set requires
+dotnet add package Rulealize              # the library
+dotnet tool install -g Rulealize.Cli      # and the command that assembles a plugin folder
+
+rulealize restore reversi.json
 ```
 
-A package reference puts a plugin's assembly in the application's own output folder, and
-`LoadPluginsFrom` skips assemblies with no plugin in them, so the whole of the wiring is
-`new RuleRuntime().LoadPluginsFrom(AppContext.BaseDirectory)`. The twelve, and what each
-provides, are in [the standard vocabulary](doc/plugin.md); a rule set's `requires` says which
-of them that document actually needs.
+```console
+  Rulealize.Plugin.Binding 1.0.0
+  Rulealize.Plugin.Grid 1.1.0
+  …
+10 plugins -> plugin
+'reversi.json' compiles against it.
+```
+
+**The document is the dependency list.** `requires` already names every vocabulary a rule set
+draws on and which versions of each will do — it has to, because that is what the runtime
+reads to refuse a document it cannot run — so there is nothing to write out a second time.
+[`restore`](https://github.com/reny-develop/Rulealize.Cli) reads it, fetches what it names
+into a `plugin` folder, and then compiles the document against what it just wrote. A folder
+that comes back is one the document runs on, and it is the folder [Run it](#run-it) loads.
+
+A plugin can also arrive as an ordinary package reference: `dotnet add package
+Rulealize.Plugin.Grid` puts the assembly in the application's own output folder, and
+`LoadPluginsFrom(AppContext.BaseDirectory)` passes over everything that is not a plugin. That
+is the simpler arrangement when the rules ship with the binary rather than travelling on
+their own schedule. [The standard vocabulary](doc/plugin.md) lists the twelve and what each
+provides.
 
 ### Working on the project itself
 
@@ -301,6 +319,12 @@ the version's.
 | `RuleContext.ApplyToState` / `ApplyToStateAsync` | apply an input to a state |
 | `RuleContext.GetValidInputs` | what is legal from here |
 | `RuleContext.GetTerminalStatus` | whether a state is final, and its outcome |
+| `PluginRequirement.ReadFrom` | read a document's `requires` — no runtime, no plugin loaded |
+| `PluginResolution.Resolve` | which versions those constraints call for, given what is published |
+
+The last two are what a tool needs before there is a runtime to load anything into, and they
+are here so that resolving and running cannot read `^1.0` differently
+([why](doc/runtime.md#requires-read-before-there-is-a-runtime)).
 
 Exceptions: `RuleSetBuildException` for a document that is not a valid rule set,
 `RuleDocumentException` for a state or input document this rule set cannot accept,
