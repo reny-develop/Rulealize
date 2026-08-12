@@ -66,11 +66,24 @@ namespace Rulealize.Internal.Building
             };
         }
 
-        private void CheckRequirements(JsonElement document)
+        /// <summary>Reads <c>requires</c>, without needing any plugin to be loaded.</summary>
+        /// <param name="document">The rule set document.</param>
+        /// <returns>One requirement per entry, in the order written.</returns>
+        /// <remarks>
+        /// Separated from the check below because a tool works out what to fetch before there
+        /// is a runtime to check anything against, and the two must read <c>^1.0</c> the same
+        /// way. Reached from outside through <see cref="PluginRequirement.ReadFrom"/>.
+        /// </remarks>
+        internal static ImmutableArray<PluginRequirement> ReadRequirements(JsonElement document)
         {
+            if (document.ValueKind != JsonValueKind.Object)
+            {
+                throw new RuleSetBuildException(Root, "a rule set must be a JSON object.");
+            }
+
             if (!document.TryGetProperty("requires", out JsonElement requires))
             {
-                return;
+                return [];
             }
 
             SourcePath path = Root.Append("requires");
@@ -78,6 +91,8 @@ namespace Rulealize.Internal.Building
             {
                 throw new RuleSetBuildException(path, "must be an array.");
             }
+
+            ImmutableArray<PluginRequirement>.Builder required = ImmutableArray.CreateBuilder<PluginRequirement>();
 
             int index = 0;
             foreach (JsonElement entry in requires.EnumerateArray())
@@ -91,15 +106,10 @@ namespace Rulealize.Internal.Building
                 }
 
                 string plugin = RequireString(entry, "plugin", entryPath);
-                if (!operations.TryGetPlugin(plugin, out PluginManifest? manifest))
-                {
-                    throw new RuleSetBuildException(
-                        entryPath,
-                        $"this rule set needs '{plugin}', which is not loaded.");
-                }
 
                 if (!entry.TryGetProperty("version", out JsonElement constraint))
                 {
+                    required.Add(new PluginRequirement(plugin, null, VersionRequirement.Any));
                     continue;
                 }
 
@@ -111,11 +121,32 @@ namespace Rulealize.Internal.Building
                         "must be a constraint of the form ^1.0, >=1.0 or 1.0.0.");
                 }
 
-                if (!requirement.Value.IsSatisfiedBy(manifest!.Version))
+                required.Add(new PluginRequirement(plugin, constraint.GetString()!, requirement.Value));
+            }
+
+            return required.ToImmutable();
+        }
+
+        private void CheckRequirements(JsonElement document)
+        {
+            int index = 0;
+            foreach (PluginRequirement required in ReadRequirements(document))
+            {
+                SourcePath entryPath = Root.Append("requires").Append(index);
+                index++;
+
+                if (!operations.TryGetPlugin(required.Plugin, out PluginManifest? manifest))
+                {
+                    throw new RuleSetBuildException(
+                        entryPath,
+                        $"this rule set needs '{required.Plugin}', which is not loaded.");
+                }
+
+                if (!required.IsSatisfiedBy(manifest!.Version))
                 {
                     throw new RuleSetBuildException(
                         entryPath.Append("version"),
-                        $"this rule set needs {plugin} {requirement.Value}, but {manifest.Version} is loaded.");
+                        $"this rule set needs {required}, but {manifest.Version} is loaded.");
                 }
             }
         }

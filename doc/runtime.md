@@ -101,6 +101,41 @@ Reading a document off a stream genuinely is I/O, and that is what the asynchron
 overloads are for: `CreateContextAsync(Stream)` and `ApplyToStateAsync(Stream, Stream)`.
 They await the read and then run the same synchronous evaluation.
 
+## `requires`, read before there is a runtime
+
+`CreateContext` refuses a document naming a plugin that is not loaded, or loaded at a version
+the constraint excludes. That is the last word, and it comes too late to be the only one: a
+tool assembling a plugin folder has to know what to fetch *before* anything is loaded.
+
+So `requires` is also readable on its own, with no runtime and no plugin present.
+
+```csharp
+ImmutableArray<PluginRequirement> required = PluginRequirement.ReadFrom(document);
+PluginResolution resolution = PluginResolution.Resolve(required, publishedVersions);
+```
+
+Nothing about the document but `requires` is examined — a document worth fetching plugins for
+is often one that does not compile yet, and deciding whether it compiles is `CreateContext`'s
+job, done against a full vocabulary.
+
+**Both read `^1.0` through the same code, and that is the point.** Two implementations of
+three constraint forms would be easy to write and would disagree eventually, and the way they
+would disagree is a tool assembling a folder the runtime then rejects — a failure with no
+symptom until the moment it is too late to be useful.
+
+`Resolve` takes the published versions of each plugin and is pure; fetching them is not this
+library's business, for the reason the section above gives. Two rules decide what comes out:
+
+| | |
+| --- | --- |
+| **the lowest satisfying version wins** | a constraint says what the document needs, so honouring it exactly is what makes the same document resolve to the same folder after three more releases. Moving to a newer one means changing what the document asks for, which is not something restoring it should do |
+| **constraints on one plugin are met together** | two entries naming one plugin resolve to a single version, or to neither. A folder cannot hold two versions of one assembly |
+
+An unmet requirement is reported rather than thrown, with the versions that do exist, because
+a document whose vocabulary is partly unpublished is a real and reasonable document —
+[the deployment pipeline](dsl-example-deploy.md) is one — and what resolved is the useful half
+of the answer.
+
 ## Arguments have to survive the round trip
 
 `GetValidInputs` hands back moves; feeding one straight back to `ApplyToState` must

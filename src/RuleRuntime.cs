@@ -235,7 +235,7 @@ namespace Rulealize
             }
         }
 
-        private static JsonDocument Parse(string json)
+        internal static JsonDocument Parse(string json)
         {
             try
             {
