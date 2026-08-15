@@ -314,6 +314,7 @@ the version's.
 | Member | |
 | --- | --- |
 | `RuleRuntime.AddPlugin` / `LoadPlugins` / `LoadPluginsFrom` | build the vocabulary |
+| `RuleRuntime.Plugins` / `RuleRuntime.Operations` | which vocabularies are loaded, and every operation they provide |
 | `RuleRuntime.CreateContext` / `CreateContextAsync` | compile a rule set |
 | `RuleContext.InitialState` | the opening position, as a state document |
 | `RuleContext.ApplyToState` / `ApplyToStateAsync` | apply an input to a state |

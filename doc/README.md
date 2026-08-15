@@ -64,5 +64,7 @@ namespaces and shorthand characters are already taken — is a design record of 
 and it is kept in its own repository. Its subject is the ecosystem around this library
 rather than this library, so it belongs with the thing it describes, for the reason
 [a plugin's specification does](plugin.md#why-the-specifications-are-not-in-this-repository).
-The one thing it asks of this repository is a way to enumerate a runtime's operations, which
-does not exist yet.
+The one thing it asked of this repository was a way to enumerate a runtime's operations, and
+that is [`RuleRuntime.Operations`](../README.md#api), which is built. What came of pointing
+it at the standard distribution is recorded in the registry's design record rather than
+here, because the registry is what wanted it.
