@@ -21,6 +21,22 @@ the twelfth, Record, along with `type.list` and Sequence 1.2, are what
 | [Tuple](https://github.com/reny-develop/Rulealize.Plugin.Tuple/blob/main/doc/specification.md) | `tuple` | a compound value that has a canonical text form |
 | [Record](https://github.com/reny-develop/Rulealize.Plugin.Record/blob/main/doc/specification.md) | `rec` | records in the state, read and written by a computed key |
 
+## Writing one
+
+Not here, and deliberately. A vocabulary is a repository of its own from the first commit,
+so the account of how to write one belongs where writing one starts.
+
+```sh
+dotnet new install Rulealize.Templates
+dotnet new rulealize-plugin -n Rulealize.Plugin.Text
+```
+
+What comes out builds and runs before anything has been written to it, and
+[**writing a vocabulary**](https://github.com/reny-develop/Rulealize.Templates/blob/main/doc/writing-a-vocabulary.md)
+is the guide to the part a template cannot write. The loop is
+[`Rulealize.Cli`](https://github.com/reny-develop/Rulealize.Cli): `rulealize plugins` says
+what loaded and what it registered, and `rulealize play` runs a rule set against it.
+
 ## Why the specifications are not in this repository
 
 Each links out, and that is deliberate. A specification says what one version of one plugin
