@@ -22,10 +22,11 @@ using Rulealize.Sample.Deploy;
 // map, which are external, sizeable, versioned on their own schedule, and no business of
 // any single deployment's state.
 //
-// What it does not buy is a licence to reach outside. Every operation is a pure function of
-// its arguments and that immutable snapshot — today's date is a state field passed in as an
-// argument, not a clock read — because GetValidInputs evaluates a guard once per candidate
-// in a parameter's domain and needs the same answer every time.
+// The constructor is where this sample stops. Every operation answers from its arguments
+// and that immutable snapshot, and today's date arrives as a state field rather than a
+// clock read, because GetValidInputs evaluates a guard once per candidate in a parameter's
+// domain — a reach outside would be repeated that many times and could answer differently
+// each time. Nothing in the runtime forbids one; the bill is the author's.
 //
 //   dotnet run --project sample/Deploy                          drive it by hand
 //   dotnet run --project sample/Deploy -- --auto                run it to a conclusion

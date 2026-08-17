@@ -93,13 +93,14 @@ namespace Rulealize
         /// it as an argument.
         /// </para>
         /// <para>
-        /// Whatever it carries must be an immutable snapshot, and every operation it
-        /// registers must be a pure function of its arguments and that snapshot.
+        /// What that costs is worth knowing before choosing it.
         /// <see cref="RuleContext.GetValidInputs(string, int, CancellationToken)"/> evaluates a guard once per
-        /// candidate in a parameter's domain: an operation that reads a clock or a database
-        /// turns a domain into a storm of queries and answers one question two ways inside a
-        /// single call. Values that change belong in the state document — the current date
-        /// is a state field passed to an operation, not something the operation finds out.
+        /// candidate in a parameter's domain, so an operation that reads a clock or a
+        /// database reads it once per candidate; and snapshot semantics cover the state
+        /// document, so anything else an operation reads may answer one question two ways
+        /// inside a single call. Neither is refused. An immutable snapshot and arguments —
+        /// the current date as a state field rather than something the operation finds out —
+        /// is the way around both, and the choice belongs to whoever writes the vocabulary.
         /// </para>
         /// <para>
         /// Two conventions apply to a vocabulary that is never published. Vendor-qualify the

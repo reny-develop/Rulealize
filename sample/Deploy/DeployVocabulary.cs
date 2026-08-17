@@ -31,11 +31,11 @@ namespace Rulealize.Sample.Deploy
     /// audience of one has no business taking one.
     /// </para>
     /// <para>
-    /// Every operation here is a pure function of its arguments and of the immutable policy
-    /// this instance was built with. That is not a style preference. <c>GetValidInputs</c>
-    /// evaluates a guard once per candidate in a parameter's domain, so an operation that
-    /// read a clock or a database would turn a domain into a query storm and would answer
-    /// the same question differently within one call.
+    /// Every operation here answers from its arguments and from the immutable policy this
+    /// instance was built with, which is a choice this sample makes rather than a rule the
+    /// runtime imposes. <c>GetValidInputs</c> evaluates a guard once per candidate in a
+    /// parameter's domain, so an operation reading a clock or a database would read it once
+    /// per candidate and could answer the same question differently within one call.
     /// </para>
     /// </remarks>
     /// <param name="policy">The freeze calendar and ownership map to answer from.</param>
@@ -108,8 +108,8 @@ namespace Rulealize.Sample.Deploy
 
     /// <summary>Whether a date falls inside a change freeze.</summary>
     /// <remarks>
-    /// The date is an argument. An operation that read <c>DateTime.Today</c> would need no
-    /// argument at all and would be wrong for it — see the remarks on
+    /// The date is an argument. An operation reading <c>DateTime.Today</c> would need no
+    /// argument at all and would work; what it would give up is in the remarks on
     /// <see cref="DeployPolicy"/>.
     /// </remarks>
     internal sealed class FrozenNode(DeployPolicy policy, ExpressionNode date) : ExpressionNode

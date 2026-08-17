@@ -20,9 +20,10 @@
   //   acme.people     everyone in that map, which is where the `by` domain comes from.
   //
   // Note what does not come from it. The date is a state field, and acme.frozen is handed
-  // that field. An operation that read the clock itself would be quicker to write and would
-  // break the runtime: GetValidInputs evaluates a guard against every candidate in a
-  // domain, so the answer has to be the same every time it is asked.
+  // that field. An operation reading the clock itself would be quicker to write and would
+  // run: what it gives up is that GetValidInputs evaluates a guard against every candidate
+  // in a domain, and a document is easier to reason about when that answer cannot change
+  // between two candidates.
   //
   // Nothing else changes. The twelve standard plugins are loaded by scanning a folder, this
   // document names its vocabularies in `requires` exactly as the others do, and a missing

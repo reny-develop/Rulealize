@@ -26,16 +26,16 @@ namespace Rulealize.Sample.Deploy
     /// takes it as a constructor argument.
     /// </para>
     /// <para>
-    /// Immutable, and deliberately so. A rule set's operations must be pure — the runtime
-    /// evaluates a guard once per candidate in a parameter's domain and expects the same
-    /// answer every time — so what they read has to be a snapshot taken before compilation,
-    /// not a live view of anything.
+    /// Immutable, and deliberately so. The runtime evaluates a guard once per candidate in a
+    /// parameter's domain, so a snapshot taken before compilation is answered from as many
+    /// times as the domain is large, at no cost and with no chance of drifting mid-call. A
+    /// live view would be legal and would give up both.
     /// </para>
     /// <para>
     /// Note also what is not here: today's date. Whether a deployment is frozen depends on
     /// it, but it arrives as a state field and is passed to <c>acme.frozen</c> as an
-    /// argument. A clock read inside an operation would make the same question return
-    /// different answers within a single call to <c>GetValidInputs</c>.
+    /// argument. The same reasoning: a clock read inside an operation can return different
+    /// answers to one question within a single call to <c>GetValidInputs</c>.
     /// </para>
     /// </remarks>
     public sealed class DeployPolicy

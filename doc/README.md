@@ -15,7 +15,7 @@ Read in this order. Every plugin specification assumes the value model, and says
 | | Where it lives | |
 | --- | --- | --- |
 | [The value model, and the three kinds of node](https://github.com/reny-develop/Rulealize.Abstraction/blob/main/doc/value-model.md) | `Rulealize.Abstraction` | the kinds of value, equality, null propagation, and what expression, effect and schema nodes may do. What every plugin assumes, and the only thing holding plugins together |
-| [The standard vocabulary](plugin.md) | here | the twelve plugins and what each provides, plus the conventions for a vocabulary you keep to yourself |
+| [The standard vocabulary](plugin.md) | here | the twelve plugins and what each provides, plus what a vocabulary an application keeps to itself can do and what it costs |
 | A specification per plugin | each plugin's own repository | what one version of one vocabulary provides, normatively. Reached from the table on the page above |
 | [The runtime's surface](runtime.md) | here | node placement, snapshot semantics, definitions and their cache, `validationLimit`, asynchrony, the input round trip |
 

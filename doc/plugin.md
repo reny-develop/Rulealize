@@ -27,16 +27,16 @@ and [the notation the specifications are written in](https://github.com/reny-dev
 
 ## Writing one
 
+Writing a plugin is not this repository's subject: a plugin is written against
+`Rulealize.Abstraction` and never references Rulealize. The starting point is
+[`Rulealize.Templates`](https://github.com/reny-develop/Rulealize.Templates), and
+[**writing a vocabulary**](https://github.com/reny-develop/Rulealize.Templates/blob/main/doc/writing-a-vocabulary.md)
+is the guide it carries.
+
 ```sh
 dotnet new install Rulealize.Templates
 dotnet new rulealize-plugin -n Rulealize.Plugin.Text
 ```
-
-What comes out builds and runs before anything has been written to it, and
-[**writing a vocabulary**](https://github.com/reny-develop/Rulealize.Templates/blob/main/doc/writing-a-vocabulary.md)
-is the guide to the part a template cannot write. The loop is
-[`Rulealize.Cli`](https://github.com/reny-develop/Rulealize.Cli): `rulealize plugins` says
-what loaded and what it registered, and `rulealize play` runs a rule set against it.
 
 ## A vocabulary that is not distributed
 
@@ -71,25 +71,30 @@ snapshot loaded at start-up**. A holiday calendar, a price list, an org chart, a
 map — data someone else owns, updated on its own schedule, with no business being carried
 in each individual state document.
 
-### Vendor-qualify the identifier and the namespace
+### The identifier and the namespace are still claimed
 
-`Acme.Deploy.Rules` and `acme`, not `Rules` and `deploy`. A vocabulary that squats on a
-plain name will collide with a published plugin eventually, and by then rule sets are in
-production.
+The runtime refuses two plugins claiming one namespace when they are loaded, and `requires`
+names the identifier — neither check knows or cares that one of them was never published.
+Vendor-qualify both, `Acme.Deploy.Rules` and `acme` rather than `Rules` and `deploy`, and a
+plugin released later cannot take the name out from under rule sets already in production.
 
-### Purity — this is not a matter of style
+### What an operation that reaches outside its arguments costs
 
-**Every operation registered has to be a pure function of its arguments and that immutable
-snapshot.**
+Two facts about evaluation, stated here because they are the runtime's behaviour rather
+than advice about how to write one:
 
-`GetValidInputs` evaluates a guard once per candidate in a parameter's domain. An operation
-that reaches outside means
+- `GetValidInputs` evaluates a guard once per candidate in a parameter's domain. Whatever
+  an operation reaches for, it reaches for once per candidate, so a domain of a thousand is
+  a thousand of them.
+- Snapshot semantics cover the state document — expressions read it as the input found it.
+  Anything else an operation reads sits outside that guarantee, and one question can be
+  answered two ways inside a single call.
 
-- one query per candidate, so combinatorial blow-up becomes I/O blow-up
-- the same question answered two ways inside one call
-- snapshot semantics broken, since "expressions read the state as the input found it" is a
-  guarantee that rests on the state being all they read
+Neither is a prohibition. An operation may read a clock or a database, and the current date
+may be something it finds out rather than something a state field hands it; the runtime
+does not stop it, and nothing about the difference reaches the rule set. The cost is the
+two points above, and it is the author's to accept or to design around.
 
-Values that change belong in the state document. **The current date is a field handed to an
-operation, not something an operation goes and finds out** — which is why
-`sample/Deploy`'s `acme.frozen` takes `date` as an argument.
+[`sample/Deploy`](../sample/Deploy/) designs around it: an immutable snapshot in the
+constructor and `date` as an argument to `acme.frozen`, so a guard asked a thousand times
+answers a thousand times at no cost and gives the same answer each time.

@@ -359,8 +359,8 @@ What changes is the constructor: a plugin found by scanning is built through a p
 one and has nowhere to receive anything, while this one can be handed a snapshot of data the
 rule set has no business carrying.
 
-What makes it safe — vendor-qualifying the identifier and the namespace, and the purity
-every operation registered has to hold to — is in
+What a name that is never published still has to avoid, and what `GetValidInputs` costs an
+operation that reaches past its arguments, is in
 [the standard vocabulary](doc/plugin.md#a-vocabulary-that-is-not-distributed).
 
 `requires` keeps working throughout, and that is the point of doing it this way rather than

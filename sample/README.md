@@ -61,8 +61,9 @@ together. Neither changes a character of `deploy.json`; one is a field in the st
 document and the other is a table the rule set has never seen, and both end with everything
 staged, everything signed off, and `blocked`.
 
-What the sample does not do is let the vocabulary reach outside. Today's date is a state
-field handed to `acme.frozen` as an argument rather than a clock read, because
-`GetValidInputs` evaluates a guard once per candidate in a parameter's domain and needs the
-same answer every time. The conventions this follows are in
+What the sample chooses not to do is let the vocabulary reach outside. Today's date is a
+state field handed to `acme.frozen` as an argument rather than a clock read, because
+`GetValidInputs` evaluates a guard once per candidate in a parameter's domain and a clock
+would be read once per candidate too. What the other choice costs, and why the runtime
+allows it, is in
 [the standard vocabulary](../doc/plugin.md#a-vocabulary-that-is-not-distributed).
