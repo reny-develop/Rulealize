@@ -5,12 +5,10 @@ using System.Text.Json;
 
 namespace Rulealize.Tests
 {
-    /// <summary>Shogi, and where a compound parameter stops paying for itself.</summary>
+    /// <summary>Shogi — a compound <c>move</c> and a two-parameter <c>drop</c> in one rule set.</summary>
     /// <remarks>
-    /// Written to settle a prediction: that a move needing more than a pair of squares would
-    /// make a tuple unreadable, and that shogi would be where it happened. What the game
-    /// actually asks for turned out to be somewhere else entirely — see
-    /// <c>doc/dsl-example-shogi.md</c>.
+    /// Perft to depth three, plus promotion, forced promotion, two pawns on a file, dropped-pawn
+    /// mate, the hand going up and down, and mate detection.
     /// </remarks>
     [Collection(StandardCollection.Name)]
     public class ShogiTests(StandardRuntime standard)

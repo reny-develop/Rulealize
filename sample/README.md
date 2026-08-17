@@ -10,7 +10,7 @@ by scanning, and a thirteenth that is a class in the sample itself.
 
 The rule sets are not copies. Every one of them lives in [`ruleset/`](../ruleset/) and is
 linked into both the sample that demonstrates it and the test suite that pins it down, so
-anything a sample does can be read next to its tests and the notes in [`doc/`](../doc/).
+anything a sample does can be read next to its tests.
 
 | | | |
 | --- | --- | --- |
@@ -45,9 +45,7 @@ declares, which means anything asking about `m` filters on `Input` first.
 what", which is both what a scheduling screen displays and what `--solve` branches on.
 
 `--state other-week` runs a different week — other people, three days instead of five —
-through the same rule set, because the people were never in the rule set. That distinction
-is easy to miss after writing three board games: a chess board really is always eight by
-eight, so baking the instance into the schema costs nothing there and everything here.
+through the same rule set, because the people were never in the rule set.
 
 **Deploy** is the one that does not get its whole vocabulary from a folder. `deploy.json`
 uses four `acme.` operations that come from `DeployVocabulary`, a class in this project,
@@ -66,25 +64,5 @@ staged, everything signed off, and `blocked`.
 What the sample does not do is let the vocabulary reach outside. Today's date is a state
 field handed to `acme.frozen` as an argument rather than a clock read, because
 `GetValidInputs` evaluates a guard once per candidate in a parameter's domain and needs the
-same answer every time. The conventions this follows are in the root
-[README](../README.md#vocabulary-an-application-keeps-to-itself).
-
-## Adding a sample
-
-Create `sample/<Name>/` with a `Rulealize.Sample.<Name>.csproj`, put the rule set in
-[`ruleset/`](../ruleset/), then add the project to [`Rulealize.slnx`](../Rulealize.slnx)
-under the `sample` folder, to the table above, and to the test project's
-`RulealizeRuleSet` list. The project file needs three things beyond the usual:
-
-```xml
-<ProjectReference Include="..\..\src\Rulealize.csproj" />
-<Import Project="..\..\StandardPlugins.props" />
-
-<ItemGroup>
-  <RulealizeRuleSet Include="<name>" />
-</ItemGroup>
-<Import Project="..\..\RuleSets.props" />
-```
-
-Both props files locate what they need relative to themselves, so neither needs adjusting
-for the extra directory level.
+same answer every time. The conventions this follows are in
+[the standard vocabulary](../doc/plugin.md#a-vocabulary-that-is-not-distributed).

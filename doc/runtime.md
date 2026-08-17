@@ -4,8 +4,7 @@ What the runtime does with a rule set once it has one, and why it does it that w
 [README](../README.md) says enough to get a rule set running; this is the rest of it, and it
 is where to look when something the README stated flatly needs its reason.
 
-Normative, like the specification and unlike the design record: where this and a design note
-disagree, this is right.
+Normative, like the specification.
 
 ## The three kinds of node, and when things fail
 
@@ -20,6 +19,16 @@ can settle on its own: unknown operations, missing keys, an expression where a l
 belongs, a local nothing declared, an undefined definition, an argument list that does not
 match a definition's parameters, a cycle between definitions, a state path that is not in
 the schema.
+
+A rule set needs both `state.schema` and `state.initial`, and a schema declaring no fields
+is a build error. A state document is a public interface, so there has to be something to
+check one against.
+
+A path names a whole field, and it is written out literally rather than computed. That is
+what buys the check above: every path in the document is settled once, up front, and which
+field an input writes can be read off the document without running it. The inside of a
+field holding a board, a record or a sequence is not reachable by path at all — it is read
+and written with the vocabulary of the plugin that declared it.
 
 The reason for pushing so much into `CreateContext` is `GetValidInputs`. It evaluates a
 guard against every candidate in a parameter's domain, and a fault that first appears on
@@ -72,8 +81,10 @@ written as `from`, `to` and a promotion flag produces thirteen thousand, which i
 
 `validationLimit` bounds how many guards are evaluated. `Truncated` says whether it stopped
 the search early; a truncated result is a subset of what is legal, never a wrong entry. The
-real fix for a large domain is to narrow it before the guard runs, which is a job for the
-plugin that owns the domain.
+real fix for a large domain is to narrow it in the rule set before the guard runs — usually
+by carrying as one compound value what would otherwise be several parameters, so that the
+domain enumerates the combinations that mean something rather than the product of
+everything.
 
 A domain is not a search hint. It is where a rule set says what a parameter may be, so
 `ApplyToState` resolves every argument against it too, and the two methods answer the same
@@ -131,10 +142,14 @@ library's business, for the reason the section above gives. Two rules decide wha
 | **the lowest satisfying version wins** | a constraint says what the document needs, so honouring it exactly is what makes the same document resolve to the same folder after three more releases. Moving to a newer one means changing what the document asks for, which is not something restoring it should do |
 | **constraints on one plugin are met together** | two entries naming one plugin resolve to a single version, or to neither. A folder cannot hold two versions of one assembly |
 
+What `^1.0` reads is the plugin's major version, so a plugin that removes an operation or
+changes what one means releases a new major. A constraint means something only because that
+holds.
+
 An unmet requirement is reported rather than thrown, with the versions that do exist, because
-a document whose vocabulary is partly unpublished is a real and reasonable document —
-[the deployment pipeline](dsl-example-deploy.md) is one — and what resolved is the useful half
-of the answer.
+a document whose vocabulary is partly unpublished is a real and reasonable document — one
+naming a vocabulary the host registers with `AddPlugin` is exactly that — and what resolved
+is the useful half of the answer.
 
 ## Arguments have to survive the round trip
 
@@ -152,6 +167,10 @@ bound, so a rule reading the argument sees the coordinate and not its spelling. 
 concession, and no more: `"2"` still does not match `2`, because different kinds are
 unequal in the value model and a boundary that quietly disagreed with that would be a bad
 place to disagree.
+
+A value with neither a JSON form nor a canonical text form therefore cannot be an input
+argument at all. A record is the case that comes up: a domain returning one fails when the
+argument is resolved, and a compound argument is a tuple instead.
 
 ## Versioning of a state document
 

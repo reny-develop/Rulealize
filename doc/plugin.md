@@ -1,10 +1,9 @@
 # The standard vocabulary
 
-Twelve plugins, each in its own repository, each with its own specification. The first ten
-are what writing [Reversi](dsl-example-reversi.md) called for; the eleventh, Tuple, and
-version 1.1 of Sequence and Grid are what [chess](dsl-example-chess.md) turned out to need;
-the twelfth, Record, along with `type.list` and Sequence 1.2, are what
-[shogi](dsl-example-shogi.md) showed was missing (→ [collections](collections.md)).
+Twelve plugins, each in its own repository, each with its own specification. A specification
+says what one version of one plugin provides — Sequence is at 1.2 and Grid at 1.1 while most
+of the others are still at 1.0 — so each entry below links out to the repository that
+releases it.
 
 | Plugin | Namespace | Provides |
 | --- | --- | --- |
@@ -21,10 +20,12 @@ the twelfth, Record, along with `type.list` and Sequence 1.2, are what
 | [Tuple](https://github.com/reny-develop/Rulealize.Plugin.Tuple/blob/main/doc/specification.md) | `tuple` | a compound value that has a canonical text form |
 | [Record](https://github.com/reny-develop/Rulealize.Plugin.Record/blob/main/doc/specification.md) | `rec` | records in the state, read and written by a computed key |
 
-## Writing one
+Every specification assumes two documents, and both are in `Rulealize.Abstraction` because
+both describe types that package defines:
+[the value model](https://github.com/reny-develop/Rulealize.Abstraction/blob/main/doc/value-model.md)
+and [the notation the specifications are written in](https://github.com/reny-develop/Rulealize.Abstraction/blob/main/doc/specification-notation.md).
 
-Not here, and deliberately. A vocabulary is a repository of its own from the first commit,
-so the account of how to write one belongs where writing one starts.
+## Writing one
 
 ```sh
 dotnet new install Rulealize.Templates
@@ -36,28 +37,6 @@ What comes out builds and runs before anything has been written to it, and
 is the guide to the part a template cannot write. The loop is
 [`Rulealize.Cli`](https://github.com/reny-develop/Rulealize.Cli): `rulealize plugins` says
 what loaded and what it registered, and `rulealize play` runs a rule set against it.
-
-## Why the specifications are not in this repository
-
-Each links out, and that is deliberate. A specification says what one version of one plugin
-provides — Sequence is at 1.2 and Grid at 1.1 while most of the others are still at 1.0 —
-so it has to be able to change when that plugin releases and not before. Kept here, it
-would ship on this repository's schedule, and there would be no commit to point at to say
-what Sequence 1.2 meant.
-
-It also follows the dependency the code already has. A plugin references
-`Rulealize.Abstraction` and nothing else of this project's; a specification of that plugin
-living here would be the one thing pointing the other way.
-
-What stays is this page — the index of what the standard distribution contains, which
-cannot live in twelve places — and the design record, which is cross-cutting by nature.
-Which example forced which operation into existence is a fact about the DSL, not about any
-one plugin, and it is written up in [the design record](README.md#the-design-record).
-
-Both of the things every specification assumes are in `Rulealize.Abstraction`, because both
-describe types that package defines:
-[the value model](https://github.com/reny-develop/Rulealize.Abstraction/blob/main/doc/value-model.md)
-and [the notation the specifications are written in](https://github.com/reny-develop/Rulealize.Abstraction/blob/main/doc/specification-notation.md).
 
 ## A vocabulary that is not distributed
 
@@ -76,41 +55,27 @@ shipping it, implement `IRulealizePlugin` in your own assembly and hand it over 
 The contract is identical to a published plugin's — it has a manifest, it claims a
 namespace, and its name appears in the rule set's `requires`.
 
-The worked example is [the deployment pipeline](dsl-example-deploy.md) and
-[sample/Deploy/](../sample/Deploy/).
+The worked example is [sample/Deploy/](../sample/Deploy/).
 
-### Why there is no lighter registration API
-
-An API for registering one expression at a time, with no manifest, would be more
-convenient. The reason not to build it is `requires`.
-
-`requires` is worth reading only because **every vocabulary has a manifest**. Let
-vocabularies arrive by two different routes and you get vocabularies that cannot be named
-in `requires`, vocabularies that miss the `OperationTable` collision check, and
-vocabularies that never appear in `RuleRuntime.Plugins` — and a rule set stops being a
-document you can read to find out what it needs.
-
-So the difference between the routes stays down to `new` versus a folder scan. A rule set
-requiring `Acme.Deploy.Rules` is then refused by a runtime without it **exactly as it would
-be for a plugin that was missing from the feed**.
+A rule set requiring `Acme.Deploy.Rules` is refused by a runtime without it **exactly as it
+would be for a plugin that was missing from the feed**. The difference between the two
+routes stays down to `new` versus a folder scan.
 
 ### What only an in-process vocabulary can do
 
-A plugin discovered by scanning is required to be public with a parameterless constructor
-(`PluginProbe`), which makes it structurally stateless.
+A plugin discovered by scanning is required to be public with a parameterless constructor,
+which makes it structurally stateless.
 
 Passing an instance lifts that restriction, so a vocabulary **can be handed an immutable
 snapshot loaded at start-up**. A holiday calendar, a price list, an org chart, an ownership
 map — data someone else owns, updated on its own schedule, with no business being carried
 in each individual state document.
 
-### The conventions
+### Vendor-qualify the identifier and the namespace
 
-| | |
-| --- | --- |
-| identifier and namespace | **Vendor-qualify them.** `Acme.Deploy.Rules` and `acme`, not `Rules` and `deploy`. A private vocabulary squatting on a plain name will collide with a published plugin eventually, and by then rule sets are in production |
-| reserved prefix | **Claim none.** One character per plugin and very few that can ever be used; a vocabulary with an audience of one should not spend one |
-| version | what the vocabulary's compatibility is expressed in. Removing an op or changing what one means means a new major (which is how `requires` reads `^`) |
+`Acme.Deploy.Rules` and `acme`, not `Rules` and `deploy`. A vocabulary that squats on a
+plain name will collide with a published plugin eventually, and by then rule sets are in
+production.
 
 ### Purity — this is not a matter of style
 

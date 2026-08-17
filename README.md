@@ -5,11 +5,10 @@ runtime that applies an input to a state, lists every input that is legal from h
 says whether a state is final.
 
 It is not a game engine. Board games are in here because they are unforgiving test cases —
-[Reversi](doc/dsl-example-reversi.md), [chess](doc/dsl-example-chess.md),
-[shogi](doc/dsl-example-shogi.md) — and so, for the opposite reason, are
-[a shift roster](doc/dsl-example-roster.md) and
-[a deployment approval pipeline](doc/dsl-example-deploy.md). The roster rule set has no
-turn, no opponent, no board, and not one `grid.` operation in it.
+[Reversi](sample/Reversi/), [chess](sample/Chess/), [shogi](sample/Shogi/) — and so, for
+the opposite reason, are [a shift roster](sample/Roster/) and
+[a deployment pipeline](sample/Deploy/). The roster rule set has no turn, no opponent, no
+board, and not one `grid.` operation in it.
 
 What a rule set is allowed to say is decided entirely by which plugins are loaded. The core
 provides no operations at all, not even booleans.
@@ -99,45 +98,6 @@ Rulealize.Plugin.Grid` puts the assembly in the application's own output folder,
 is the simpler arrangement when the rules ship with the binary rather than travelling on
 their own schedule. [The standard vocabulary](doc/plugin.md) lists the twelve and what each
 provides.
-
-### Working on the project itself
-
-Fourteen repositories, all cloned side by side: this one, the abstraction, and the twelve
-standard plugins.
-
-```sh
-git clone https://github.com/reny-develop/Rulealize
-git clone https://github.com/reny-develop/Rulealize.Abstraction
-for p in Binding Branch Definition Logic Comparison Arithmetic \
-         TypeSchema Sequence State Grid Tuple Record; do
-  git clone https://github.com/reny-develop/Rulealize.Plugin.$p
-done
-```
-
-`Rulealize.Abstraction` is consumed as a package, and it restores from nuget.org like any
-other. [`NuGet.config`](NuGet.config) adds a folder feed named `LocalNuGet` beside the
-repositories — added to nuget.org rather than replacing it — which is how a change to the
-abstraction is tried out before it is published. Pack it when you have changed it:
-
-```sh
-dotnet pack Rulealize.Abstraction/src/Rulealize.Abstraction -c Release -o LocalNuGet
-
-cd Rulealize
-dotnet test
-dotnet run --project sample/Reversi -- --auto
-dotnet run --project sample/Roster  -- --solve
-dotnet run --project sample/Deploy  -- --policy lockdown --state friday
-```
-
-Nothing here references a plugin at compile time. Both the tests and the samples import
-[`StandardPlugins.props`](StandardPlugins.props), which builds each plugin from its own
-repository and drops the DLL into a `plugin` folder beside the executable, so what runs is
-the same folder scan a deployed application does. Point `PluginRepositoryRoot` elsewhere if
-the plugin repositories are not siblings:
-
-```sh
-dotnet test -p:PluginRepositoryRoot=D:\somewhere\
-```
 
 The five samples are described in [`sample/README.md`](sample/README.md). Read Reversi
 first — it is the shortest complete host there is.
@@ -353,7 +313,14 @@ Everything else in the document is vocabulary. A node is an object carrying an `
 value of `op` selects a factory from a table the plugins filled in, and the rest of the
 object is that plugin's business. The core never sees a plugin type and never learns what
 an operation does — not even that `$board` is shorthand for reading a state field, which is
-a string expansion a plugin registered against a character it reserved.
+a string expansion a plugin registered against a character it reserved. Three of those
+expansions come with the standard vocabulary:
+
+```jsonc
+"$board"    // = { "op": "state.get",  "path": "board" }
+"@at"       // = { "op": "bind.local", "name": "at" }
+"#opponent" // = { "op": "def.ref",    "name": "opponent" }
+```
 
 That is why `requires` is worth reading. It lists the vocabularies a rule set draws on, and
 it can only say something because the standard set is cut finely: a rule set that needs
@@ -392,18 +359,9 @@ What changes is the constructor: a plugin found by scanning is built through a p
 one and has nowhere to receive anything, while this one can be handed a snapshot of data the
 rule set has no business carrying.
 
-Two conventions and one rule make it safe.
-
-- **Vendor-qualify the identifier and the namespace.** `Acme.Deploy.Rules` and `acme`, not
-  `Rules` and `deploy`. A private vocabulary that squats on a plain name will collide with a
-  published plugin eventually, and by then rule sets are in production.
-- **Claim no shorthand character.** There is one per plugin and only a handful that can ever
-  be used. A vocabulary with an audience of one should leave them.
-- **Operations must be pure.** `GetValidInputs` evaluates a guard once per candidate in a
-  parameter's domain, so an operation that reads a clock or a database turns a domain into a
-  query storm and answers one question two ways inside a single call. External data belongs
-  in an immutable snapshot taken before the runtime is built, or in the state document. The
-  current date is a state field; it is not something an operation goes and finds out.
+What makes it safe — vendor-qualifying the identifier and the namespace, and the purity
+every operation registered has to hold to — is in
+[the standard vocabulary](doc/plugin.md#a-vocabulary-that-is-not-distributed).
 
 `requires` keeps working throughout, and that is the point of doing it this way rather than
 inventing a lighter registration path. A rule set naming `Acme.Deploy.Rules` is refused by a
@@ -418,38 +376,24 @@ not on the feed. [`sample/Deploy/`](sample/Deploy/) is the worked example.
 | [`test/`](test/) | xUnit tests — `dotnet test` |
 | [`sample/`](sample/) | one directory per sample application — see [`sample/README.md`](sample/README.md) |
 | [`ruleset/`](ruleset/) | the rule set documents, one copy of each |
-| [`doc/`](doc/README.md) | the DSL specification, the runtime's semantics, and the record of how the design was arrived at |
+| [`doc/`](doc/README.md) | the standard vocabulary, and the runtime's semantics |
 
 A rule set lives in one place and is consumed from two: the test suite compiles every
-document in `ruleset/`, and a sample links the one it demonstrates. They used to be copies
-kept in step by hand, which is why [`RuleSets.props`](RuleSets.props) now exists — "the
-sample runs the document the tests pin down" is worth more as a build fact than as a rule
-somebody remembers.
+document in `ruleset/`, and a sample links the one it demonstrates.
 
 ## Documentation
 
-[`doc/`](doc/README.md) holds three things, and the index there keeps them apart.
+[`doc/`](doc/README.md) holds two things, and both are normative.
 
 **The specification** is what you read to write a rule set: [the value model and the three
 kinds of node](https://github.com/reny-develop/Rulealize.Abstraction/blob/main/doc/value-model.md),
 which `Rulealize.Abstraction` carries because it is what both sides depend on, then [the
 standard vocabulary](doc/plugin.md), whose twelve entries each link to a specification
-shipped from that plugin's own repository. [Reversi](doc/dsl-example-reversi.md) is the walkthrough —
-one whole rule set read from the top — and it is a good test of the boundary because the
-document that describes the game contains no Reversi-specific vocabulary at all.
+released by that plugin's own repository.
 
 **[The runtime's semantics](doc/runtime.md)** is what the library does with a rule set:
 snapshot semantics, definitions and their cache, `validationLimit`, where asynchrony
 belongs, and what has to survive the round trip out through JSON and back.
-
-**The design record** is how it came to be that way, one subject at a time, and none of it
-is required reading. [Chess](doc/dsl-example-chess.md), where a move's destination depends
-on its origin; [shogi](doc/dsl-example-shogi.md), where captured pieces have to be held
-somewhere, and [collections](doc/collections.md), which is what that turned into; [a shift
-roster](doc/dsl-example-roster.md), which is not a game and never mentions a board; and
-[a deployment pipeline](doc/dsl-example-deploy.md), which is the first one whose vocabulary
-is not entirely made of plugins. Each subject has a rule set in [`ruleset/`](ruleset/) and a
-sample that plays with it.
 
 ## License
 
