@@ -49,7 +49,7 @@ DeployPolicy policy = DeployPolicy.Read(
     Path.Combine(AppContext.BaseDirectory, "Policy", $"{policyName}.json"));
 
 // ── 2. Build the vocabulary ────────────────────────────────────────────────────────
-// Twelve plugins found by scanning a folder, then one that was never on disk. Both routes
+// Plugins found by scanning a folder, then one that was never on disk. Both routes
 // end in the same table, and the rule set cannot tell which name came from where.
 RuleRuntime runtime = new RuleRuntime()
     .LoadPluginsFrom(Path.Combine(AppContext.BaseDirectory, "plugin"))
@@ -69,7 +69,7 @@ foreach (var manifest in runtime.Plugins.OrderBy(p => p.Namespace, StringCompare
 }
 
 // ── 3. Compile the rule set ────────────────────────────────────────────────────────
-// `requires` names Acme.Deploy.Rules alongside the ten standard vocabularies it draws on.
+// `requires` names Acme.Deploy.Rules alongside the standard vocabularies it draws on.
 // Dropping the AddPlugin call above makes this line fail, naming it — a private vocabulary
 // is still a declared one.
 RuleContext pipeline = runtime.CreateContext(

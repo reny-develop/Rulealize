@@ -10,7 +10,7 @@ Normative, like the specification.
 
 | Kind | Produces | Appears in |
 | --- | --- | --- |
-| expression | a value | guards, effect arguments, definition bodies, parameter domains, `terminal` |
+| expression | a value | guards, effect arguments, definition bodies, parameter domains, the actor an input names, `terminal` |
 | effect | a write to the state | elements of an input's `effects` |
 | schema | the type of a state field | `state.schema` |
 

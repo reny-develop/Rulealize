@@ -27,7 +27,7 @@ namespace Rulealize.Tests
 
         [Fact]
         public void EveryStandardPluginDeclaresAVersionInTheFirstMajor() =>
-            // Chess and shogi each needed vocabulary Othello never asked for — a sequence
+            // Chess and shogi each needed vocabulary Reversi never asked for — a sequence
             // written out element by element, a board updated as a value, a list, a record —
             // so several of these are past 1.0. All of it was addition, which is what the
             // major staying at one says.

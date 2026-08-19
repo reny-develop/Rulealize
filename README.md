@@ -43,7 +43,7 @@ Rule set: reversi@1.0.0   inputs: place, pass
 Nothing in that sample knows the rules of Reversi. It loads a folder of plugins, compiles a
 document, asks what is legal and applies what was chosen.
 
-> Requires `net10.0`. `Rulealize`, `Rulealize.Cli` and each of the twelve standard plugins
+> Requires `net10.0`. `Rulealize`, `Rulealize.Cli` and each of the standard plugins
 > are on nuget.org — a plugin is an ordinary package, because the runtime finds its assembly
 > by scanning a folder and nothing else about it is special.
 
@@ -99,7 +99,7 @@ is the simpler arrangement when the rules ship with the binary rather than trave
 their own schedule. [The standard vocabulary](doc/plugin.md) lists the twelve and what each
 provides.
 
-The five samples are described in [`sample/README.md`](sample/README.md). Read Reversi
+The samples are described in [`sample/README.md`](sample/README.md). Read Reversi
 first — it is the shortest complete host there is.
 
 ## Write a rule set
@@ -388,7 +388,7 @@ document in `ruleset/`, and a sample links the one it demonstrates.
 **The specification** is what you read to write a rule set: [the value model and the three
 kinds of node](https://github.com/reny-develop/Rulealize.Abstraction/blob/main/doc/value-model.md),
 which `Rulealize.Abstraction` carries because it is what both sides depend on, then [the
-standard vocabulary](doc/plugin.md), whose twelve entries each link to a specification
+standard vocabulary](doc/plugin.md), whose entries each link to a specification
 released by that plugin's own repository.
 
 **[The runtime's semantics](doc/runtime.md)** is what the library does with a rule set:

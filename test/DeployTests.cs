@@ -10,7 +10,7 @@ namespace Rulealize.Tests
     /// <summary>A vocabulary that is not a plugin assembly, and a rule set written against it.</summary>
     /// <remarks>
     /// <para>
-    /// Everything else in this suite is written against the twelve standard plugins, found
+    /// Everything else in this suite is written against the standard plugins, found
     /// by scanning a folder. That is the right picture of a deployment and the wrong picture
     /// of a library: a project holding its own business rules will have operations worth
     /// writing and not worth publishing, and reaches them by implementing

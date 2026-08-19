@@ -6,7 +6,7 @@ using Rulealize.Sample.Deploy;
 
 namespace Rulealize.Tests
 {
-    /// <summary>A runtime with the ten standard plugins, and the rule sets built on them.</summary>
+    /// <summary>A runtime with the standard plugins, and the rule sets built on them.</summary>
     /// <remarks>
     /// <para>
     /// Plugins are loaded from the folder the build dropped them in, by scanning it — the
@@ -105,7 +105,7 @@ namespace Rulealize.Tests
         /// </remarks>
         public RuleContext Roster { get; }
 
-        /// <summary>Gets a runtime whose vocabulary is twelve plugins and one local class.</summary>
+        /// <summary>Gets a runtime whose vocabulary is the standard plugins and one local class.</summary>
         public RuleRuntime DeployRuntime { get; }
 
         /// <summary>Gets the rule set that draws on a vocabulary nobody publishes.</summary>

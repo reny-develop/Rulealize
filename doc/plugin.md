@@ -1,9 +1,8 @@
 # The standard vocabulary
 
-Twelve plugins, each in its own repository, each with its own specification. A specification
-says what one version of one plugin provides — Sequence is at 1.2 and Grid at 1.1 while most
-of the others are still at 1.0 — so each entry below links out to the repository that
-releases it.
+Each plugin lives in its own repository, with its own specification. A specification says
+what one version of one plugin provides, and the versions move independently of each other,
+so each entry below links out to the repository that releases it.
 
 | Plugin | Namespace | Provides |
 | --- | --- | --- |

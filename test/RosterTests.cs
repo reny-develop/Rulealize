@@ -8,7 +8,7 @@ namespace Rulealize.Tests
     /// <summary>A rule set that is not a game, and what it says about the vocabulary.</summary>
     /// <remarks>
     /// <para>
-    /// Othello, chess and shogi are three board games, which is not evidence that the DSL is
+    /// Reversi, chess and shogi are three board games, which is not evidence that the DSL is
     /// general — it is three data points from one corner of the space. This is a shift
     /// roster: no turn, no opponent, no winner, and no grid plugin loaded into it at all.
     /// </para>

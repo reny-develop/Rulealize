@@ -365,7 +365,7 @@
     // ── Move generation ────────────────────────────────────────────────────
 
     // A sliding piece reaches every empty square along a ray, plus the first occupied one
-    // if an enemy stands there. The shape is Othello's capture walk, with the run kept
+    // if an enemy stands there. The shape is Reversi's capture walk, with the run kept
     // rather than the closing stone.
     "slide": {
       "params": ["f", "dirs"],

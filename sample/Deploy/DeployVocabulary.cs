@@ -16,7 +16,7 @@ namespace Rulealize.Sample.Deploy
     /// </summary>
     /// <remarks>
     /// <para>
-    /// An ordinary plugin. It implements the same interface as the twelve standard ones,
+    /// An ordinary plugin. It implements the same interface as the standard ones,
     /// declares the same manifest, claims a namespace the same way, and would be found by
     /// <c>LoadPluginsFrom</c> if it were compiled into an assembly of its own. What is
     /// different is only how it reaches the runtime: <c>runtime.AddPlugin(new
