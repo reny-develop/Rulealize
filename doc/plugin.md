@@ -35,7 +35,7 @@ is the guide it carries.
 
 ```sh
 dotnet new install Rulealize.Templates
-dotnet new rulealize-plugin -n Rulealize.Plugin.Text
+dotnet new rulealize-plugin -n Rulealize.Plugin.Example
 ```
 
 ## A vocabulary that is not distributed
