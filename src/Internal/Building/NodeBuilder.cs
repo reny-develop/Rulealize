@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Reny
 // Licensed under the Apache License, Version 2.0.
 
+using System.Collections.Immutable;
 using System.Text.Json;
 using Rulealize.Abstraction;
 using Rulealize.Abstraction.Building;
@@ -28,12 +29,18 @@ namespace Rulealize.Internal.Building
     internal sealed class NodeBuilder
     {
         private readonly OperationTable _operations;
+        private readonly ImmutableArray<string> _required;
         private SourcePath _path;
         private bool _insideEffect;
 
-        public NodeBuilder(OperationTable operations, StateSchema state, DefinitionTable definitions)
+        public NodeBuilder(
+            OperationTable operations,
+            ImmutableArray<string> required,
+            StateSchema state,
+            DefinitionTable definitions)
         {
             _operations = operations;
+            _required = required;
             State = state;
             Definitions = definitions;
             Scope = new ScopeBuilder(() => _path);
@@ -188,13 +195,76 @@ namespace Rulealize.Internal.Building
         private ExpressionNode BuildString(string text, SourcePath path)
         {
             // A leading character some plugin reserved makes this a shorthand. The core
-            // never learns what any of them expand to.
-            if (text.Length > 0 && _operations.TryGetSugar(text[0], out ISugarExpander? expander))
+            // never learns what any of them expand to — only which plugin was meant.
+            if (text.Length == 0 || !_operations.IsReserved(text[0]))
             {
-                return Enter(path, () => expander!.Expand(new SugarBuildContext(this, path), text));
+                return new LiteralNode(RuleValue.Text(text));
             }
 
-            return new LiteralNode(RuleValue.Text(text));
+            char prefix = text[0];
+            ISugarExpander? expander;
+            string shorthand = text;
+
+            if (Qualifier(text) is string @namespace)
+            {
+                shorthand = string.Concat(text.AsSpan(0, 1), text.AsSpan(@namespace.Length + 2));
+                if (!_operations.TryGetSugar(prefix, @namespace, out expander))
+                {
+                    throw new RuleSetBuildException(
+                        path,
+                        $"'{@namespace}' does not reserve '{prefix}' for a shorthand. {Claimants(prefix)}");
+                }
+            }
+            else
+            {
+                ImmutableArray<string> claimants = _operations.TryGetSugar(prefix, _required, out expander);
+                if (expander is null)
+                {
+                    throw new RuleSetBuildException(
+                        path,
+                        $"'{prefix}' is a shorthand for more than one vocabulary here, so this "
+                        + $"does not say which was meant. Write '{prefix}{claimants[0]}:' — or the "
+                        + $"namespace of whichever of {string.Join(", ", claimants)} you mean — "
+                        + "or name just one of them in 'requires'.");
+                }
+            }
+
+            ISugarExpander expanding = expander!;
+            return Enter(path, () => expanding.Expand(new SugarBuildContext(this, path), shorthand));
+        }
+
+        /// <summary>
+        /// Reads the namespace a shorthand was qualified with, if it was written with one.
+        /// </summary>
+        /// <remarks>
+        /// The grammar is exactly a namespace followed by a colon, and it is consumed
+        /// wherever it appears rather than only where the bare form would have been
+        /// ambiguous — what a rule set means cannot depend on which plugins a folder happens
+        /// to hold. Text a plugin wanted to keep is reachable by qualifying it:
+        /// <c>"$state:a:b"</c> hands <c>"$a:b"</c> to the State vocabulary.
+        /// </remarks>
+        private static string? Qualifier(string text)
+        {
+            int end = 1;
+            if (end >= text.Length || !char.IsAsciiLetterLower(text[end]))
+            {
+                return null;
+            }
+
+            while (end < text.Length && (char.IsAsciiLetterLower(text[end]) || char.IsAsciiDigit(text[end])))
+            {
+                end++;
+            }
+
+            return end < text.Length && text[end] == ':' ? text[1..end] : null;
+        }
+
+        private string Claimants(char prefix)
+        {
+            ImmutableArray<string> claimants = _operations.TryGetSugar(prefix, [], out ISugarExpander? _);
+            return claimants.Length == 1
+                ? $"'{claimants[0]}' is the one vocabulary that does."
+                : $"It is reserved by {string.Join(", ", claimants)}.";
         }
 
         private ExpressionNode BuildRecord(JsonElement element, SourcePath path)
