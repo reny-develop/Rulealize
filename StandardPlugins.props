@@ -30,6 +30,7 @@
     <RulealizePlugin Include="Grid" />
     <RulealizePlugin Include="Tuple" />
     <RulealizePlugin Include="Record" />
+    <RulealizePlugin Include="Chance" />
   </ItemGroup>
 
   <ItemGroup>

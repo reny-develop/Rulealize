@@ -29,6 +29,7 @@ namespace Rulealize.Internal.Building
     {
         private readonly OperationTable _operations;
         private SourcePath _path;
+        private bool _insideEffect;
 
         public NodeBuilder(OperationTable operations, StateSchema state, DefinitionTable definitions)
         {
@@ -44,6 +45,14 @@ namespace Rulealize.Internal.Building
 
         /// <summary>Gets the scope in force where the current node is being built.</summary>
         public ScopeBuilder Scope { get; }
+
+        /// <summary>Gets how many draw nodes have been built so far.</summary>
+        /// <remarks>
+        /// Read either side of an input to find out whether that input draws, which is what
+        /// lets <c>ApplyToState</c> refuse one it cannot resolve alone before it evaluates
+        /// anything. A count rather than a flag only because a counter needs no resetting.
+        /// </remarks>
+        public int Draws { get; private set; }
 
         /// <summary>Builds an expression from JSON found at a location.</summary>
         /// <param name="element">The JSON.</param>
@@ -63,6 +72,26 @@ namespace Rulealize.Internal.Building
                     {
                         NodeBuildContext context = new(this, path, op!, element);
                         return Enter(path, () => factory!(context));
+                    }
+
+                    // A draw produces a value, so this is where it is written. What it is
+                    // not allowed to do is be written anywhere the runtime evaluates while
+                    // sifting candidates or memoizing a result, and that is every expression
+                    // position outside an input's effects.
+                    if (_operations.TryGetDraw(op!, out DrawNodeFactory? draw))
+                    {
+                        if (!_insideEffect)
+                        {
+                            throw new RuleSetBuildException(
+                                path,
+                                $"'{op}' is a draw, and a draw may only appear inside an input's 'effects'. "
+                                + "A guard, a parameter domain, an actor, 'terminal' and a definition body are all "
+                                + "evaluated where there is no outcome to draw for.");
+                        }
+
+                        NodeBuildContext drawContext = new(this, path, op!, element);
+                        Draws++;
+                        return Enter(path, () => draw!(drawContext));
                     }
 
                     throw WrongKind(op!, path, "an expression");
@@ -103,7 +132,20 @@ namespace Rulealize.Internal.Building
             if (_operations.TryGetEffect(op!, out EffectNodeFactory? factory))
             {
                 NodeBuildContext context = new(this, path, op!, element);
-                return Enter(path, () => factory!(context));
+
+                // Everything built from here down is inside an effect, however deep, which
+                // is the one place a draw belongs. Saved and restored rather than simply set,
+                // because an effect may build a child effect.
+                bool outside = _insideEffect;
+                _insideEffect = true;
+                try
+                {
+                    return Enter(path, () => factory!(context));
+                }
+                finally
+                {
+                    _insideEffect = outside;
+                }
             }
 
             throw WrongKind(op!, path, "an effect");
