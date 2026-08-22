@@ -14,7 +14,7 @@
   </ItemGroup>
 
   <!--
-    Builds the twelve standard plugins and drops their DLLs into a plugin folder beside the
+    Builds the standard plugins and drops their DLLs into a plugin folder beside the
     executable. The reference is not a compile-time one, so this program cannot name a
     plugin type; it finds them the way any host does, by scanning the folder.
   -->

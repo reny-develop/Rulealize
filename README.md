@@ -1,21 +1,24 @@
 # Rulealize
 
 **Rules as a JSON document, not as code.** Rulealize compiles a declarative rule set into a
-runtime that applies an input to a state, lists every input that is legal from here, and
-says whether a state is final.
+runtime that applies an input to a state, lists every input that is legal from here, says
+what could happen when the next state is not the mover's to decide, and says whether a state
+is final.
 
 It is not a game engine. Board games are in here because they are unforgiving test cases —
 [Reversi](sample/Reversi/), [chess](sample/Chess/), [shogi](sample/Shogi/) — and so, for
 the opposite reason, are [a shift roster](sample/Roster/) and
 [a deployment pipeline](sample/Deploy/). The roster rule set has no turn, no opponent, no
-board, and not one `grid.` operation in it.
+board, and not one `grid.` operation in it. [Blackjack](sample/Blackjack/) is the one whose
+next state nobody decides: a card comes off the deck, and asking what could happen is a
+different question from asking what is legal.
 
 What a rule set is allowed to say is decided entirely by which plugins are loaded. The core
 provides no operations at all, not even booleans.
 
 ```console
 $ dotnet run --project sample/Reversi -- --auto
-Loaded 12 plugins:
+Loaded 13 plugins:
   bind    Rulealize.Plugin.Binding 1.0.0  shorthand '@'
   branch  Rulealize.Plugin.Branch 1.0.0
   cmp     Rulealize.Plugin.Comparison 1.0.0
@@ -53,6 +56,14 @@ document, asks what is legal and applies what was chosen.
 domains and sifts it with that input's guard. That is the move list for a game AI, the set
 of enabled buttons on a screen, and the branching factor of a scheduling search — and none
 of it is code anybody wrote twice.
+
+**It tells you what could happen next.** Not every next state is decided by whoever moves. A
+card comes off a deck, a die lands — and `GetOutcomes` enumerates the branches with a
+probability on each, so an expectimax over a rule set with chance in it is the same two calls
+in the same order as a minimax over one without. Nothing in the runtime rolls anything: the
+alternatives are enumerated, and picking one of them is a handful of lines in the host. That
+is what keeps an input and an outcome together determining the next state, so a recorded hand
+replays to the state it was recorded against.
 
 **A rule set is data.** It ships, versions and diffs on its own, and the same host binary
 runs a different set of rules. The Deploy sample switches between an ordinary policy and a
@@ -96,7 +107,7 @@ A plugin can also arrive as an ordinary package reference: `dotnet add package
 Rulealize.Plugin.Grid` puts the assembly in the application's own output folder, and
 `LoadPluginsFrom(AppContext.BaseDirectory)` passes over everything that is not a plugin. That
 is the simpler arrangement when the rules ship with the binary rather than travelling on
-their own schedule. [The standard vocabulary](doc/plugin.md) lists the twelve and what each
+their own schedule. [The standard vocabulary](doc/plugin.md) lists them and what each
 provides.
 
 The samples are described in [`sample/README.md`](sample/README.md). Read Reversi
@@ -215,6 +226,31 @@ what makes this the button list for a screen and the branch set for a search.
 The document is [`ruleset/approval.json`](ruleset/approval.json), and
 [`test/ApprovalTests.cs`](test/ApprovalTests.cs) holds it to everything this section claims.
 
+### Walking the tree
+
+Applying a move settles the next state — unless the rules draw something, in which case
+there is more than one state it could arrive at and no way to pick between them that would
+not be the runtime inventing an answer nobody enumerated. So the search asks twice: what may
+be done, and then what may happen.
+
+```csharp
+foreach (ValidInput move in rules.GetValidInputs(state, validationLimit: 128))
+foreach (Outcome outcome in rules.GetOutcomes(move.ToInputDocument(rules.RuleSet), state, outcomeLimit: 64))
+{
+    Walk(outcome.Result.State);   // weighted by outcome.Probability
+}
+```
+
+**That is the traversal for every rule set here.** An input that draws nothing has exactly
+one outcome, of probability one, so the inner loop runs once and nothing about a caller's
+code says whether chance is involved. Chess's `--perft` counts its move tree through this
+loop and still agrees with the published numbers; blackjack's inner loop turns thirteen
+times.
+
+Picking one of the outcomes for real is the host's, and it is where the randomness lives —
+five lines in [`sample/Blackjack/`](sample/Blackjack/), and the only place in the whole
+arrangement that rolls anything.
+
 ## What is checked, and when
 
 Everything the document can settle on its own is settled in `CreateContext`, and the
@@ -247,7 +283,7 @@ built on their doing so.
 
 ## Documents
 
-Three of them — `rulealize/ruleset/v1` above, and the two that travel per call. The core
+Four of them — `rulealize/ruleset/v1` above, and the three that travel per call. The core
 fixes only the frame.
 
 ```jsonc
@@ -255,10 +291,18 @@ fixes only the frame.
 { "$schema": "rulealize/state/v1", "ruleSet": "reversi@1.0.0",
   "data": { "board": { "d4": "white", … }, "turn": "black", "passes": 0 } }
 
-// rulealize/input/v1
+// rulealize/input/v1 — what somebody decided
 { "$schema": "rulealize/input/v1", "ruleSet": "reversi@1.0.0",
   "input": "place", "args": { "at": "d3" } }
+
+// rulealize/outcome/v1 — what the world did about it, for a rule set that draws
+{ "$schema": "rulealize/outcome/v1", "ruleSet": "blackjack@1.0.0",
+  "input": "hit", "draws": ["9"] }
 ```
+
+The third is only needed by a rule set with chance in it, and an outcome with no draws in it
+means the same thing as not passing one — so a caller logging every transition as an input
+and an outcome writes the same pair either way.
 
 How each field inside `data` becomes JSON is decided by the schema node that declared it — a
 board is a sparse coordinate map because a grid plugin says so, and changing it to a dense
@@ -277,8 +321,9 @@ the version's.
 | `RuleRuntime.Plugins` / `RuleRuntime.Operations` | which vocabularies are loaded, and every operation they provide |
 | `RuleRuntime.CreateContext` / `CreateContextAsync` | compile a rule set |
 | `RuleContext.InitialState` | the opening position, as a state document |
-| `RuleContext.ApplyToState` / `ApplyToStateAsync` | apply an input to a state |
+| `RuleContext.ApplyToState` / `ApplyToStateAsync` | apply an input to a state, and an outcome with it where the rules draw |
 | `RuleContext.GetValidInputs` | what is legal from here |
+| `RuleContext.GetOutcomes` | what could happen when one of them is applied, and how likely each of those is |
 | `RuleContext.GetTerminalStatus` | whether a state is final, and its outcome |
 | `PluginRequirement.ReadFrom` | read a document's `requires` — no runtime, no plugin loaded |
 | `PluginResolution.Resolve` | which versions those constraints call for, given what is published |
@@ -288,10 +333,12 @@ are here so that resolving and running cannot read `^1.0` differently
 ([why](doc/runtime.md#requires-read-before-there-is-a-runtime)).
 
 Exceptions: `RuleSetBuildException` for a document that is not a valid rule set,
-`RuleDocumentException` for a state or input document this rule set cannot accept,
+`RuleDocumentException` for a state, input or outcome document this rule set cannot accept,
 `IllegalInputException` for a move the rules do not allow, `RuleEvaluationException` for
 values that make an operation meaningless, and `PluginLoadException` for a set of plugins
-that cannot be used together.
+that cannot be used together. Applying an input that draws without saying what it drew is an
+`InvalidOperationException` — the wrong method rather than a bad document, and refused before
+anything is evaluated.
 
 A context is immutable and holds no position, so one serves any number of concurrent games.
 
@@ -327,7 +374,10 @@ it can only say something because the standard set is cut finely: a rule set tha
 `Rulealize.Plugin.Arithmetic` is one that counts something.
 
 Nodes come in three kinds — expression, effect and schema — and where each may appear is
-enforced at compile time. [`doc/runtime.md`](doc/runtime.md#the-three-kinds-of-node-and-when-things-fail)
+enforced at compile time. Operations come in four: a **draw** builds an expression like
+anything else that produces a value, and is refused everywhere except inside an input's
+`effects`, because everywhere else is evaluated while candidates are being sifted or a
+result memoized. [`doc/runtime.md`](doc/runtime.md#the-three-kinds-of-node-and-when-things-fail)
 has the table.
 
 ## Loading plugins
