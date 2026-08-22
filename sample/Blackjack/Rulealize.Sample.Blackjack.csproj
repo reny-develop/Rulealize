@@ -1,0 +1,30 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <RootNamespace>Rulealize.Sample.Blackjack</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Rulealize.csproj" />
+  </ItemGroup>
+
+  <!--
+    Builds the standard plugins and drops their DLLs into a plugin folder beside the
+    executable. The reference is not a compile-time one, so this program cannot name a
+    plugin type; it finds them the way any host does, by scanning the folder.
+  -->
+  <Import Project="..\..\StandardPlugins.props" />
+
+  <!-- The document the test suite compiles, not a copy of it. -->
+  <ItemGroup>
+    <RulealizeRuleSet Include="blackjack" />
+  </ItemGroup>
+
+  <Import Project="..\..\RuleSets.props" />
+
+</Project>
