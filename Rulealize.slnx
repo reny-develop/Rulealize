@@ -1,7 +1,6 @@
 <Solution>
   <Folder Name="/Solution Items/">
     <File Path=".editorconfig" />
-    <File Path="NuGet.config" />
     <File Path="StandardPlugins.props" />
     <File Path="RuleSets.props" />
     <File Path="README.md" />
