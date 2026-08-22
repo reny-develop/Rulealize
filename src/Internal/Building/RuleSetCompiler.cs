@@ -42,11 +42,11 @@ namespace Rulealize.Internal.Building
             string id = RequireString(document, "id", Root);
             string version = RequireString(document, "version", Root);
 
-            CheckRequirements(document);
+            ImmutableArray<string> required = CheckRequirements(document);
 
             StateSchema schema = new();
             DefinitionTable definitions = new();
-            NodeBuilder builder = new(operations, schema, definitions);
+            NodeBuilder builder = new(operations, required, schema, definitions);
 
             JsonElement state = RequireProperty(document, "state", Root);
             ImmutableArray<RuleValue> initial = CompileState(builder, schema, state);
@@ -127,8 +127,18 @@ namespace Rulealize.Internal.Building
             return required.ToImmutable();
         }
 
-        private void CheckRequirements(JsonElement document)
+        /// <summary>Holds every <c>requires</c> entry to a loaded plugin, and says which they are.</summary>
+        /// <param name="document">The rule set document.</param>
+        /// <returns>The namespace of each plugin named, in the order written.</returns>
+        /// <remarks>
+        /// The namespaces are what the builder needs to tell one shorthand from another when
+        /// two vocabularies reserved the same character. Read here rather than there because
+        /// this is where a requirement has already been resolved to the plugin it names.
+        /// </remarks>
+        private ImmutableArray<string> CheckRequirements(JsonElement document)
         {
+            ImmutableArray<string>.Builder namespaces = ImmutableArray.CreateBuilder<string>();
+
             int index = 0;
             foreach (PluginRequirement required in ReadRequirements(document))
             {
@@ -148,7 +158,11 @@ namespace Rulealize.Internal.Building
                         entryPath.Append("version"),
                         $"this rule set needs {required}, but {manifest.Version} is loaded.");
                 }
+
+                namespaces.Add(manifest.Namespace);
             }
+
+            return namespaces.ToImmutable();
         }
 
         private static ImmutableArray<RuleValue> CompileState(

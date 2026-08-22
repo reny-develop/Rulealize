@@ -369,6 +369,12 @@ expansions come with the standard vocabulary:
 "#opponent" // = { "op": "def.ref",    "name": "opponent" }
 ```
 
+A character is not one plugin's to the exclusion of everybody else's. Two vocabularies may
+reserve `$`, and where both are loaded a rule set says which it meant by naming it:
+`"$state:board"`. The qualifier is read by its own grammar — a namespace and a colon — and
+never by what a plugin folder happens to hold, so what a document means does not change
+when a plugin is added beside it. What changes is whether the bare form still says enough.
+
 That is why `requires` is worth reading. It lists the vocabularies a rule set draws on, and
 it can only say something because the standard set is cut finely: a rule set that needs
 `Rulealize.Plugin.Arithmetic` is one that counts something.
@@ -388,8 +394,9 @@ the interface is already the contract.
 
 `LoadPluginsFrom` takes a DLL or a folder, and skips assemblies with no plugin in them, so
 pointing it at an application's own output folder is harmless. Two plugins claiming one
-namespace, or one shorthand character, are refused when they are loaded rather than when a
-rule set first touches the contested name.
+namespace are refused when they are loaded rather than when a rule set first touches the
+contested name. Two claiming one shorthand character are not refused at all — that is
+settled per document, by the rule set that writes one.
 
 ### Vocabulary an application keeps to itself
 

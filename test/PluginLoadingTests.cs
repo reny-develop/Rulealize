@@ -10,7 +10,9 @@ namespace Rulealize.Tests
     /// <remarks>
     /// The refusals all happen when a plugin is added, not when a rule set first reaches for
     /// a contested name. A namespace collision is a fault in how the application is
-    /// configured and has nothing to do with any document.
+    /// configured and has nothing to do with any document. A shared shorthand character is
+    /// the one thing here that is not a fault at all: nothing about the folder decides it,
+    /// so it is left to the document that writes one.
     /// </remarks>
     public class PluginLoadingTests
     {
@@ -134,14 +136,18 @@ namespace Rulealize.Tests
         }
 
         [Fact]
-        public void TwoPluginsCannotShareAShorthand()
+        public void TwoPluginsMayShareAShorthand()
         {
-            RuleRuntime runtime = new RuleRuntime().AddPlugin(new StubPlugin("A", "one", '%'));
+            // A namespace is one plugin's or the other's, and a character is not. Which of
+            // them a rule set meant is a question about that document, asked where the
+            // literal is read — see ShorthandTests.
+            RuleRuntime runtime = new RuleRuntime()
+                .AddPlugin(new StubPlugin("A", "one", '%'))
+                .AddPlugin(new StubPlugin("B", "two", '%'));
 
-            PluginLoadException exception =
-                Assert.Throws<PluginLoadException>(() => runtime.AddPlugin(new StubPlugin("B", "two", '%')));
-
-            Assert.Contains("'%'", exception.Message, StringComparison.Ordinal);
+            Assert.Equal(
+                ["one", "two"],
+                runtime.Plugins.Select(static plugin => plugin.Namespace).Order(StringComparer.Ordinal));
         }
 
         [Fact]

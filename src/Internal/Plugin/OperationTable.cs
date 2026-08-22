@@ -11,8 +11,14 @@ namespace Rulealize.Internal.Plugin
     /// <remarks>
     /// <para>
     /// The core's entire knowledge of any plugin lives in these four dictionaries: an
-    /// operation name to a factory, and a reserved character to an expander. It never sees a
-    /// plugin's types, and it does not know what any operation does.
+    /// operation name to a factory, and a reserved character to the expanders registered
+    /// against it. It never sees a plugin's types, and it does not know what any operation
+    /// does.
+    /// </para>
+    /// <para>
+    /// More than one plugin may reserve the same character. Which of them a string literal
+    /// meant is settled where the literal is read and not here, so a folder holding two of
+    /// them still loads.
     /// </para>
     /// <para>
     /// A name may be registered as both an expression and an effect. The two are told apart
@@ -26,10 +32,9 @@ namespace Rulealize.Internal.Plugin
         private readonly Dictionary<string, EffectNodeFactory> _effects = new(StringComparer.Ordinal);
         private readonly Dictionary<string, SchemaNodeFactory> _schemas = new(StringComparer.Ordinal);
         private readonly Dictionary<string, DrawNodeFactory> _draws = new(StringComparer.Ordinal);
-        private readonly Dictionary<char, ISugarExpander> _sugar = [];
+        private readonly Dictionary<char, List<SugarClaim>> _sugar = [];
         private readonly Dictionary<string, PluginManifest> _byId = new(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<string, PluginManifest> _byNamespace = new(StringComparer.Ordinal);
-        private readonly Dictionary<char, PluginManifest> _byPrefix = [];
         private readonly List<PluginManifest> _manifests = [];
         private readonly List<OperationDescriptor> _operations = [];
 
@@ -46,7 +51,12 @@ namespace Rulealize.Internal.Plugin
 
         /// <summary>Records a plugin's claims and rejects it when they clash with another's.</summary>
         /// <param name="manifest">The plugin's manifest.</param>
-        /// <exception cref="PluginLoadException">The identifier, namespace or prefix is taken.</exception>
+        /// <exception cref="PluginLoadException">The identifier or namespace is taken.</exception>
+        /// <remarks>
+        /// A shorthand character is not among the things that can be taken. Two plugins
+        /// reserving one character load together, and a rule set that writes the bare form
+        /// where both are present is asked which it meant.
+        /// </remarks>
         public void Claim(PluginManifest manifest)
         {
             if (_byId.TryGetValue(manifest.Id, out PluginManifest? sameId))
@@ -61,19 +71,8 @@ namespace Rulealize.Internal.Plugin
                     $"{manifest.Id} claims the namespace '{manifest.Namespace}', which {sameNamespace.Id} already provides.");
             }
 
-            if (manifest.ReservedPrefix is char prefix
-                && _byPrefix.TryGetValue(prefix, out PluginManifest? samePrefix))
-            {
-                throw new PluginLoadException(
-                    $"{manifest.Id} reserves '{prefix}' for its shorthand, which {samePrefix.Id} already reserves.");
-            }
-
             _byId.Add(manifest.Id, manifest);
             _byNamespace.Add(manifest.Namespace, manifest);
-            if (manifest.ReservedPrefix is char reserved)
-            {
-                _byPrefix.Add(reserved, manifest);
-            }
 
             _manifests.Add(manifest);
         }
@@ -127,12 +126,13 @@ namespace Rulealize.Internal.Plugin
                     $"{manifest.Id} did not declare a reserved prefix, so it cannot register a shorthand.");
             }
 
-            if (_sugar.ContainsKey(prefix))
+            List<SugarClaim> claims = Expanders(prefix);
+            if (claims.Any(claim => string.Equals(claim.Namespace, manifest.Namespace, StringComparison.Ordinal)))
             {
                 throw new InvalidOperationException($"{manifest.Id} has already registered a shorthand for '{prefix}'.");
             }
 
-            _sugar.Add(prefix, expander);
+            claims.Add(new SugarClaim(manifest.Namespace, expander));
         }
 
         /// <summary>Looks up an expression operation.</summary>
@@ -160,11 +160,71 @@ namespace Rulealize.Internal.Plugin
         /// <returns><see langword="true"/> when the operation is a draw.</returns>
         public bool TryGetDraw(string op, out DrawNodeFactory? factory) => _draws.TryGetValue(op, out factory);
 
-        /// <summary>Looks up the expander for a shorthand character.</summary>
+        /// <summary>Says whether any plugin reserved a character.</summary>
         /// <param name="prefix">The leading character of a string literal.</param>
+        /// <returns><see langword="true"/> when at least one plugin reserved it.</returns>
+        /// <remarks>
+        /// Asked before anything else about a string literal, because a character nobody
+        /// reserved makes the whole of it ordinary text and nothing further is read into it.
+        /// </remarks>
+        public bool IsReserved(char prefix) => _sugar.ContainsKey(prefix);
+
+        /// <summary>Looks up the expander a namespace registered against a character.</summary>
+        /// <param name="prefix">The leading character of a string literal.</param>
+        /// <param name="namespace">The namespace written before the colon.</param>
         /// <param name="expander">Receives the expander.</param>
-        /// <returns><see langword="true"/> when some plugin reserved the character.</returns>
-        public bool TryGetSugar(char prefix, out ISugarExpander? expander) => _sugar.TryGetValue(prefix, out expander);
+        /// <returns><see langword="true"/> when that namespace reserved that character.</returns>
+        public bool TryGetSugar(char prefix, string @namespace, out ISugarExpander? expander)
+        {
+            expander = _sugar.TryGetValue(prefix, out List<SugarClaim>? claims)
+                ? claims.FirstOrDefault(claim => string.Equals(claim.Namespace, @namespace, StringComparison.Ordinal))
+                    .Expander
+                : null;
+
+            return expander is not null;
+        }
+
+        /// <summary>Looks up the one expander for a character, among those a rule set may mean.</summary>
+        /// <param name="prefix">The leading character of a string literal.</param>
+        /// <param name="required">
+        /// The namespaces of the plugins the rule set named in <c>requires</c>, which decide
+        /// between claimants when more than one reserved the character.
+        /// </param>
+        /// <param name="expander">Receives the expander when exactly one is meant.</param>
+        /// <returns>The namespaces that reserved the character, in load order.</returns>
+        /// <remarks>
+        /// A character one plugin reserved needs no deciding, and <c>requires</c> is not
+        /// consulted for it — a rule set that leaves a vocabulary out of <c>requires</c> and
+        /// writes its shorthand anyway goes on building exactly as it did.
+        /// </remarks>
+        public ImmutableArray<string> TryGetSugar(
+            char prefix,
+            ImmutableArray<string> required,
+            out ISugarExpander? expander)
+        {
+            expander = null;
+            if (!_sugar.TryGetValue(prefix, out List<SugarClaim>? claims))
+            {
+                return [];
+            }
+
+            if (claims.Count == 1)
+            {
+                expander = claims[0].Expander;
+                return [claims[0].Namespace];
+            }
+
+            List<SugarClaim> named = claims
+                .Where(claim => required.Contains(claim.Namespace, StringComparer.Ordinal))
+                .ToList();
+
+            if (named.Count == 1)
+            {
+                expander = named[0].Expander;
+            }
+
+            return [.. claims.Select(static claim => claim.Namespace)];
+        }
 
         /// <summary>
         /// Says what an operation is, for the message that explains why it cannot appear
@@ -190,6 +250,17 @@ namespace Rulealize.Internal.Plugin
             }
 
             return _draws.ContainsKey(op) ? "a draw" : null;
+        }
+
+        private List<SugarClaim> Expanders(char prefix)
+        {
+            if (!_sugar.TryGetValue(prefix, out List<SugarClaim>? claims))
+            {
+                claims = [];
+                _sugar.Add(prefix, claims);
+            }
+
+            return claims;
         }
 
         private static string Describe(OperationKind kind) => kind switch
@@ -220,5 +291,8 @@ namespace Rulealize.Internal.Plugin
 
             _operations.Add(new OperationDescriptor(qualified, kind, manifest));
         }
+
+        /// <summary>One plugin's shorthand for a character, kept under the namespace that names it.</summary>
+        private readonly record struct SugarClaim(string Namespace, ISugarExpander Expander);
     }
 }
