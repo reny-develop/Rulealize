@@ -19,9 +19,9 @@ namespace Rulealize.Tests
         {
             RuleRuntime runtime = new RuleRuntime().LoadPluginsFrom(StandardRuntime.PluginFolder);
 
-            Assert.Equal(12, runtime.Plugins.Length);
             Assert.Equal(
-                ["bind", "branch", "cmp", "def", "grid", "logic", "math", "rec", "seq", "state", "tuple", "type"],
+                ["bind", "branch", "chance", "cmp", "def", "grid", "logic", "math", "rec", "seq", "state", "tuple",
+                 "type"],
                 runtime.Plugins.Select(static plugin => plugin.Namespace).Order(StringComparer.Ordinal));
         }
 
@@ -72,8 +72,12 @@ namespace Rulealize.Tests
         }
 
         [Fact]
-        public void TheThreeKindsAreReportedApart()
+        public void EachKindIsReportedApart()
         {
+            // A draw is the one that has to be reported, rather than merely being nice to
+            // report. It builds an expression node like anything else that produces a value,
+            // so its kind is the whole of how the runtime knows to refuse it outside an
+            // input's effects — there is nothing about the node itself to go on.
             RuleRuntime runtime = new RuleRuntime().LoadPluginsFrom(StandardRuntime.PluginFolder);
 
             Assert.Contains(
@@ -87,6 +91,11 @@ namespace Rulealize.Tests
             Assert.Contains(
                 runtime.Operations,
                 static operation => operation.Op == "type.int" && operation.Kind == OperationKind.Schema);
+            Assert.Contains(
+                runtime.Operations,
+                static operation => operation.Op == "chance.pick"
+                    && operation.Kind == OperationKind.Draw
+                    && operation.Plugin.Id == "Rulealize.Plugin.Chance");
         }
 
         [Fact]

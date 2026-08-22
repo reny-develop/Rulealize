@@ -363,6 +363,7 @@ namespace Rulealize.Internal.Building
             SourcePath path)
         {
             builder.Scope.BeginFrame();
+            int drawsBefore = builder.Draws;
 
             // Domains are built outside the parameter scope: a candidate is the product of
             // the domains, so no domain may depend on another parameter's value.
@@ -424,6 +425,7 @@ namespace Rulealize.Internal.Building
                 Actor = actor,
                 Guard = guard,
                 Effects = effects,
+                HasDraw = builder.Draws > drawsBefore,
                 FrameSize = builder.Scope.FrameSize
             };
         }

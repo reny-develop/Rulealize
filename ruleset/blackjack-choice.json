@@ -1,0 +1,616 @@
+{
+  "$schema": "rulealize/ruleset/v1",
+  "id": "blackjack-choice",
+  "version": "1.0.0",
+
+  // Blackjack with the card written as a *choice*, which was the only way to say it before
+  // the runtime had a notion of a draw. It is [`blackjack.json`](blackjack.json) with one
+  // difference and no others: where that document draws a rank inside an effect, this one
+  // takes it as a parameter of the input.
+  //
+  // The two are kept side by side because the difference is the whole point of having a
+  // draw, and the difference is easier to believe when the rest is identical. The test suite
+  // plays both and holds them to the same hands, so a change to one that is not made to the
+  // other fails rather than drifts.
+  //
+  // ── What it costs to say it this way ──
+  //
+  // **`hit` reports the player as the actor of thirteen candidates.** A move ann decided and
+  // a card nobody decided have the same shape here, and a caller reading GetValidInputs
+  // cannot tell them apart. In `blackjack.json` `hit` is one candidate and the thirteen are
+  // outcomes.
+  //
+  // **A domain enumerates and does not count.** Four aces and one king left are equally
+  // plausible candidates in this document, because there is nowhere in `params` to say
+  // otherwise. `chance.pick`'s `weight` is what the other one has for that.
+  //
+  // **Every draw multiplies the candidate space.** The opening deal is thirteen candidates
+  // and a turn is twenty-seven, against one and three.
+  //
+  // Everything below this line is the same in both documents.
+  //
+  // **The deck is not in the state.** It is fifty-two cards minus what has been dealt, and
+  // the hands say what has been dealt, so storing it would be storing the same fact twice.
+  // A shoe of six decks is `24` where `4` is written below, in one definition.
+  //
+  // Suits are absent because blackjack has no use for them. Not modelled: splitting,
+  // insurance, surrender, and the dealer's hole card with the peek that goes with it. The
+  // first wants several hands per seat; the rest want concealment, and a state document has
+  // none to offer — what a host shows is the host's business.
+
+  "requires": [
+    { "plugin": "Rulealize.Plugin.Binding", "version": "^1.0" },
+    { "plugin": "Rulealize.Plugin.Branch", "version": "^1.0" },
+    { "plugin": "Rulealize.Plugin.Definition", "version": "^1.0" },
+    { "plugin": "Rulealize.Plugin.Logic", "version": "^1.0" },
+    { "plugin": "Rulealize.Plugin.Comparison", "version": "^1.0" },
+    { "plugin": "Rulealize.Plugin.Arithmetic", "version": "^1.0" },
+    { "plugin": "Rulealize.Plugin.TypeSchema", "version": "^1.1" },
+    { "plugin": "Rulealize.Plugin.Sequence", "version": "^1.3" },
+    { "plugin": "Rulealize.Plugin.State", "version": "^1.0" },
+    { "plugin": "Rulealize.Plugin.Record", "version": "^1.0" }
+  ],
+
+  "state": {
+    "schema": {
+      // A seat is a list element rather than a rec.map key, because who is at the table
+      // arrives in the state document and a key set fixed by the instance is a list.
+      //
+      // Nothing about a hand's total is stored either. The cards say it and `seq.sum` reads
+      // it back out of them.
+      "seats": {
+        "op": "type.list",
+        "element": {
+          "op": "rec.of",
+          "fields": {
+            "id": { "op": "type.string", "minLength": 1 },
+            "bet": { "op": "type.int", "min": 1 },
+            "cards": {
+              "op": "type.list",
+              "element": {
+                "op": "type.enum",
+                "values": ["A", "2", "3", "4", "5", "6", "7", "8", "9", "T", "J", "Q", "K"]
+              }
+            },
+
+            // Standing is a choice and leaves no other trace, so it is the one thing about a
+            // seat's hand that has to be written down. Going bust is arithmetic.
+            "stood": { "op": "type.bool" },
+            "result": {
+              "op": "type.enum",
+              "values": ["win", "lose", "push", "blackjack"],
+              "nullable": true
+            }
+          }
+        }
+      },
+
+      // The dealer is not a seat — no bet, no choice, no say in when it draws — so it is its
+      // hand and nothing else, and every definition that reads a hand reads this one the
+      // same way it reads a seat's `cards`.
+      "dealer": {
+        "op": "type.list",
+        "element": {
+          "op": "type.enum",
+          "values": ["A", "2", "3", "4", "5", "6", "7", "8", "9", "T", "J", "Q", "K"]
+        }
+      }
+    },
+
+    // One table. Another table is another state document against this same rule set — the
+    // people and their bets were never in here.
+    "initial": {
+      "seats": [
+        { "id": "ann", "bet": 10, "cards": [], "stood": false, "result": null },
+        { "id": "bo", "bet": 20, "cards": [], "stood": false, "result": null },
+        { "id": "cy", "bet": 10, "cards": [], "stood": false, "result": null }
+      ],
+      "dealer": []
+    }
+  },
+
+  "definitions": {
+
+    // ── The deck, which is what is not on the table ────────────────────────
+
+    "ranks": { "op": "seq.of", "of": ["A", "2", "3", "4", "5", "6", "7", "8", "9", "T", "J", "Q", "K"] },
+
+    "allCards": {
+      "op": "seq.concat",
+      "of": [
+        {
+          "op": "seq.selectMany", "source": "$seats", "as": "s",
+          "select": { "op": "rec.at", "record": "@s", "key": "cards" }
+        },
+        "$dealer"
+      ]
+    },
+
+    // Four of each rank in a deck, less what is already face up somewhere. This is the
+    // weight of a draw, and it is the whole of what the deck is.
+    "left": {
+      "params": ["rank"],
+      "body": {
+        "op": "math.sub", "left": 4,
+        "right": {
+          "op": "seq.count", "source": "#allCards", "as": "c",
+          "where": { "op": "cmp.eq", "left": "@c", "right": "@rank" }
+        }
+      }
+    },
+
+    // What may still come off the deck. This is the domain of every input that draws, and
+    // it is the expression a chance node takes over.
+    "available": {
+      "op": "seq.where", "source": "#ranks", "as": "r",
+      "predicate": { "op": "cmp.gt", "right": 0,
+                     "left": { "op": "def.call", "def": "left", "args": { "rank": "@r" } } }
+    },
+
+    // An ace counts one here. `best` is where the other ten is offered back.
+    "value": {
+      "params": ["rank"],
+      "body": {
+        "op": "branch.match",
+        "value": "@rank",
+        "cases": {
+          "A": 1, "2": 2, "3": 3, "4": 4, "5": 5, "6": 6, "7": 7,
+          "8": 8, "9": 9, "T": 10, "J": 10, "Q": 10, "K": 10
+        }
+      }
+    },
+
+    // ── A hand ─────────────────────────────────────────────────────────────
+    //
+    // A hand is a list of ranks and nothing else, so each of these takes the dealer's hand or
+    // a seat's `cards` without caring which it was given.
+
+    "plus": {
+      "params": ["cards", "card"],
+      "body": { "op": "seq.concat", "of": ["@cards", { "op": "seq.of", "of": ["@card"] }] }
+    },
+
+    "hardTotal": {
+      "params": ["cards"],
+      "body": {
+        "op": "seq.sum", "source": "@cards", "as": "c",
+        "select": { "op": "def.call", "def": "value", "args": { "rank": "@c" } }
+      }
+    },
+
+    "aceCount": {
+      "params": ["cards"],
+      "body": {
+        "op": "seq.count", "source": "@cards", "as": "c",
+        "where": { "op": "cmp.eq", "left": "@c", "right": "A" }
+      }
+    },
+
+    // One ace may count eleven, and only one, because a second eleven is thirty over.
+    "best": {
+      "params": ["cards"],
+      "body": {
+        "op": "bind.let",
+        "bind": {
+          "hard": { "op": "def.call", "def": "hardTotal", "args": { "cards": "@cards" } },
+          "soft": { "op": "math.add", "of": ["@hard", 10] }
+        },
+        "in": {
+          "op": "branch.if",
+          "cond": {
+            "op": "logic.and",
+            "all": [
+              {
+                "op": "cmp.gte", "right": 1,
+                "left": { "op": "def.call", "def": "aceCount", "args": { "cards": "@cards" } }
+              },
+              { "op": "cmp.lte", "left": "@soft", "right": 21 }
+            ]
+          },
+          "then": "@soft",
+          "else": "@hard"
+        }
+      }
+    },
+
+    // The hard total is the smallest the hand can be, so it is the one that decides this.
+    "busted": {
+      "params": ["cards"],
+      "body": {
+        "op": "cmp.gt", "right": 21,
+        "left": { "op": "def.call", "def": "hardTotal", "args": { "cards": "@cards" } }
+      }
+    },
+
+    "natural": {
+      "params": ["cards"],
+      "body": {
+        "op": "logic.and",
+        "all": [
+          { "op": "cmp.eq", "left": { "op": "seq.count", "source": "@cards" }, "right": 2 },
+          { "op": "cmp.eq", "left": { "op": "def.call", "def": "best", "args": { "cards": "@cards" } }, "right": 21 }
+        ]
+      }
+    },
+
+    "dealerBest": { "op": "def.call", "def": "best", "args": { "cards": "$dealer" } },
+    "dealerBusted": { "op": "def.call", "def": "busted", "args": { "cards": "$dealer" } },
+    "dealerNatural": { "op": "def.call", "def": "natural", "args": { "cards": "$dealer" } },
+
+    // ── Where the table has got to ─────────────────────────────────────────
+    //
+    // None of this is stored. A phase field would have to be advanced by whichever effect
+    // happened to finish a stage, and every one of those effects would need to know which
+    // stage came after it. Reading the phase off the table instead lets each input state its
+    // own precondition, and no effect maintains a cursor.
+
+    "needy": {
+      "op": "seq.where", "source": "$seats", "as": "s",
+      "predicate": {
+        "op": "cmp.lt", "right": 2,
+        "left": { "op": "seq.count", "source": { "op": "rec.at", "record": "@s", "key": "cards" } }
+      }
+    },
+
+    "seatNeedy": { "op": "seq.any", "source": "#needy" },
+
+    "dealerNeedy": {
+      "op": "cmp.lt", "left": { "op": "seq.count", "source": "$dealer" }, "right": 2
+    },
+
+    // Seats first, one at a time, then the dealer. A real table deals a round to everyone and
+    // then a second round; which order the cards leave the deck in makes no difference to the
+    // hands that result, and this order is one definition shorter.
+    "dealing": { "op": "logic.or", "any": ["#seatNeedy", "#dealerNeedy"] },
+
+    // A natural neither acts nor needs to: it is already twenty-one, and hitting it is a move
+    // nobody would make that GetValidInputs would still have to list.
+    "toAct": {
+      "op": "seq.where", "source": "$seats", "as": "s",
+      "predicate": {
+        "op": "logic.and",
+        "all": [
+          { "op": "logic.not", "value": { "op": "rec.at", "record": "@s", "key": "stood" } },
+          {
+            "op": "logic.not",
+            "value": {
+              "op": "def.call", "def": "busted",
+              "args": { "cards": { "op": "rec.at", "record": "@s", "key": "cards" } }
+            }
+          },
+          {
+            "op": "logic.not",
+            "value": {
+              "op": "def.call", "def": "natural",
+              "args": { "cards": { "op": "rec.at", "record": "@s", "key": "cards" } }
+            }
+          }
+        ]
+      }
+    },
+
+    "actingSeat": { "op": "seq.elementAt", "source": "#toAct", "index": 0 },
+
+    // Null when nobody is left to act — seq.elementAt past the end gives Null, and rec.at on
+    // Null gives Null, so there is no emptiness test to write.
+    "acting": { "op": "rec.at", "record": "#actingSeat", "key": "id" },
+
+    // The dealer does not play to an empty table. Every seat busting is the one way a hand
+    // ends without the dealer drawing a card.
+    "anyLive": {
+      "op": "seq.any", "source": "$seats", "as": "s",
+      "predicate": {
+        "op": "logic.not",
+        "value": {
+          "op": "def.call", "def": "busted",
+          "args": { "cards": { "op": "rec.at", "record": "@s", "key": "cards" } }
+        }
+      }
+    },
+
+    // Stands on all seventeen, soft included. Hitting soft seventeen is one more term here,
+    // which is the sort of change a rule set is data for.
+    "dealerDone": { "op": "cmp.gte", "left": "#dealerBest", "right": 17 },
+
+    "settled": {
+      "op": "logic.not",
+      "value": {
+        "op": "seq.any", "source": "$seats", "as": "s",
+        "predicate": { "op": "cmp.isNull", "value": { "op": "rec.at", "record": "@s", "key": "result" } }
+      }
+    },
+
+    "phase": {
+      "op": "branch.if", "cond": "#dealing", "then": "deal",
+      "else": {
+        "op": "branch.if",
+        "cond": { "op": "logic.not", "value": { "op": "cmp.isNull", "value": "#acting" } },
+        "then": "play",
+        "else": {
+          "op": "branch.if",
+          "cond": { "op": "logic.and", "all": ["#anyLive", { "op": "logic.not", "value": "#dealerDone" }] },
+          "then": "dealer",
+          "else": {
+            "op": "branch.if",
+            "cond": { "op": "logic.not", "value": "#settled" },
+            "then": "settle",
+            "else": "done"
+          }
+        }
+      }
+    },
+
+    // ── Writing a seat back ────────────────────────────────────────────────
+
+    "dealt": {
+      "params": ["seat", "card"],
+      "body": {
+        "op": "rec.with", "record": "@seat", "key": "cards",
+        "value": {
+          "op": "def.call", "def": "plus",
+          "args": { "cards": { "op": "rec.at", "record": "@seat", "key": "cards" }, "card": "@card" }
+        }
+      }
+    },
+
+    // The seats are a list, so changing one means rebuilding all of them. Roster rebuilds its
+    // assignments for the same reason.
+    "seatsWith": {
+      "params": ["id", "seat"],
+      "body": {
+        "op": "seq.select", "source": "$seats", "as": "s",
+        "select": {
+          "op": "branch.if",
+          "cond": { "op": "cmp.eq", "left": { "op": "rec.at", "record": "@s", "key": "id" }, "right": "@id" },
+          "then": "@seat",
+          "else": "@s"
+        }
+      }
+    },
+
+    "firstNeedy": { "op": "seq.elementAt", "source": "#needy", "index": 0 },
+
+    // ── Settling ───────────────────────────────────────────────────────────
+    //
+    // What a seat is owed is not here. Blackjack pays three to two and a state document holds
+    // integers, so the payout on an odd bet has nowhere to go. The result and the bet are
+    // what a host needs in order to settle, and the arithmetic is the host's.
+    "outcome": {
+      "params": ["cards"],
+      "body": {
+        "op": "branch.if",
+        "cond": { "op": "def.call", "def": "busted", "args": { "cards": "@cards" } },
+        "then": "lose",
+        "else": {
+          "op": "branch.if",
+          "cond": { "op": "def.call", "def": "natural", "args": { "cards": "@cards" } },
+          "then": { "op": "branch.if", "cond": "#dealerNatural", "then": "push", "else": "blackjack" },
+          "else": {
+            "op": "branch.if",
+            "cond": "#dealerNatural",
+            "then": "lose",
+            "else": {
+              "op": "branch.if",
+              "cond": "#dealerBusted",
+              "then": "win",
+              "else": {
+                "op": "branch.match",
+                "value": {
+                  "op": "cmp.compare",
+                  "left": { "op": "def.call", "def": "best", "args": { "cards": "@cards" } },
+                  "right": "#dealerBest"
+                },
+                "cases": { "gt": "win", "eq": "push", "lt": "lose" }
+              }
+            }
+          }
+        }
+      }
+    },
+
+    "seatsWon": {
+      "op": "seq.count", "source": "$seats", "as": "s",
+      "where": {
+        "op": "logic.or",
+        "any": [
+          { "op": "cmp.eq", "left": { "op": "rec.at", "record": "@s", "key": "result" }, "right": "win" },
+          { "op": "cmp.eq", "left": { "op": "rec.at", "record": "@s", "key": "result" }, "right": "blackjack" }
+        ]
+      }
+    },
+
+    "seatsLost": {
+      "op": "seq.count", "source": "$seats", "as": "s",
+      "where": { "op": "cmp.eq", "left": { "op": "rec.at", "record": "@s", "key": "result" }, "right": "lose" }
+    }
+  },
+
+  // Five of the seven inputs take a card. In `blackjack.json` those five draw one instead,
+  // and nothing else about any of them differs.
+  "inputs": {
+
+    // Two cards to each seat, one at a time. No actor: nobody decides this.
+    "dealSeat": {
+      "params": { "card": { "domain": "#available" } },
+      "when": "#seatNeedy",
+      "effects": [
+        {
+          "op": "state.set", "path": "seats",
+          "value": {
+            "op": "def.call", "def": "seatsWith",
+            "args": {
+              "id": { "op": "rec.at", "record": "#firstNeedy", "key": "id" },
+              "seat": {
+                "op": "def.call", "def": "dealt",
+                "args": {
+                  "seat": "#firstNeedy",
+                  "card": "@card"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+
+    "dealDealer": {
+      "params": { "card": { "domain": "#available" } },
+      "when": { "op": "logic.and", "all": [{ "op": "logic.not", "value": "#seatNeedy" }, "#dealerNeedy"] },
+      "effects": [
+        {
+          "op": "state.set", "path": "dealer",
+          "value": {
+            "op": "def.call", "def": "plus",
+            "args": {
+              "cards": "$dealer",
+              "card": "@card"
+            }
+          }
+        }
+      ]
+    },
+
+    // One input, one decision. What arrives is thirteen outcomes and not thirteen moves.
+    "hit": {
+      "params": { "card": { "domain": "#available" } },
+      "actor": "#acting",
+      "when": { "op": "cmp.eq", "left": "#phase", "right": "play" },
+      "effects": [
+        {
+          "op": "state.set", "path": "seats",
+          "value": {
+            "op": "def.call", "def": "seatsWith",
+            "args": {
+              "id": "#acting",
+              "seat": {
+                "op": "def.call", "def": "dealt",
+                "args": {
+                  "seat": "#actingSeat",
+                  "card": "@card"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+
+    // The one input here that no card comes out of, and the control on everything above: it
+    // has to go on being one move with one outcome.
+    "stand": {
+      "actor": "#acting",
+      "when": { "op": "cmp.eq", "left": "#phase", "right": "play" },
+      "effects": [
+        {
+          "op": "state.set", "path": "seats",
+          "value": {
+            "op": "def.call", "def": "seatsWith",
+            "args": {
+              "id": "#acting",
+              "seat": { "op": "rec.with", "record": "#actingSeat", "key": "stood", "value": true }
+            }
+          }
+        }
+      ]
+    },
+
+    // Double the bet, take exactly one more card, and that is the hand. The guard reads the
+    // card count, which is why the phase is tested first: logic.and is specified to
+    // short-circuit in order, and `#actingSeat` is Null when nobody is acting.
+    "double": {
+      "params": { "card": { "domain": "#available" } },
+      "actor": "#acting",
+      "when": {
+        "op": "logic.and",
+        "all": [
+          { "op": "cmp.eq", "left": "#phase", "right": "play" },
+          {
+            "op": "cmp.eq", "right": 2,
+            "left": { "op": "seq.count", "source": { "op": "rec.at", "record": "#actingSeat", "key": "cards" } }
+          }
+        ]
+      },
+      "effects": [
+        {
+          "op": "state.set", "path": "seats",
+          "value": {
+            "op": "def.call", "def": "seatsWith",
+            "args": {
+              "id": "#acting",
+              "seat": {
+                "op": "rec.with", "key": "stood", "value": true,
+                "record": {
+                  "op": "rec.with", "key": "bet",
+                  "value": {
+                    "op": "math.mul",
+                    "of": [{ "op": "rec.at", "record": "#actingSeat", "key": "bet" }, 2]
+                  },
+                  "record": {
+                    "op": "def.call", "def": "dealt",
+                    "args": {
+                      "seat": "#actingSeat",
+                      "card": "@card"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+
+    // Forced. The dealer has no say in whether it draws, so this input has no guard beyond
+    // the phase and no actor worth naming beyond the house.
+    "dealerHit": {
+      "params": { "card": { "domain": "#available" } },
+      "actor": "dealer",
+      "when": { "op": "cmp.eq", "left": "#phase", "right": "dealer" },
+      "effects": [
+        {
+          "op": "state.set", "path": "dealer",
+          "value": {
+            "op": "def.call", "def": "plus",
+            "args": {
+              "cards": "$dealer",
+              "card": "@card"
+            }
+          }
+        }
+      ]
+    },
+
+    // Every seat at once. Nothing is chosen and nothing is drawn; it is an input of its own
+    // rather than part of the last draw so that the state a caller settles is one it was
+    // handed and could look at first.
+    "settle": {
+      "when": { "op": "cmp.eq", "left": "#phase", "right": "settle" },
+      "effects": [
+        {
+          "op": "state.set", "path": "seats",
+          "value": {
+            "op": "seq.select", "source": "$seats", "as": "s",
+            "select": {
+              "op": "rec.with", "record": "@s", "key": "result",
+              "value": {
+                "op": "def.call", "def": "outcome",
+                "args": { "cards": { "op": "rec.at", "record": "@s", "key": "cards" } }
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+
+  // Not a winner — three seats can end three different ways. The table's outcome is the only
+  // thing about a finished hand that is one value.
+  "terminal": {
+    "when": { "op": "cmp.eq", "left": "#phase", "right": "done" },
+    "result": {
+      "op": "branch.match",
+      "value": { "op": "cmp.compare", "left": "#seatsWon", "right": "#seatsLost" },
+      "cases": { "gt": "players", "eq": "even", "lt": "house" }
+    }
+  }
+}

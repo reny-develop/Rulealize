@@ -31,9 +31,10 @@ namespace Rulealize.Tests
         {
             // The guard asserts the results of math.sub, mul, div, mod, min, max and abs,
             // of cmp.compare, coalesce, lt, lte and gt, of logic.xor and not, of seq.where,
-            // select, any, count and elementAt both in and out of range, and of
-            // grid.directions in two kinds and grid.ray with a length. Seven candidates can
-            // only survive if all of them are right.
+            // select, any, count and elementAt both in and out of range, of seq.sum bare,
+            // with a projection and over an empty sequence, and of grid.directions in two
+            // kinds and grid.ray with a length. Seven candidates can only survive if all of
+            // them are right.
             ValidInputSet moves = Sink.GetValidInputs(Sink.InitialState, 64);
 
             Assert.Equal(7, moves.Count);

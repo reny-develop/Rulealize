@@ -19,6 +19,7 @@ anything a sample does can be read next to its tests.
 | [`Shogi/`](Shogi/) | shogi, including drops — two inputs of different shapes in one rule set | `dotnet run --project sample/Shogi -- --auto` |
 | [`Roster/`](Roster/) | a shift roster, which is not a game at all: no turn, no opponent, no board | `dotnet run --project sample/Roster -- --solve` |
 | [`Deploy/`](Deploy/) | a deployment pipeline, with four operations the host provides itself | `dotnet run --project sample/Deploy -- --auto` |
+| [`Blackjack/`](Blackjack/) | a hand of blackjack, where the next state is not whoever moves' to decide | `dotnet run --project sample/Blackjack -- --auto --odds` |
 
 Each runs interactively when given no arguments.
 
@@ -67,3 +68,21 @@ state field handed to `acme.frozen` as an argument rather than a clock read, bec
 would be read once per candidate too. What the other choice costs, and why the runtime
 allows it, is in
 [the standard vocabulary](../doc/plugin.md#a-vocabulary-that-is-not-distributed).
+
+**Blackjack** is the one where whoever moves does not settle what happens. ann says `hit`
+and the deck says which card, and those are two questions asked with two calls:
+`GetValidInputs` for the move, `GetOutcomes` for the thirteen ranks that could arrive and
+how likely each of them is. Read it after Reversi — the loop is the same two calls in the
+same order, and the only difference is that the inner one turns thirteen times instead of
+once. Chess's `--perft` walks its tree through exactly that loop, and the published numbers
+still agree.
+
+**There is no random number generator below the runtime.** Sampling one of the outcomes is
+five lines in `Program.cs`, marked as such, and it is the only place chance enters. That is
+what keeps a hand replayable: an input document and an outcome document determine the next
+state between them, so a recorded pair produces the state it was recorded against.
+`--seed 7` deals the same hand every time for the same reason.
+
+`--odds` prints, before each decision, the exact chance it busts the hand on the next card.
+No search and no sampling — the outcomes of one move are the whole distribution, and that
+same sum over probability × value is the base case of an expectimax.

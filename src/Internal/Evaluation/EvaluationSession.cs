@@ -2,7 +2,9 @@
 // Licensed under the Apache License, Version 2.0.
 
 using System.Collections.Immutable;
+using Rulealize.Abstraction;
 using Rulealize.Abstraction.Building;
+using Rulealize.Abstraction.Evaluation;
 using Rulealize.Abstraction.Value;
 using Rulealize.Internal.RuleSet;
 
@@ -25,13 +27,31 @@ namespace Rulealize.Internal.Evaluation
     internal sealed class EvaluationSession(
         CompiledDefinitions definitions,
         StateSnapshot snapshot,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        DrawTrail? trail = null)
     {
         private readonly Dictionary<DefinitionCall, RuleValue> _memo = [];
 
         public StateSnapshot Snapshot => snapshot;
 
         public CancellationToken CancellationToken => cancellationToken;
+
+        /// <summary>Resolves a draw against the script this session is running.</summary>
+        /// <param name="candidates">Everything the draw says could come out.</param>
+        /// <param name="origin">Where they came from, for a fault message.</param>
+        /// <returns>The candidate this session is for.</returns>
+        /// <remarks>
+        /// A session covering a candidate sweep or a terminal check has no trail, and no
+        /// draw can reach it either: they are refused outside an input's effects while the
+        /// rule set is compiled. The message below is therefore about a bug in the runtime
+        /// rather than about anything a rule set can write.
+        /// </remarks>
+        public RuleValue Draw(ReadOnlySpan<DrawCandidate> candidates, string origin) =>
+            trail is null
+                ? throw new RuleEvaluationException(
+                    origin,
+                    "A draw was evaluated where there is no outcome for it to be drawing for.")
+                : trail.Take(candidates, origin);
 
         /// <summary>Creates a context over a fresh frame.</summary>
         /// <param name="frameSize">How many local slots the frame needs.</param>

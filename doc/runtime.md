@@ -14,6 +14,13 @@ Normative, like the specification.
 | effect | a write to the state | elements of an input's `effects` |
 | schema | the type of a state field | `state.schema` |
 
+**Three kinds of node, four kinds of operation.** A plugin may also register a **draw**, and
+a draw builds an expression node like anything else that produces a value — so the table
+does not gain a row. What its kind settles is where it may be written: inside an input's
+`effects`, at any depth, and nowhere else. `OperationKind` is therefore no longer synonymous
+with the .NET type of the node, and it is the placement it records rather than the shape.
+[What may happen](#what-may-happen-draws-and-getoutcomes) is the rest of it.
+
 Placement is enforced while the rule set is compiled. So is everything else the document
 can settle on its own: unknown operations, missing keys, an expression where a literal
 belongs, a local nothing declared, an undefined definition, an argument list that does not
@@ -35,8 +42,9 @@ guard against every candidate in a parameter's domain, and a fault that first ap
 the forty-first candidate is a fault that reaches production.
 
 What is left to fail at run time is short: a value of the wrong kind, an ordering
-comparison against null, division by zero, a `branch.match` with no matching case, and a
-set of effects that builds a state the schema forbids. Reading past the end of a sequence
+comparison against null, division by zero, a `branch.match` with no matching case, a draw
+with nothing to draw from, and a set of effects that builds a state the schema forbids.
+Reading past the end of a sequence
 and reading a square off the board are not on that list — they produce null, and rule sets
 are built on their doing so.
 
@@ -100,16 +108,158 @@ corner has to be able to release a shift and back out.
 The method is synchronous on purpose. It performs thousands of node evaluations per call,
 and an asynchronous signature over that path would cost more than it could buy.
 
+## What may happen: draws and `GetOutcomes`
+
+Not every rule set settles its next state from the move alone. A card comes off a deck, a
+die lands: something happens that nobody chose, and the runtime has to be able to say what
+that could have been rather than inventing one of the answers.
+
+`GetValidInputs` says **who may do what**. `GetOutcomes` says **what may then happen**, and
+where each of those leads. A traversal is the two of them in that order:
+
+```csharp
+foreach (ValidInput move in rules.GetValidInputs(state, validationLimit))
+foreach (Outcome outcome in rules.GetOutcomes(move.ToInputDocument(rules.RuleSet), state, outcomeLimit))
+{
+    Walk(outcome.Result.State);   // weighted by outcome.Probability
+}
+```
+
+**And that is the traversal for every rule set, whether it has chance in it or not.** An
+input that draws nothing has exactly one outcome, of probability one and with nothing drawn,
+so the inner loop runs once and there is no branch for a caller to write. Chess's `--perft`
+walks its tree through exactly this and still agrees with the published numbers; blackjack's
+turns thirteen times.
+
+An `Outcome` carries where it leads, so nothing else has to be applied. Enumerating the
+alternatives and applying one is the same work, and asking twice would do it twice.
+
+### Where a draw may be written
+
+Inside an input's `effects`, at any depth. Refused in `when`, `actor`, `params[].domain`,
+`terminal`, and the body of a `definitions` entry — checked when the rule set is compiled,
+with a JSON pointer to the node. Each refusal is a position the runtime evaluates while it
+is sifting candidates or while it is memoizing a result:
+
+| | |
+| --- | --- |
+| a guard | evaluated once per candidate in a domain, with no outcome to be drawing for |
+| a domain | enumerated to form those candidates, and walked again to resolve an argument — a domain that drew would refuse the move it had just offered |
+| `terminal` | asked about a state, and whether a game is over is not a coin toss |
+| a definition body | memoized against its arguments and the snapshot, so a body that drew would answer its first caller and repeat itself to every other one |
+
+A draw does not choose. It works out what could come out and how likely each of those is and
+asks the runtime for one, which is why an operation that read a clock or a random number
+generator would not be implementing this — it would break every guarantee in the table above
+and one more besides, that a recorded transition replays to the state it was recorded
+against.
+
+### A drawn value is used once, where it is drawn
+
+There is no way to write "the card that was just drawn" in a second effect. Effects read the
+state as the input found it, so a second one naming the same draw evaluates it again and
+gets an unrelated value; a draw happens each time control reaches the node, which is also
+what makes a draw inside a projection over three seats three draws rather than one.
+
+**An input that draws is therefore an input with one effect that uses what it drew**, and a
+rule set that seems to need two is usually a rule set with a redundant field. Blackjack is
+the worked case: taking a card out of the deck and putting it in a hand cannot be written as
+two effects, and it does not have to be, because the deck is fifty-two cards minus what has
+been dealt and the hands already say what has been dealt. Deriving it is not a way around
+the constraint; it is what the constraint was pointing at.
+
+### The outcome document
+
+An input document says what somebody decided. An outcome document says what the world did
+about it, as the values that were drawn in the order they were drawn.
+
+```jsonc
+// rulealize/outcome/v1
+{ "$schema": "rulealize/outcome/v1", "ruleSet": "blackjack@1.0.0",
+  "input": "hit", "draws": ["9"] }
+```
+
+The two together determine the transition exactly, so `ApplyToState(input, state, outcome)`
+produces the state the outcome described, however long afterwards. That is what an audit
+trail over a rule set with chance in it is made of, and it is why the runtime never
+generates anything: a transition nobody enumerated could not be recorded, and a recorded one
+that re-rolled would not be a record.
+
+An outcome with no draws in it means the same thing as not passing one, so the three-document
+overload subsumes the two-document one and a caller logging every transition writes the same
+pair whether the rule set draws anything or not. The two-document overload refuses an input
+that draws — from the document, before anything is evaluated, because `CreateContext` already
+settled which inputs those are.
+
+Drawn values survive the round trip on the same terms as arguments
+([below](#arguments-have-to-survive-the-round-trip)): a number goes out as a number, only a
+value JSON has no form for travels as text, and what gets bound coming back is the value the
+draw produced rather than its spelling. A value with no text form at all cannot be drawn.
+
+### How the branches are found
+
+Where the draws are is not known before the effects are evaluated. One may sit inside a
+branch an earlier draw decided, and its candidates may be what that draw left behind — so a
+branch is found by running the effects with a script of choices and seeing where they stop,
+then extending the script and running them again from the start. Expressions are pure and
+the draft is thrown away, so re-running costs nothing but time.
+
+The search is best-first on the probability of the branch so far. Extending a branch can only
+make it less likely, so whatever is popped is at least as likely as anything still queued:
+**outcomes come back in descending order of probability**, without a sort, and ties break by
+arrival so that two runs of one search agree.
+
+`OutcomeSet.Evaluated` is how many times the effects were run, which exceeds `Count` whenever
+there is a draw. Blackjack's `cascade`-shaped case — draw one of three, then one of that many
+— is six outcomes and ten runs.
+
+### The limit counts outcomes, and `Coverage` is why
+
+`outcomeLimit` bounds how many outcomes come back, not how much work is done. That is a
+different quantity from `validationLimit` despite the similar name, and the difference is not
+cosmetic:
+
+| | |
+| --- | --- |
+| a truncated `ValidInputSet` | a subset of the legal moves. Still a set of legal moves, and every entry in it is right |
+| a truncated `OutcomeSet` | a probability distribution that no longer sums to one |
+
+`Truncated` cannot say the second thing on its own, so `Coverage` reports how much of the
+probability the outcomes account for. A search deciding whether to trust a result needs the
+number and not the flag, and the descending order is what makes the surviving part the part
+worth having.
+
+Counting outcomes rather than evaluations is also what makes the guarantee below hold for
+every limit rather than for large enough ones.
+
+### Two invariants a caller may rely on
+
+- **An input the rules allow has at least one outcome.** There is no empty answer to check
+  for. `GetOutcomes` either returns outcomes or throws.
+- **A draw with nothing to draw from is a fault.** Not an absence of outcomes: it means a
+  guard did not say the source could be empty, and reporting it where it happened is what
+  makes the first invariant worth relying on. A candidate whose weight is zero is a different
+  matter and simply does not appear — none of that rank left is an ordinary state of affairs.
+
+A branch whose effects build a state the schema forbids is a fault too, and the whole call
+fails rather than the branch being dropped. Dropping it would turn the schema into something
+that silently reweights a distribution, and a caller could not tell that from a draw that
+genuinely could not happen.
+
+`GetOutcomes` is synchronous for the reason `GetValidInputs` is: it runs an input's effects
+once per branch of its outcome tree, and nothing on that path is I/O.
+
 ## Where asynchrony belongs
 
 At the boundary, and nowhere else. Evaluation is pure computation over documents that are
 already in memory, so the methods that take a `string` are synchronous — `CreateContext`,
-`ApplyToState`, `GetValidInputs`, `GetTerminalStatus`. An `Async` suffix over a body that
-can only ever return an already-completed task tells the caller something untrue about
-where it may yield.
+`ApplyToState`, `GetValidInputs`, `GetOutcomes`, `GetTerminalStatus`. An `Async` suffix over
+a body that can only ever return an already-completed task tells the caller something untrue
+about where it may yield.
 
 Reading a document off a stream genuinely is I/O, and that is what the asynchronous
-overloads are for: `CreateContextAsync(Stream)` and `ApplyToStateAsync(Stream, Stream)`.
+overloads are for: `CreateContextAsync(Stream)`, `ApplyToStateAsync(Stream, Stream)` and
+`ApplyToStateAsync(Stream, Stream, Stream)`.
 They await the read and then run the same synchronous evaluation.
 
 ## `requires`, read before there is a runtime
@@ -171,6 +321,14 @@ place to disagree.
 A value with neither a JSON form nor a canonical text form therefore cannot be an input
 argument at all. A record is the case that comes up: a domain returning one fails when the
 argument is resolved, and a compound argument is a tuple instead.
+
+**A drawn value makes the same trip on the same terms.** `GetOutcomes` hands back what
+happened and `ApplyToState` has to be able to replay it, so the rules above hold word for
+word with "the domain" read as "what could have come out of that draw" — including the last
+one, which is why a draw producing a record fails where it is drawn rather than where it
+would have been written down. Both directions go through one implementation, because two
+would eventually disagree about a coordinate and the disagreement would surface as a replay
+that did not replay.
 
 ## Versioning of a state document
 

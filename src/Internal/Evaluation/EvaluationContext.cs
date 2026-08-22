@@ -51,6 +51,10 @@ namespace Rulealize.Internal.Evaluation
         public RuleValue Invoke(DefinitionDescriptor definition, ReadOnlySpan<RuleValue> arguments) =>
             session.Invoke(definition, arguments);
 
+        /// <inheritdoc />
+        public RuleValue Draw(ReadOnlySpan<DrawCandidate> candidates, string origin) =>
+            session.Draw(candidates, origin);
+
         /// <summary>Writes a value into the frame before evaluation starts.</summary>
         /// <param name="slot">The slot.</param>
         /// <param name="value">The value.</param>

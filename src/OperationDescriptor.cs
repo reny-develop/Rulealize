@@ -5,11 +5,19 @@ using Rulealize.Abstraction.Plugin;
 
 namespace Rulealize
 {
-    /// <summary>Which of the three kinds of node an operation builds.</summary>
+    /// <summary>What an operation is, which is to say where it may be written.</summary>
     /// <remarks>
+    /// <para>
     /// Where each kind may appear is fixed by the core and checked when a rule set is
     /// compiled, which is why an operation's kind is worth reporting: it is the whole of
     /// what the core knows about an operation beyond its name.
+    /// </para>
+    /// <para>
+    /// Three of the four name the kind of node the operation builds.
+    /// <see cref="Draw"/> does not — it builds an expression like anything else that
+    /// produces a value, and what makes it its own kind is that it may be written in one
+    /// place and not the others.
+    /// </para>
     /// </remarks>
     public enum OperationKind
     {
@@ -20,7 +28,16 @@ namespace Rulealize
         Effect,
 
         /// <summary>Declares the shape of a state field. An entry in <c>state.schema</c>.</summary>
-        Schema
+        Schema,
+
+        /// <summary>Resolves something nobody chose. Only inside an input's <c>effects</c>.</summary>
+        /// <remarks>
+        /// A draw produces a value and is an expression by every other measure. It is kept
+        /// out of guards, domains, the actor, <c>terminal</c> and definition bodies because
+        /// those are evaluated while candidates are being sifted and while results are being
+        /// memoized, and neither survives a value the state snapshot does not settle.
+        /// </remarks>
+        Draw
     }
 
     /// <summary>One operation a loaded plugin registered.</summary>

@@ -24,8 +24,8 @@
     <!--
       deploy.json is written against a vocabulary that is not a plugin assembly and never
       will be: it is a class in the Deploy sample, handed to a runtime with AddPlugin. A
-      compile-time reference is exactly right here and would be wrong for the twelve — the
-      whole point of an in-process vocabulary is that the host names its type.
+      compile-time reference is exactly right here and would be wrong for the standard
+      plugins — the whole point of an in-process vocabulary is that the host names its type.
     -->
     <ProjectReference Include="..\sample\Deploy\Rulealize.Sample.Deploy.csproj" />
   </ItemGroup>
@@ -47,6 +47,8 @@
     <RulealizeRuleSet Include="chess" />
     <RulealizeRuleSet Include="shogi" />
     <RulealizeRuleSet Include="roster" />
+    <RulealizeRuleSet Include="blackjack" />
+    <RulealizeRuleSet Include="blackjack-choice" />
     <RulealizeRuleSet Include="deploy" />
     <RulealizeRuleSet Include="kitchen-sink" />
   </ItemGroup>

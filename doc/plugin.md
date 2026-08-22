@@ -18,6 +18,7 @@ so each entry below links out to the repository that releases it.
 | [Grid](https://github.com/reny-develop/Rulealize.Plugin.Grid/blob/main/doc/specification.md) | `grid` | two-dimensional boards, coordinates, directions |
 | [Tuple](https://github.com/reny-develop/Rulealize.Plugin.Tuple/blob/main/doc/specification.md) | `tuple` | a compound value that has a canonical text form |
 | [Record](https://github.com/reny-develop/Rulealize.Plugin.Record/blob/main/doc/specification.md) | `rec` | records in the state, read and written by a computed key |
+| [Chance](https://github.com/reny-develop/Rulealize.Plugin.Chance/blob/main/doc/specification.md) | `chance` | a weighted draw, which the runtime enumerates rather than rolls |
 
 Every specification assumes two documents, and both are in `Rulealize.Abstraction` because
 both describe types that package defines:
@@ -39,7 +40,7 @@ dotnet new rulealize-plugin -n Rulealize.Plugin.Example
 
 ## A vocabulary that is not distributed
 
-The twelve above are found as DLLs in a folder. But `RuleRuntime.AddPlugin` takes an
+The vocabularies above are found as DLLs in a folder. But `RuleRuntime.AddPlugin` takes an
 **instance**, so a vocabulary does not have to be an assembly on disk to be one.
 
 ```csharp

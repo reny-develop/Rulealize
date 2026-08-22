@@ -23,6 +23,8 @@ namespace Rulealize.Internal.Plugin
 
         public void AddSchema(string name, SchemaNodeFactory factory) => table.AddSchema(manifest, name, factory);
 
+        public void AddDraw(string name, DrawNodeFactory factory) => table.AddDraw(manifest, name, factory);
+
         public void AddSugar(ISugarExpander expander)
         {
             ArgumentNullException.ThrowIfNull(expander);

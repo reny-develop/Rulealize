@@ -1,7 +1,7 @@
 {
   "$schema": "rulealize/ruleset/v1",
   "id": "kitchen-sink",
-  "version": "2.1.0",
+  "version": "2.2.0",
 
   "requires": [
     { "plugin": "Rulealize.Plugin.Binding",    "version": "^1.0" },
@@ -11,7 +11,7 @@
     { "plugin": "Rulealize.Plugin.Comparison", "version": "^1.0" },
     { "plugin": "Rulealize.Plugin.Arithmetic", "version": "^1.0" },
     { "plugin": "Rulealize.Plugin.TypeSchema", "version": "^1.0" },
-    { "plugin": "Rulealize.Plugin.Sequence",   "version": "^1.0" },
+    { "plugin": "Rulealize.Plugin.Sequence",   "version": "^1.3" },
     { "plugin": "Rulealize.Plugin.State",      "version": "^1.0" },
     { "plugin": "Rulealize.Plugin.Grid",       "version": "^1.0" }
   ],
@@ -68,6 +68,11 @@
       ]
     },
 
+    "summed":    { "op": "seq.sum", "source": "#eastRuns" },
+    "weighted":  { "op": "seq.sum", "source": "#marks", "as": "m",
+                   "select": { "op": "branch.match", "value": "@m",
+                               "cases": { "x": 10, "o": 1 } } },
+
     "coalesced": { "op": "cmp.coalesce", "of": ["$note", "fallback"] },
     "parity":    { "op": "logic.xor", "of": [true, false, true] },
     "shortRay":  { "op": "seq.count",
@@ -99,6 +104,9 @@
           { "op": "cmp.eq", "left": "#verdict", "right": "other" },
           { "op": "cmp.eq", "left": "#ordering", "right": "gt" },
           { "op": "cmp.eq", "left": { "op": "seq.count", "source": "#occupied" }, "right": 2 },
+          { "op": "cmp.eq", "left": "#summed", "right": 2 },
+          { "op": "cmp.eq", "left": "#weighted", "right": 11 },
+          { "op": "cmp.eq", "left": { "op": "seq.sum", "source": { "op": "seq.empty" } }, "right": 0 },
           { "op": "seq.any", "source": "#marks", "as": "m",
             "predicate": { "op": "cmp.eq", "left": "@m", "right": "o" } },
           { "op": "cmp.lte", "left": { "op": "seq.elementAt", "source": "#eastRuns", "index": 1 }, "right": 0 },

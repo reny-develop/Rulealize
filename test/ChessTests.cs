@@ -99,6 +99,17 @@ namespace Rulealize.Tests
         public void DeepPerft(bool kiwipete, int depth, int expected) =>
             Assert.Equal(expected, Perft(kiwipete ? Kiwipete : standard.Chess.InitialState, depth));
 
+        [Theory]
+        [InlineData(2, 400)]
+        [InlineData(3, 8902)]
+        public void PerftIsTheSameTreeWalkedThroughEachMovesOutcomes(int depth, int expected) =>
+            // A traversal is GetValidInputs and then GetOutcomes, whatever the rule set. Chess
+            // is where that costs nothing and has to be seen to: every move here has exactly
+            // one outcome, of probability one, so the tree is the tree it always was and the
+            // published numbers are the check. The same loop over blackjack turns thirteen
+            // times, and the caller writes no branch to tell the two apart.
+            Assert.Equal(expected, PerftThroughOutcomes(standard.Chess.InitialState, depth));
+
         [Fact]
         public void APinnedPieceCannotMove()
         {
@@ -421,6 +432,34 @@ namespace Rulealize.Tests
                 total += Perft(
                     standard.Chess.ApplyToState(move.ToInputDocument(standard.Chess.RuleSet), state).State,
                     depth - 1);
+            }
+
+            return total;
+        }
+
+        /// <summary>The same count, reached the way a rule set with chance in it has to be walked.</summary>
+        /// <remarks>
+        /// Every difference between this and <see cref="Perft"/> is the inner loop, and on a
+        /// rule set with no draw in it that loop runs once. Which is the claim: putting
+        /// <c>GetOutcomes</c> into a traversal costs nothing where there is nothing to
+        /// resolve.
+        /// </remarks>
+        private int PerftThroughOutcomes(string state, int depth)
+        {
+            ValidInputSet moves = standard.Chess.GetValidInputs(state, Limit);
+            if (depth <= 1)
+            {
+                return moves.Count;
+            }
+
+            int total = 0;
+            foreach (ValidInput move in moves)
+            {
+                string document = move.ToInputDocument(standard.Chess.RuleSet);
+                foreach (Outcome outcome in standard.Chess.GetOutcomes(document, state, Limit))
+                {
+                    total += PerftThroughOutcomes(outcome.Result.State, depth - 1);
+                }
             }
 
             return total;

@@ -9,6 +9,7 @@
   <Project Path="src/Rulealize.csproj" />
   <Project Path="test/Rulealize.Tests.csproj" />
   <Folder Name="/sample/">
+    <Project Path="sample/Blackjack/Rulealize.Sample.Blackjack.csproj" />
     <Project Path="sample/Chess/Rulealize.Sample.Chess.csproj" />
     <Project Path="sample/Deploy/Rulealize.Sample.Deploy.csproj" />
     <Project Path="sample/Reversi/Rulealize.Sample.Reversi.csproj" />

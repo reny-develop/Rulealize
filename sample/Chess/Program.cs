@@ -150,6 +150,11 @@ int Perft(int target)
     Console.WriteLine($"  {leaves:N0} leaves in {clock.Elapsed.TotalSeconds:F1}s{expected}");
     return 0;
 
+    // GetValidInputs says who may do what and GetOutcomes says what may then happen, and a
+    // traversal is those two in that order however the rules are written. Chess has no chance
+    // in it anywhere, so the inner loop runs exactly once per move with a probability of one
+    // — the count below is the same count it was when this called ApplyToState directly, and
+    // the same loop over blackjack turns thirteen times.
     long Count(string position, int remaining)
     {
         ValidInputSet moves = chess.GetValidInputs(position, Limit);
@@ -161,7 +166,10 @@ int Perft(int target)
         long total = 0;
         foreach (ValidInput move in moves)
         {
-            total += Count(chess.ApplyToState(move.ToInputDocument(chess.RuleSet), position).State, remaining - 1);
+            foreach (Outcome outcome in chess.GetOutcomes(move.ToInputDocument(chess.RuleSet), position, Limit))
+            {
+                total += Count(outcome.Result.State, remaining - 1);
+            }
         }
 
         return total;

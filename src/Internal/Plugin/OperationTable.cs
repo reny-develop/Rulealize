@@ -25,6 +25,7 @@ namespace Rulealize.Internal.Plugin
         private readonly Dictionary<string, ExpressionNodeFactory> _expressions = new(StringComparer.Ordinal);
         private readonly Dictionary<string, EffectNodeFactory> _effects = new(StringComparer.Ordinal);
         private readonly Dictionary<string, SchemaNodeFactory> _schemas = new(StringComparer.Ordinal);
+        private readonly Dictionary<string, DrawNodeFactory> _draws = new(StringComparer.Ordinal);
         private readonly Dictionary<char, ISugarExpander> _sugar = [];
         private readonly Dictionary<string, PluginManifest> _byId = new(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<string, PluginManifest> _byNamespace = new(StringComparer.Ordinal);
@@ -104,6 +105,17 @@ namespace Rulealize.Internal.Plugin
         public void AddSchema(PluginManifest manifest, string name, SchemaNodeFactory factory) =>
             Add(_schemas, manifest, name, factory, OperationKind.Schema);
 
+        /// <summary>Registers a draw operation.</summary>
+        /// <param name="manifest">The registering plugin.</param>
+        /// <param name="name">The unqualified name.</param>
+        /// <param name="factory">The factory.</param>
+        /// <remarks>
+        /// A table of its own even though what it builds is an expression node, because that
+        /// is the whole of how the builder knows to refuse it outside an input's effects.
+        /// </remarks>
+        public void AddDraw(PluginManifest manifest, string name, DrawNodeFactory factory) =>
+            Add(_draws, manifest, name, factory, OperationKind.Draw);
+
         /// <summary>Registers a shorthand expander for the character a plugin reserved.</summary>
         /// <param name="manifest">The registering plugin.</param>
         /// <param name="expander">The expander.</param>
@@ -142,6 +154,12 @@ namespace Rulealize.Internal.Plugin
         /// <returns><see langword="true"/> when the operation is a schema.</returns>
         public bool TryGetSchema(string op, out SchemaNodeFactory? factory) => _schemas.TryGetValue(op, out factory);
 
+        /// <summary>Looks up a draw operation.</summary>
+        /// <param name="op">The qualified operation name.</param>
+        /// <param name="factory">Receives the factory.</param>
+        /// <returns><see langword="true"/> when the operation is a draw.</returns>
+        public bool TryGetDraw(string op, out DrawNodeFactory? factory) => _draws.TryGetValue(op, out factory);
+
         /// <summary>Looks up the expander for a shorthand character.</summary>
         /// <param name="prefix">The leading character of a string literal.</param>
         /// <param name="expander">Receives the expander.</param>
@@ -166,13 +184,19 @@ namespace Rulealize.Internal.Plugin
                 return "an effect";
             }
 
-            return _schemas.ContainsKey(op) ? "a schema" : null;
+            if (_schemas.ContainsKey(op))
+            {
+                return "a schema";
+            }
+
+            return _draws.ContainsKey(op) ? "a draw" : null;
         }
 
         private static string Describe(OperationKind kind) => kind switch
         {
             OperationKind.Expression => "expression",
             OperationKind.Effect => "effect",
+            OperationKind.Draw => "draw",
             _ => "schema"
         };
 

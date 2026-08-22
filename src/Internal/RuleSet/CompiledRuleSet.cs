@@ -91,6 +91,15 @@ namespace Rulealize.Internal.RuleSet
 
         public required ImmutableArray<EffectNode> Effects { get; init; }
 
+        /// <summary>Gets whether anything in this input's effects resolves a chance event.</summary>
+        /// <remarks>
+        /// Settled while the document is compiled, which is what lets the two-document
+        /// <c>ApplyToState</c> refuse an input it cannot resolve on its own before it has
+        /// evaluated a thing. An input without one has exactly one outcome, so
+        /// <c>GetOutcomes</c> can answer it without enumerating anything.
+        /// </remarks>
+        public required bool HasDraw { get; init; }
+
         /// <summary>Gets the number of local slots this input's expressions need.</summary>
         public required int FrameSize { get; init; }
 

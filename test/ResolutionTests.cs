@@ -150,6 +150,36 @@ namespace Rulealize.Tests
         }
 
         [Fact]
+        public void ADocumentThatDrawsAsksForTheVocabularyThatDraws()
+        {
+            // What a tool assembling a plugin folder has to be told, before there is a runtime
+            // and before anything is loaded: a rule set with chance in it names the vocabulary
+            // that provides it in `requires`, like any other, and resolving it picks up the
+            // draw alongside the rest.
+            Dictionary<string, IReadOnlyCollection<Version>> published = standard.Runtime.Plugins
+                .ToDictionary(
+                    static plugin => plugin.Id,
+                    static plugin => (IReadOnlyCollection<Version>)[plugin.Version],
+                    StringComparer.OrdinalIgnoreCase);
+
+            PluginResolution resolution = PluginResolution.Resolve(
+                PluginRequirement.ReadFrom(StandardRuntime.ReadRuleSet("blackjack.json")),
+                published);
+
+            Assert.True(resolution.IsComplete);
+            Assert.Contains(resolution.Plugins, plugin => plugin.Plugin == "Rulealize.Plugin.Chance");
+
+            // And the same game without a draw in it asks for one vocabulary less.
+            PluginResolution choice = PluginResolution.Resolve(
+                PluginRequirement.ReadFrom(StandardRuntime.ReadRuleSet("blackjack-choice.json")),
+                published);
+
+            Assert.True(choice.IsComplete);
+            Assert.Equal(resolution.Plugins.Length - 1, choice.Plugins.Length);
+            Assert.DoesNotContain(choice.Plugins, plugin => plugin.Plugin == "Rulealize.Plugin.Chance");
+        }
+
+        [Fact]
         public void ADocumentWhoseVocabularyIsNotAllPublishedResolvesAsFarAsItCan()
         {
             // sample/Deploy names Acme.Deploy.Rules, which is correctly on no feed. That the
