@@ -30,6 +30,8 @@ namespace Rulealize.Tests
             Chess = Runtime.CreateContext(ReadRuleSet("chess.json"));
             Shogi = Runtime.CreateContext(ReadRuleSet("shogi.json"));
             Roster = Runtime.CreateContext(ReadRuleSet("roster.json"));
+            Blackjack = Runtime.CreateContext(ReadRuleSet("blackjack.json"));
+            BlackjackChoice = Runtime.CreateContext(ReadRuleSet("blackjack-choice.json"));
 
             // The one rule set here whose vocabulary is not entirely on disk. Its own
             // runtime, because AddPlugin adds to the runtime it is called on and the other
@@ -40,6 +42,7 @@ namespace Rulealize.Tests
                 .AddPlugin(new DeployVocabulary(StandardPolicy));
 
             Deploy = DeployRuntime.CreateContext(ReadRuleSet("deploy.json"));
+            ChanceLab = Runtime.CreateContext(ChanceLabDocument);
         }
 
         /// <summary>Gets the policy the deploy tests are written against.</summary>
@@ -105,6 +108,26 @@ namespace Rulealize.Tests
         /// </remarks>
         public RuleContext Roster { get; }
 
+        /// <summary>Gets the rule set that has chance in it.</summary>
+        /// <remarks>
+        /// Blackjack. Every other rule set here is decided entirely by whoever moves; this one
+        /// turns on a card nobody picked. <c>hit</c> is one candidate and the thirteen ranks
+        /// that could arrive are its outcomes, which is what a rule set with a draw in it
+        /// looks like and what <c>GetOutcomes</c> is for.
+        /// </remarks>
+        public RuleContext Blackjack { get; }
+
+        /// <summary>Gets the same game with the card written as a choice.</summary>
+        /// <remarks>
+        /// The card is a parameter of the input that draws it, which was the only way to say
+        /// it before there was a draw: <c>GetValidInputs</c> lists thirteen hits that differ
+        /// only in what the deck produced, all of them reported as the player's. It is here
+        /// as the control — the same hands have to come out either way, and holding two
+        /// spellings of one game to the same answers is a stronger check than either could
+        /// be on its own.
+        /// </remarks>
+        public RuleContext BlackjackChoice { get; }
+
         /// <summary>Gets a runtime whose vocabulary is the standard plugins and one local class.</summary>
         public RuleRuntime DeployRuntime { get; }
 
@@ -116,6 +139,87 @@ namespace Rulealize.Tests
         /// packaging. This one has four of them.
         /// </remarks>
         public RuleContext Deploy { get; }
+
+        /// <summary>Gets the rule set every outcome is measured on.</summary>
+        /// <remarks>
+        /// Not in <c>ruleset/</c> with the others, because it demonstrates nothing and is not
+        /// a document anybody would want to read. It is a bench: four inputs, one of which
+        /// draws nothing, one that draws evenly, one that draws weighted, and one whose
+        /// second draw depends on what its first produced.
+        /// </remarks>
+        public RuleContext ChanceLab { get; }
+
+        /// <summary>The document behind <see cref="ChanceLab"/>.</summary>
+        public const string ChanceLabDocument = """
+            {
+              "$schema": "rulealize/ruleset/v1",
+              "id": "chance-lab",
+              "version": "1.0.0",
+              "requires": [
+                { "plugin": "Rulealize.Plugin.TypeSchema", "version": "^1.1" },
+                { "plugin": "Rulealize.Plugin.State", "version": "^1.0" },
+                { "plugin": "Rulealize.Plugin.Sequence", "version": "^1.3" },
+                { "plugin": "Rulealize.Plugin.Arithmetic", "version": "^1.0" },
+                { "plugin": "Rulealize.Plugin.Binding", "version": "^1.0" },
+                { "plugin": "Rulealize.Plugin.Record", "version": "^1.0" },
+                { "plugin": "Rulealize.Plugin.Chance", "version": "^1.0" }
+              ],
+              "state": {
+                "schema": {
+                  "total": { "op": "type.int", "min": 0 },
+                  "label": { "op": "type.string", "nullable": true },
+                  "bag": { "op": "rec.map", "keys": ["r", "g", "b"],
+                           "value": { "op": "type.int", "min": 0 } }
+                },
+                "initial": { "total": 0, "label": null, "bag": { "r": 3, "g": 1, "b": 0 } }
+              },
+              "inputs": {
+                "wait": {
+                  "effects": [
+                    { "op": "state.set", "path": "total", "value": { "op": "math.add", "of": ["$total", 1] } }
+                  ]
+                },
+                "roll": {
+                  "effects": [
+                    { "op": "state.set", "path": "total", "value": { "op": "math.add", "of": ["$total",
+                      { "op": "chance.pick", "of": { "op": "seq.of", "of": [1, 2, 3] } }] } }
+                  ]
+                },
+                "grab": {
+                  "effects": [
+                    { "op": "state.set", "path": "label", "value": {
+                      "op": "chance.pick", "of": { "op": "rec.keys", "of": "$bag" }, "as": "k",
+                      "weight": { "op": "rec.at", "record": "$bag", "key": "@k" } } }
+                  ]
+                },
+                "cascade": {
+                  "effects": [
+                    { "op": "state.set", "path": "label", "value": {
+                      "op": "bind.let",
+                      "bind": {
+                        "n": { "op": "chance.pick", "of": { "op": "seq.of", "of": [1, 2, 3] } },
+                        "c": { "op": "chance.pick", "of": {
+                          "op": "seq.take", "count": "@n",
+                          "source": { "op": "seq.of", "of": ["a", "b", "c"] } } }
+                      },
+                      "in": "@c" } }
+                  ]
+                },
+                "risky": {
+                  "effects": [
+                    { "op": "state.set", "path": "total", "value": { "op": "math.add", "of": ["$total",
+                      { "op": "chance.pick", "of": { "op": "seq.of", "of": [1, -1] } }] } }
+                  ]
+                },
+                "vanish": {
+                  "effects": [
+                    { "op": "state.set", "path": "label",
+                      "value": { "op": "chance.pick", "of": { "op": "seq.empty" } } }
+                  ]
+                }
+              }
+            }
+            """;
 
         /// <summary>Reads a rule set document the build copied beside the tests.</summary>
         /// <param name="name">The file name.</param>
