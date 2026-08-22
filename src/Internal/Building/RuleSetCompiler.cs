@@ -325,7 +325,7 @@ namespace Rulealize.Internal.Building
             {
                 throw new RuleSetBuildException(
                     path,
-                    $"definitions must not be recursive, but {string.Join(" → ", cycle)}.");
+                    $"definitions must not be recursive, but {string.Join(" -> ", cycle)}.");
             }
 
             return new CompiledDefinitions(

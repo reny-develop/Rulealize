@@ -223,8 +223,8 @@ namespace Rulealize.Internal.Building
                     throw new RuleSetBuildException(
                         path,
                         $"'{prefix}' is a shorthand for more than one vocabulary here, so this "
-                        + $"does not say which was meant. Write '{prefix}{claimants[0]}:' — or the "
-                        + $"namespace of whichever of {string.Join(", ", claimants)} you mean — "
+                        + $"does not say which was meant. Write '{prefix}{claimants[0]}:', or the "
+                        + $"namespace of whichever of {string.Join(", ", claimants)} you mean, "
                         + "or name just one of them in 'requires'.");
                 }
             }
