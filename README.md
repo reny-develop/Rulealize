@@ -46,8 +46,8 @@ Rule set: reversi@1.0.0   inputs: place, pass
 Nothing in that sample knows the rules of Reversi. It loads a folder of plugins, compiles a
 document, asks what is legal and applies what was chosen.
 
-> Requires `net10.0`. `Rulealize`, `Rulealize.Cli` and each of the standard plugins
-> are on nuget.org — a plugin is an ordinary package, because the runtime finds its assembly
+> Requires `net10.0`. `Rulealize`, `Rulealize.Cli` and the published vocabularies are
+> all on nuget.org — a plugin is an ordinary package, because the runtime finds its assembly
 > by scanning a folder and nothing else about it is special.
 
 ## Why you might want this
@@ -107,8 +107,7 @@ A plugin can also arrive as an ordinary package reference: `dotnet add package
 Rulealize.Plugin.Grid` puts the assembly in the application's own output folder, and
 `LoadPluginsFrom(AppContext.BaseDirectory)` passes over everything that is not a plugin. That
 is the simpler arrangement when the rules ship with the binary rather than travelling on
-their own schedule. [The standard vocabulary](doc/plugin.md) lists them and what each
-provides.
+their own schedule. [Vocabulary](doc/plugin.md) says where the published ones are indexed.
 
 The samples are described in [`sample/README.md`](sample/README.md). Read Reversi
 first — it is the shortest complete host there is.
@@ -360,8 +359,8 @@ Everything else in the document is vocabulary. A node is an object carrying an `
 value of `op` selects a factory from a table the plugins filled in, and the rest of the
 object is that plugin's business. The core never sees a plugin type and never learns what
 an operation does — not even that `$board` is shorthand for reading a state field, which is
-a string expansion a plugin registered against a character it reserved. Three of those
-expansions come with the standard vocabulary:
+a string expansion a plugin registered against a character it reserved. State, Binding and
+Definition each reserve one:
 
 ```jsonc
 "$board"    // = { "op": "state.get",  "path": "board" }
@@ -376,7 +375,7 @@ never by what a plugin folder happens to hold, so what a document means does not
 when a plugin is added beside it. What changes is whether the bare form still says enough.
 
 That is why `requires` is worth reading. It lists the vocabularies a rule set draws on, and
-it can only say something because the standard set is cut finely: a rule set that needs
+it can only say something because the vocabularies are cut finely: a rule set that needs
 `Rulealize.Plugin.Arithmetic` is one that counts something.
 
 Nodes come in three kinds — expression, effect and schema — and where each may appear is
@@ -418,7 +417,7 @@ rule set has no business carrying.
 
 What a name that is never published still has to avoid, and what `GetValidInputs` costs an
 operation that reaches past its arguments, is in
-[the standard vocabulary](doc/plugin.md#a-vocabulary-that-is-not-distributed).
+[a vocabulary that is not distributed](doc/plugin.md#a-vocabulary-that-is-not-distributed).
 
 `requires` keeps working throughout, and that is the point of doing it this way rather than
 inventing a lighter registration path. A rule set naming `Acme.Deploy.Rules` is refused by a
@@ -433,7 +432,7 @@ not on the feed. [`sample/Deploy/`](sample/Deploy/) is the worked example.
 | [`test/`](test/) | xUnit tests — `dotnet test` |
 | [`sample/`](sample/) | one directory per sample application — see [`sample/README.md`](sample/README.md) |
 | [`ruleset/`](ruleset/) | the rule set documents, one copy of each |
-| [`doc/`](doc/README.md) | the standard vocabulary, and the runtime's semantics |
+| [`doc/`](doc/README.md) | what a vocabulary is, and the runtime's semantics |
 
 A rule set lives in one place and is consumed from two: the test suite compiles every
 document in `ruleset/`, and a sample links the one it demonstrates.
@@ -444,9 +443,9 @@ document in `ruleset/`, and a sample links the one it demonstrates.
 
 **The specification** is what you read to write a rule set: [the value model and the three
 kinds of node](https://github.com/reny-develop/Rulealize.Abstraction/blob/main/doc/value-model.md),
-which `Rulealize.Abstraction` carries because it is what both sides depend on, then [the
-standard vocabulary](doc/plugin.md), whose entries each link to a specification
-released by that plugin's own repository.
+which `Rulealize.Abstraction` carries because it is what both sides depend on, then
+[vocabulary](doc/plugin.md), which says where a plugin releases its own specification and
+where the published ones are indexed.
 
 **[The runtime's semantics](doc/runtime.md)** is what the library does with a rule set:
 snapshot semantics, definitions and their cache, `validationLimit`, where asynchrony

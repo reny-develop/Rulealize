@@ -23,7 +23,7 @@
     lets this project implement IRulealizePlugin. Nothing else about the arrangement
     changes.
   -->
-  <Import Project="..\..\StandardPlugins.props" />
+  <Import Project="..\..\Plugins.props" />
 
   <!-- The document the test suite compiles, not a copy of it. -->
   <ItemGroup>

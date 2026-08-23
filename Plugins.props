@@ -1,9 +1,13 @@
 <Project>
 
   <!--
-    The standard plugins, for projects that need a working vocabulary: the tests and
-    the samples. Each lives in its own repository, so this assumes they are cloned beside
-    this one.
+    The vocabulary this repository's own projects are built against: the test suite and the
+    samples. It is a fixture and not an inventory. Nothing outside this repository should
+    read it as the set of plugins that exist, and a plugin absent from it is absent from
+    these builds and from nothing else — what a rule set needs is stated in its own
+    `requires`, and the index of what is published is Rulealize.Registry.
+
+    Each plugin lives in its own repository, so this assumes they are cloned beside this one.
 
     The references are deliberately not compile-time references. ReferenceOutputAssembly
     is false, so a host cannot name a plugin type even by accident; all the reference does
@@ -44,7 +48,7 @@
   <Target Name="CheckPluginRepositories" BeforeTargets="ResolveProjectReferences">
     <Error
       Condition="!Exists('$(PluginRepositoryRoot)Rulealize.Plugin.%(RulealizePlugin.Identity)')"
-      Text="Rulealize.Plugin.%(RulealizePlugin.Identity) was not found at $(PluginRepositoryRoot). The standard plugins live in their own repositories and are expected to be cloned beside this one; set PluginRepositoryRoot to point somewhere else." />
+      Text="Rulealize.Plugin.%(RulealizePlugin.Identity) was not found at $(PluginRepositoryRoot). The plugins live in their own repositories and are expected to be cloned beside this one; set PluginRepositoryRoot to point somewhere else." />
   </Target>
 
   <Target Name="CopyRulealizePlugins" AfterTargets="Build" Inputs="@(RulealizePluginAssembly)" Outputs="@(RulealizePluginAssembly->'$(OutDir)$(PluginOutputFolder)\%(Filename)%(Extension)')">

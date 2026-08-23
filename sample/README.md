@@ -1,11 +1,10 @@
 # Samples
 
-One directory per sample application. Each is a self-contained host: it builds the standard
-plugins into a `plugin` folder beside its executable, loads them by scanning that folder,
-and compiles a rule set.
+One directory per sample application. Each is a self-contained host: it builds a folder of
+plugins beside its executable, loads them by scanning that folder, and compiles a rule set.
 
 All but **Deploy** name no plugin type at all, so each shows the same discovery path a
-deployed application takes. Deploy is the exception, and deliberately: the standard
+deployed application takes. Deploy is the exception, and deliberately: the published
 vocabularies found by scanning, and one more that is a class in the sample itself.
 
 The rule sets are not copies. Every one of them lives in [`ruleset/`](../ruleset/) and is
@@ -55,7 +54,7 @@ constructor: three of them answer from the organisation's freeze calendar and ow
 and a plugin discovered by scanning is built through a parameterless constructor with
 nowhere to receive either. The fourth, `acme.newer`, is an algorithm — semantic version
 precedence, which `cmp.lt` gets backwards because text ordering puts `2.4.0-rc.1` after
-`2.4.0` — and no arrangement of the standard vocabulary computes it.
+`2.4.0` — and no arrangement of the published vocabularies computes it.
 
 `--policy lockdown` and `--state friday` are the two axes, and they are worth running
 together. Neither changes a character of `deploy.json`; one is a field in the state
@@ -67,7 +66,7 @@ state field handed to `acme.frozen` as an argument rather than a clock read, bec
 `GetValidInputs` evaluates a guard once per candidate in a parameter's domain and a clock
 would be read once per candidate too. What the other choice costs, and why the runtime
 allows it, is in
-[the standard vocabulary](../doc/plugin.md#a-vocabulary-that-is-not-distributed).
+[a vocabulary that is not distributed](../doc/plugin.md#a-vocabulary-that-is-not-distributed).
 
 **Blackjack** is the one where whoever moves does not settle what happens. ann says `hit`
 and the deck says which card, and those are two questions asked with two calls:

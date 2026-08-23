@@ -37,7 +37,7 @@
   </ItemGroup>
 
   <!-- Builds the standard plugins and drops their DLLs into a plugin folder. -->
-  <Import Project="..\StandardPlugins.props" />
+  <Import Project="..\Plugins.props" />
 
   <!-- Every rule set the repository ships. A document nothing here compiles is a document
        that is only claimed to work. -->

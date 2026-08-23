@@ -16,7 +16,7 @@ Rulealize follows a typical plugin architecture with the following principles:
 ## Naming
 Folder names and namespaces are singular by default (`src/Internal/Document`, `doc/plugin`, `ruleset/`).
 
-Folders the build produces are folders too, and follow the same rule: the standard plugin DLLs land in `plugin` beside the executable, and the linked rule set documents in `RuleSet`. A source tree that is singular and an output tree that is not would leave the question the rule exists to remove.
+Folders the build produces are folders too, and follow the same rule: the plugin DLLs land in `plugin` beside the executable, and the linked rule set documents in `RuleSet`. A source tree that is singular and an output tree that is not would leave the question the rule exists to remove.
 
 Plural is used only where it carries meaning the singular does not:
 

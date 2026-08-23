@@ -1,24 +1,26 @@
-# The standard vocabulary
+# Vocabulary
 
-Each plugin lives in its own repository, with its own specification. A specification says
-what one version of one plugin provides, and the versions move independently of each other,
-so each entry below links out to the repository that releases it.
+The core provides no operations at all, so what a rule set may write is exactly what the
+plugins loaded into the runtime provide. Which plugins those are is the rule set's own
+business: `requires` names them, and `rulealize restore` fetches what it names.
 
-| Plugin | Namespace | Provides |
-| --- | --- | --- |
-| [Binding](https://github.com/reny-develop/Rulealize.Plugin.Binding/blob/main/doc/specification.md) | `bind` | scoped bindings (`let`) and local references |
-| [Branch](https://github.com/reny-develop/Rulealize.Plugin.Branch/blob/main/doc/specification.md) | `branch` | branching, on a condition (`if`) and on a value (`match`) |
-| [Definition](https://github.com/reny-develop/Rulealize.Plugin.Definition/blob/main/doc/specification.md) | `def` | referring to and applying what `definitions` declares |
-| [Logic](https://github.com/reny-develop/Rulealize.Plugin.Logic/blob/main/doc/specification.md) | `logic` | boolean operations |
-| [Comparison](https://github.com/reny-develop/Rulealize.Plugin.Comparison/blob/main/doc/specification.md) | `cmp` | equality, ordering, and asking about null |
-| [Arithmetic](https://github.com/reny-develop/Rulealize.Plugin.Arithmetic/blob/main/doc/specification.md) | `math` | arithmetic |
-| [TypeSchema](https://github.com/reny-develop/Rulealize.Plugin.TypeSchema/blob/main/doc/specification.md) | `type` | the vocabulary `state.schema` is written in |
-| [Sequence](https://github.com/reny-develop/Rulealize.Plugin.Sequence/blob/main/doc/specification.md) | `seq` | building, transforming and folding sequences |
-| [State](https://github.com/reny-develop/Rulealize.Plugin.State/blob/main/doc/specification.md) | `state` | reading and writing the state |
-| [Grid](https://github.com/reny-develop/Rulealize.Plugin.Grid/blob/main/doc/specification.md) | `grid` | two-dimensional boards, coordinates, directions |
-| [Tuple](https://github.com/reny-develop/Rulealize.Plugin.Tuple/blob/main/doc/specification.md) | `tuple` | a compound value that has a canonical text form |
-| [Record](https://github.com/reny-develop/Rulealize.Plugin.Record/blob/main/doc/specification.md) | `rec` | records in the state, read and written by a computed key |
-| [Chance](https://github.com/reny-develop/Rulealize.Plugin.Chance/blob/main/doc/specification.md) | `chance` | a weighted draw, which the runtime enumerates rather than rolls |
+**Nothing comes with anything.** There is no bundle and no metapackage — a plugin is an
+ordinary package, and a folder holds the ones a document asked for. Which is why there is no
+list of them here. A list would be a second account of something already recorded, kept in
+step by hand, and the two would differ; the first symptom of that is a reader writing an `op`
+against a table rather than against a runtime.
+
+Where it is recorded is [Rulealize.Registry](https://github.com/reny-develop/Rulealize.Registry):
+which plugin provides an operation, which namespaces are spoken for, and which shorthand
+characters are in use by whom. It is not transcribed either. The ledger names packages, and
+the catalogue is built by fetching each one, loading it and reading the operations back off
+the assembly — the same folder scan a deployed application performs — so what it says cannot
+disagree with what a runtime will do.
+
+A specification says what one version of one vocabulary provides, and it is released by that
+vocabulary rather than from here, as `doc/specification.md` in its own repository. The
+versions move independently of each other, which is the whole reason `requires` carries a
+constraint per plugin.
 
 Every specification assumes two documents, and both are in `Rulealize.Abstraction` because
 both describe types that package defines:
@@ -40,7 +42,7 @@ dotnet new rulealize-plugin -n Rulealize.Plugin.Example
 
 ## A vocabulary that is not distributed
 
-The vocabularies above are found as DLLs in a folder. But `RuleRuntime.AddPlugin` takes an
+A published vocabulary is found as a DLL in a folder. But `RuleRuntime.AddPlugin` takes an
 **instance**, so a vocabulary does not have to be an assembly on disk to be one.
 
 ```csharp
