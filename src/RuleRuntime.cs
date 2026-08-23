@@ -74,7 +74,9 @@ namespace Rulealize
         /// <param name="plugin">The plugin.</param>
         /// <returns>This runtime, so calls can be chained.</returns>
         /// <exception cref="PluginLoadException">
-        /// Its identifier, its namespace, or the character it reserves is already claimed.
+        /// Its identifier or its namespace is already claimed. A reserved character is not
+        /// among the things that can be taken: two plugins may reserve one and load together,
+        /// and which of them a rule set meant is settled per document.
         /// </exception>
         /// <remarks>
         /// <para>
