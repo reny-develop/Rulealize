@@ -39,6 +39,12 @@ namespace Rulealize.Internal.Building
                 throw new RuleSetBuildException(Root, "a rule set must be a JSON object.");
             }
 
+            OnlyTheseKeys(
+                document,
+                Root,
+                "a rule set",
+                "$schema", "id", "version", "requires", "state", "definitions", "inputs", "terminal");
+
             string id = RequireString(document, "id", Root);
             string version = RequireString(document, "version", Root);
 
@@ -104,6 +110,8 @@ namespace Rulealize.Internal.Building
                 {
                     throw new RuleSetBuildException(entryPath, "must be an object naming a plugin.");
                 }
+
+                OnlyTheseKeys(entry, entryPath, "a requirement", "plugin", "version");
 
                 string plugin = RequireString(entry, "plugin", entryPath);
 
@@ -176,6 +184,8 @@ namespace Rulealize.Internal.Building
                 throw new RuleSetBuildException(statePath, "must be an object with a 'schema' and an 'initial'.");
             }
 
+            OnlyTheseKeys(state, statePath, "the state section", "schema", "initial");
+
             JsonElement fields = RequireProperty(state, "schema", statePath);
             SourcePath schemaPath = statePath.Append("schema");
             if (fields.ValueKind != JsonValueKind.Object)
@@ -220,6 +230,14 @@ namespace Rulealize.Internal.Building
                 }
             }
 
+            foreach (JsonProperty property in initial.EnumerateObject())
+            {
+                if (!schema.TryResolve(property.Name, out _))
+                {
+                    violations.Add($"{property.Name}: is not a field of the state schema.");
+                }
+            }
+
             if (violations.Any)
             {
                 throw new RuleSetBuildException(
@@ -260,6 +278,8 @@ namespace Rulealize.Internal.Building
                 if (entry.Value.ValueKind == JsonValueKind.Object
                     && entry.Value.TryGetProperty("body", out JsonElement declared))
                 {
+                    OnlyTheseKeys(entry.Value, entryPath, "a definition", "body", "params");
+
                     body = declared;
                     if (entry.Value.TryGetProperty("params", out JsonElement declaredParameters))
                     {
@@ -376,6 +396,8 @@ namespace Rulealize.Internal.Building
             JsonElement element,
             SourcePath path)
         {
+            OnlyTheseKeys(element, path, "an input", "params", "actor", "when", "effects");
+
             builder.Scope.BeginFrame();
             int drawsBefore = builder.Draws;
 
@@ -397,6 +419,8 @@ namespace Rulealize.Internal.Building
                     {
                         throw new RuleSetBuildException(parameterPath, "must be an object with a 'domain'.");
                     }
+
+                    OnlyTheseKeys(parameter.Value, parameterPath, "a parameter", "domain");
 
                     JsonElement domain = RequireProperty(parameter.Value, "domain", parameterPath);
                     domains.Add((parameter.Name, builder.BuildExpression(domain, parameterPath.Append("domain"))));
@@ -480,6 +504,8 @@ namespace Rulealize.Internal.Building
                 throw new RuleSetBuildException(path, "must be an object with a 'when'.");
             }
 
+            OnlyTheseKeys(section, path, "the terminal section", "when", "result");
+
             builder.Scope.BeginFrame();
             ExpressionNode when = builder.BuildExpression(RequireProperty(section, "when", path), path.Append("when"));
             ExpressionNode? result = section.TryGetProperty("result", out JsonElement resultElement)
@@ -534,5 +560,49 @@ namespace Rulealize.Internal.Building
                 ? value.GetString()!
                 : throw new RuleSetBuildException(path.Append(name), "must be a literal string.");
         }
+
+        /// <summary>Refuses a key at a position whose keys the core fixes entirely.</summary>
+        /// <param name="element">The object.</param>
+        /// <param name="path">Where it is in the document.</param>
+        /// <param name="what">What the position is, for the message.</param>
+        /// <param name="allowed">Every key the core reads here.</param>
+        /// <remarks>
+        /// <para>
+        /// Only where the core owns the whole key set — the sections it reserves, and the
+        /// objects inside them that it reads itself. Never inside a node: there the keys
+        /// belong to whichever plugin claimed the <c>op</c>, and a core that refused an
+        /// unfamiliar one would make adding an argument to an operation a change to the
+        /// runtime.
+        /// </para>
+        /// <para>
+        /// Worth the check because most keys here are optional, and an optional key
+        /// misspelled is not a document that fails: <c>whn</c> is an input with no guard,
+        /// which is an input that is always legal. That is decidable from the document, so
+        /// it is decided here rather than found in production.
+        /// </para>
+        /// </remarks>
+        private static void OnlyTheseKeys(
+            JsonElement element,
+            SourcePath path,
+            string what,
+            params string[] allowed)
+        {
+            foreach (JsonProperty property in element.EnumerateObject())
+            {
+                if (allowed.Contains(property.Name, StringComparer.Ordinal))
+                {
+                    continue;
+                }
+
+                throw new RuleSetBuildException(
+                    path.Append(property.Name),
+                    $"is not a key {what} takes; those are {Listed(allowed)}.");
+            }
+        }
+
+        private static string Listed(string[] names) =>
+            names.Length is 1
+                ? $"'{names[0]}'"
+                : string.Join(", ", names[..^1].Select(static name => $"'{name}'")) + $" and '{names[^1]}'";
     }
 }

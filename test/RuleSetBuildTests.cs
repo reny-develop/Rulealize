@@ -306,6 +306,106 @@ namespace Rulealize.Tests
             Assert.Equal("/inputs/go/effects[0]/value", exception.Path.ToString());
         }
 
+        /// <summary>Every position whose keys the core fixes, and the typo each one catches.</summary>
+        /// <remarks>
+        /// A misspelled key that happens to be optional is the fault worth having this for.
+        /// <c>whn</c> is not a rule set that fails to compile — it is an input with no guard,
+        /// which is an input that is always legal, and nothing downstream can tell that from
+        /// a rule set that meant it.
+        /// </remarks>
+        [Theory]
+        [InlineData("a rule set", """
+            { "nonsense": 1, "id": "t", "version": "1.0.0",
+              "state": { "schema": { "n": { "op": "type.int" } }, "initial": { "n": 0 } },
+              "inputs": { "go": { "effects": [] } } }
+            """)]
+        [InlineData("a requirement", """
+            { "id": "t", "version": "1.0.0", "requires": [ { "plugin": "Rulealize.Plugin.State", "nonsense": 1 } ],
+              "state": { "schema": { "n": { "op": "type.int" } }, "initial": { "n": 0 } },
+              "inputs": { "go": { "effects": [] } } }
+            """)]
+        [InlineData("the state section", """
+            { "id": "t", "version": "1.0.0",
+              "state": { "nonsense": 1, "schema": { "n": { "op": "type.int" } }, "initial": { "n": 0 } },
+              "inputs": { "go": { "effects": [] } } }
+            """)]
+        [InlineData("a definition", """
+            { "id": "t", "version": "1.0.0",
+              "state": { "schema": { "n": { "op": "type.int" } }, "initial": { "n": 0 } },
+              "definitions": { "d": { "body": 1, "nonsense": 1 } },
+              "inputs": { "go": { "effects": [] } } }
+            """)]
+        [InlineData("an input", """
+            { "id": "t", "version": "1.0.0",
+              "state": { "schema": { "n": { "op": "type.int" } }, "initial": { "n": 0 } },
+              "inputs": { "go": { "nonsense": 1, "effects": [] } } }
+            """)]
+        [InlineData("a parameter", """
+            { "id": "t", "version": "1.0.0",
+              "state": { "schema": { "n": { "op": "type.int" } }, "initial": { "n": 0 } },
+              "inputs": { "go": {
+                "params": { "p": { "nonsense": 1, "domain": { "op": "seq.of", "of": [1] } } },
+                "effects": [] } } }
+            """)]
+        [InlineData("the terminal section", """
+            { "id": "t", "version": "1.0.0",
+              "state": { "schema": { "n": { "op": "type.int" } }, "initial": { "n": 0 } },
+              "inputs": { "go": { "effects": [] } },
+              "terminal": { "nonsense": 1, "when": true } }
+            """)]
+        public void AKeyTheCoreDoesNotKnowIsRefusedWhereTheCoreOwnsThemAll(string what, string ruleSet)
+        {
+            string refused = Rejects(ruleSet);
+
+            Assert.Contains("nonsense", refused, StringComparison.Ordinal);
+            Assert.Contains($"is not a key {what} takes", refused, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void AnOptionalKeyMisspeltIsRefusedRatherThanReadAsAbsent()
+        {
+            // Without this, 'go' is an input with no guard, so it is legal in every state.
+            RuleSetBuildException refused = Assert.Throws<RuleSetBuildException>(
+                () => standard.Runtime.CreateContext($$"""
+                    { {{Preamble}} "inputs": { "go": {
+                      "whn": { "op": "cmp.eq", "left": "$n", "right": 1 }, "effects": [] } } }
+                    """));
+
+            Assert.Equal("/inputs/go/whn", refused.Path.ToString());
+        }
+
+        [Fact]
+        public void AKeyInsideANodeBelongsToItsPluginAndIsNotTheCoreToRefuse() =>
+            // 'seq.of' reads 'of'. Whether it also reads 'unless' is that plugin's business,
+            // and a core that refused the name would make adding an argument to an operation
+            // a change to the runtime.
+            standard.Runtime.CreateContext($$"""
+                { {{Preamble}} "inputs": { "go": {
+                  "params": { "p": { "domain": { "op": "seq.of", "of": [1], "unless": 2 } } },
+                  "effects": [] } } }
+                """);
+
+        [Fact]
+        public void AFieldStateInitialDeclaresAndTheSchemaDoesNotIsReportedWithTheRest()
+        {
+            string refused = Rejects("""
+                { "id": "t", "version": "1.0.0",
+                  "state": { "schema": { "n": { "op": "type.int" } }, "initial": { "n": 0, "m": 1 } },
+                  "inputs": { "go": { "effects": [] } } }
+                """);
+
+            Assert.Contains("m: is not a field of the state schema.", refused, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void ADefinitionThatIsItsOwnBodyKeepsWhateverKeysItHas() =>
+            // The short form: the value is the body, so a record literal written there is a
+            // record and not a definition with keys the core would have an opinion about.
+            standard.Runtime.CreateContext($$"""
+                { {{Preamble}} "definitions": { "d": { "anything": 1, "at": "all" } },
+                  "inputs": { "go": { "effects": [] } } }
+                """);
+
         private string Rejects(string ruleSet) =>
             Assert.Throws<RuleSetBuildException>(() => standard.Runtime.CreateContext(ruleSet)).Message;
     }

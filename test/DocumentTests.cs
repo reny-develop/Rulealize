@@ -209,5 +209,59 @@ namespace Rulealize.Tests
 
             Assert.Equal(4, moves.Count);
         }
+
+        /// <summary>The frame of a document that travels per call is the core's, entirely.</summary>
+        /// <remarks>
+        /// Every key in a frame but the payload is optional, so a misspelling is not a
+        /// document that fails. A state document whose <c>ruleSet</c> is spelt <c>ruleSt</c>
+        /// is one whose identity was never checked, which is the one check standing between
+        /// a position and the rule set it does not belong to.
+        /// </remarks>
+        [Fact]
+        public void AStateDocumentCarryingAKeyTheFrameDoesNotHaveIsRefused() =>
+            Assert.Contains(
+                "'ruleSt' is not a key of a state document",
+                Assert.Throws<RuleDocumentException>(
+                    () => Reversi.GetValidInputs(
+                        """
+                        { "$schema": "rulealize/state/v1", "ruleSt": "chess@1.0.0",
+                          "data": { "board": {}, "turn": "black", "passes": 0 } }
+                        """,
+                        64)).Message,
+                StringComparison.Ordinal);
+
+        [Fact]
+        public void AnInputDocumentCarryingAKeyTheFrameDoesNotHaveIsRefused() =>
+            Assert.Contains(
+                "'note' is not a key of an input document",
+                Assert.Throws<RuleDocumentException>(
+                    () => Reversi.ApplyToState(
+                        """{ "input": "pass", "args": {}, "note": "why" }""",
+                        Reversi.InitialState)).Message,
+                StringComparison.Ordinal);
+
+        [Fact]
+        public void AnOutcomeDocumentCarryingAKeyTheFrameDoesNotHaveIsRefused() =>
+            Assert.Contains(
+                "'drawn' is not a key of an outcome document",
+                Assert.Throws<RuleDocumentException>(
+                    () => Reversi.ApplyToState(
+                        """{ "input": "pass", "args": {} }""",
+                        Reversi.InitialState,
+                        """{ "input": "pass", "drawn": [] }""")).Message,
+                StringComparison.Ordinal);
+
+        [Fact]
+        public void TheFrameIsTheOnlyThingChecked() =>
+            // What is inside 'data' is the rule set's, and a board holds whatever the schema
+            // node that declared it reads. Only the three keys around it are the core's.
+            Reversi.GetValidInputs(
+                """
+                { "$schema": "rulealize/state/v1", "ruleSet": "reversi@1.0.0",
+                  "data": {
+                    "board": { "d4": "white", "e4": "black", "d5": "black", "e5": "white" },
+                    "turn": "black", "passes": 0 } }
+                """,
+                64);
     }
 }

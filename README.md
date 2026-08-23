@@ -259,11 +259,19 @@ message carries a JSON pointer to the node:
 /inputs/submit/when/left: 'stagee' is not a field of the state schema.
 /inputs/reject/effects[0]/path: 'staeg' is not a field of the state schema.
 /inputs/submit/effects[0]: 'cmp.eq' is an expression and cannot appear where an effect is expected.
+/inputs/submit/whn: is not a key an input takes; those are 'params', 'actor', 'when' and 'effects'.
 ```
 
 Unknown operations, missing keys, unbound locals, undefined or cyclic definitions, an
 argument list that does not match a definition's parameters, and a node used where its kind
 does not belong are all refused there too.
+
+So is the last of those four messages, and it is the one worth pointing at. The core fixes
+the keys of every section it reserves, so a key it does not know is a typo and is refused
+with a pointer to it. Most of those keys are optional, which means the alternative is not a
+document that fails: `whn` is an input with no guard, and an input with no guard is legal in
+every state. Inside a node the keys are the plugin's and nothing is refused —
+[the keys the core reads](doc/runtime.md#the-keys-the-core-reads) is the list.
 
 State documents come from outside, so they are checked against the schema on the way in,
 and every violation is reported rather than the first:
@@ -275,8 +283,9 @@ The state does not satisfy state.schema.
 ```
 
 What is left to fail during evaluation is short — a value of the wrong kind, an ordering
-comparison against null, division by zero, a `branch.match` with no matching case, and a set
-of effects that builds a state the schema forbids. Reading past the end of a sequence and
+comparison against null, division by zero, a `branch.match` with no matching case, a draw
+with nothing to draw from, a value with no text form where one has to be written down, and a
+set of effects that builds a state the schema forbids. Reading past the end of a sequence and
 reading a square off the board are not on that list: they produce null, and rule sets are
 built on their doing so.
 
@@ -302,6 +311,17 @@ fixes only the frame.
 The third is only needed by a rule set with chance in it, and an outcome with no draws in it
 means the same thing as not passing one — so a caller logging every transition as an input
 and an outcome writes the same pair either way.
+
+The frame is the core's, and it is checked the way a rule set's own sections are: a key that
+is not one of the three or four above is refused. That every one of them but the payload is
+optional is the reason. A state document whose `ruleSet` is spelt `ruleSt` is not a document
+that fails — it is a document whose identity was never checked, and the position it carries
+then belongs to whatever rule set happened to read it.
+
+What `$schema` says is not read. Which rule set a document is for is `ruleSet`'s to say, and
+a document that names neither is read against the schema like any other, because declining
+to claim an identity is not the same as claiming the wrong one and a state written by hand
+has no reason to be forced into one.
 
 How each field inside `data` becomes JSON is decided by the schema node that declared it — a
 board is a sparse coordinate map because a grid plugin says so, and changing it to a dense
@@ -359,6 +379,11 @@ Everything else in the document is vocabulary. A node is an object carrying an `
 value of `op` selects a factory from a table the plugins filled in, and the rest of the
 object is that plugin's business. The core never sees a plugin type and never learns what
 an operation does — not even that `$board` is shorthand for reading a state field, which is
+Inside those eight the core reads a little further — `state` has a `schema` and an
+`initial`, an input has `params`, `actor`, `when` and `effects` — and where it does, it
+fixes the key set and refuses anything else.
+[The keys the core reads](doc/runtime.md#the-keys-the-core-reads) is all of it, on one page.
+
 a string expansion a plugin registered against a character it reserved. State, Binding and
 Definition each reserve one:
 

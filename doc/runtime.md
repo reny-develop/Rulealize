@@ -22,10 +22,10 @@ with the .NET type of the node, and it is the placement it records rather than t
 [What may happen](#what-may-happen-draws-and-getoutcomes) is the rest of it.
 
 Placement is enforced while the rule set is compiled. So is everything else the document
-can settle on its own: unknown operations, missing keys, an expression where a literal
-belongs, a local nothing declared, an undefined definition, an argument list that does not
-match a definition's parameters, a cycle between definitions, a state path that is not in
-the schema.
+can settle on its own: unknown operations, missing keys, [a key that is not one the core
+reads](#the-keys-the-core-reads), an expression where a literal belongs, a local nothing
+declared, an undefined definition, an argument list that does not match a definition's
+parameters, a cycle between definitions, a state path that is not in the schema.
 
 A rule set needs both `state.schema` and `state.initial`, and a schema declaring no fields
 is a build error. A state document is a public interface, so there has to be something to
@@ -43,10 +43,62 @@ the forty-first candidate is a fault that reaches production.
 
 What is left to fail at run time is short: a value of the wrong kind, an ordering
 comparison against null, division by zero, a `branch.match` with no matching case, a draw
-with nothing to draw from, and a set of effects that builds a state the schema forbids.
-Reading past the end of a sequence
-and reading a square off the board are not on that list — they produce null, and rule sets
-are built on their doing so.
+with nothing to draw from or a weight below zero, a value with no text form where one has to
+be written down, and a set of effects that builds a state the schema forbids. Reading past
+the end of a sequence and reading a square off the board are not on that list — they produce
+null, and rule sets are built on their doing so.
+
+## The keys the core reads
+
+Eight in the document and one in every node — `$schema`, `id`, `version`, `requires`,
+`state`, `definitions`, `inputs`, `terminal`, and `op`. Everything else is vocabulary. What
+follows is the whole of the rest: the objects the core opens itself, and what it takes from
+each.
+
+| Where | Keys | |
+| --- | --- | --- |
+| the document | `$schema` `id` `version` `requires` `state` `definitions` `inputs` `terminal` | `id`, `version`, `state` and `inputs` are required. `$schema` is reserved and not read |
+| `requires[]` | `plugin` `version` | a constraint omitted means any version will do |
+| `state` | `schema` `initial` | both required, and a schema declaring no fields is refused |
+| `state.initial` | one value per declared field | every field, and no field the schema did not declare |
+| `definitions.<name>` | `body` `params` | only where `body` is written. Otherwise the value **is** the body, so a definition can be a node, a record, or a plain named constant |
+| `inputs.<name>` | `params` `actor` `when` `effects` | `effects` is required; the other three are not |
+| `inputs.<name>.params.<name>` | `domain` | required |
+| `terminal` | `when` `result` | the section is optional; `when` is required once it is written and `result` is not |
+
+Everything below one of those — a schema node, a domain, a guard, an effect — is a node,
+and its keys are read by whichever plugin claimed the `op`.
+
+**A key the core does not know is refused**, at every position in that table, with a JSON
+pointer to it. That is worth stating on its own because most of the keys above are optional,
+and an optional key misspelled is not a document that fails: `whn` is an input with no
+guard, which is an input that is always legal, and nothing downstream can tell that from a
+rule set that meant it. Inside a node the rule reverses, and has to — the keys there belong
+to the plugin, and a core with an opinion about them would make adding an argument to an
+operation a change to the runtime.
+
+### `actor`
+
+An expression, evaluated per candidate beside the guard, whose canonical text becomes
+`ValidInput.Actor`. It says whose move a candidate is, for a rule set where that is a
+question: chess and Reversi name the side to move, blackjack names the seat. A rule set with
+no turn leaves it out, and every `Actor` is then null — which is what the roster does, and
+why a schedule is not a smaller kind of game.
+
+Nothing consults it. The runtime does not check that an actor is entitled to move, because
+whether it is entitled is what `when` is for. `actor` is what a caller filters and displays
+by, and stating it in the document rather than in each host is what keeps two hosts over one
+rule set agreeing about whose turn it is.
+
+### `terminal`
+
+`when` decides whether a state is final and `result` says what the outcome was. `result` is
+evaluated only once `when` holds, so a rule set is entitled to leave it undefined — or
+faulting — mid-game, and `TerminalStatus.Result` is null where a rule set declares none.
+
+A rule set with no `terminal` section never reports one, which is an ordinary shape rather
+than an omission: a process with no end has nothing to write there, and a caller that stops
+when nothing is legal never asks.
 
 ## Snapshot semantics
 

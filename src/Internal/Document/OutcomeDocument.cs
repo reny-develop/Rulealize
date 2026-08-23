@@ -43,6 +43,8 @@ namespace Rulealize.Internal.Document
                 throw new RuleDocumentException("An outcome document must be a JSON object.");
             }
 
+            DocumentFrame.OnlyTheseKeys(document, "an outcome", "$schema", "ruleSet", "input", "draws");
+
             if (document.TryGetProperty("ruleSet", out JsonElement declared)
                 && declared.ValueKind == JsonValueKind.String
                 && !string.Equals(declared.GetString(), ruleSet.Qualified, StringComparison.Ordinal))
