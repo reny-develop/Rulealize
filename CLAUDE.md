@@ -1,7 +1,7 @@
 ## Project
 Rulealize — "Plugin-oriented state transition and rule execution runtime driven by declarative JSON DSL" (README.md).
 
-Single C# class library (`src/Rulealize.csproj`, `net10.0`, nullable + implicit usings enabled).
+One C# class library (`src/Rulealize.csproj`, `net10.0`, nullable + implicit usings enabled), with an xUnit suite in `test/` and six host applications in `sample/`.
 
 This project is designed to reference the base classes defined in a separate NuGet package, `Rulealize.Abstraction`.
 
@@ -14,7 +14,7 @@ Rulealize follows a typical plugin architecture with the following principles:
 - Plugin DLLs are loaded at runtime, and the capabilities they provide are registered automatically.
 
 ## Naming
-Folder names and namespaces are singular by default (`src/Internal/Document`, `doc/plugin`, `ruleset/`).
+Folder names and namespaces are singular by default (`src/Internal/Document`, `src/Internal/Evaluation`, `ruleset/`).
 
 Folders the build produces are folders too, and follow the same rule: the plugin DLLs land in `plugin` beside the executable, and the linked rule set documents in `RuleSet`. A source tree that is singular and an output tree that is not would leave the question the rule exists to remove.
 
@@ -42,9 +42,17 @@ Create a `RuleRuntime` instance and load the required plugins into it.
 
 `RuleRuntime` provides a `CreateContext` method that creates a `RuleContext` instance from a RuleSet JSON document.
 
-`RuleContext` provides an `ApplyToState` method. This method accepts an InputRule JSON document and a State JSON document, applies the rule to the state, and performs the corresponding state transition.
+`RuleContext` provides an `ApplyToState` method. This method accepts an input document and a state document, applies the input to the state, and returns where the transition arrived.
 
 Asynchrony belongs at the boundary only. Evaluation is pure computation over in-memory documents, so the `string` overloads are synchronous; the `Async` suffix is reserved for the `Stream` overloads, where reading a document genuinely is I/O (`CreateContextAsync`, `ApplyToStateAsync`).
+
+### What May Happen Next
+
+Not every rule set settles its next state from the input alone. Where an operation resolves something nobody chose — a card off a deck — the input has more than one outcome, and `ApplyToState(input, state)` refuses it with an `InvalidOperationException` rather than picking one.
+
+`RuleContext.GetOutcomes` enumerates those outcomes with a probability on each, most likely first, and each carries the state it leads to. `ApplyToState(input, state, outcome)` replays one that already happened, which is what makes a recorded transition reproduce the state it was recorded against. The runtime never generates the choice; sampling one belongs to the host.
+
+An input that draws nothing has exactly one outcome, of probability one, so a traversal is `GetValidInputs` then `GetOutcomes` whether a rule set has chance in it or not.
 
 ### Retrieving Valid Inputs for a Given State
 

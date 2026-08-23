@@ -339,11 +339,15 @@ the version's.
 | `RuleRuntime.AddPlugin` / `LoadPlugins` / `LoadPluginsFrom` | build the vocabulary |
 | `RuleRuntime.Plugins` / `RuleRuntime.Operations` | which vocabularies are loaded, and every operation they provide |
 | `RuleRuntime.CreateContext` / `CreateContextAsync` | compile a rule set |
+| `RuleContext.Id` / `Version` / `RuleSet` / `Inputs` | what was compiled: the identifier, the version, the `id@version` a document carries, and the names of the inputs |
 | `RuleContext.InitialState` | the opening position, as a state document |
 | `RuleContext.ApplyToState` / `ApplyToStateAsync` | apply an input to a state, and an outcome with it where the rules draw |
 | `RuleContext.GetValidInputs` | what is legal from here |
 | `RuleContext.GetOutcomes` | what could happen when one of them is applied, and how likely each of those is |
 | `RuleContext.GetTerminalStatus` | whether a state is final, and its outcome |
+| `ValidInput.Input` / `Arguments` / `Actor` | one legal move: what it is, what it was called with, and whose it is where a rule set says |
+| `ValidInput.ToInputDocument` / `Outcome.ToOutcomeDocument` | write one back out, to be fed in again or recorded |
+| `ValidInputSet` / `OutcomeSet` / `TransitionResult` `.ToJson` | the same, for a whole answer, where a host is a boundary rather than a caller |
 | `PluginRequirement.ReadFrom` | read a document's `requires` — no runtime, no plugin loaded |
 | `PluginResolution.Resolve` | which versions those constraints call for, given what is published |
 
@@ -375,15 +379,15 @@ Eight reserved keys, and one more for telling a node from anything else:
 $schema  id  version  requires  state  definitions  inputs  terminal        op
 ```
 
-Everything else in the document is vocabulary. A node is an object carrying an `op`; the
-value of `op` selects a factory from a table the plugins filled in, and the rest of the
-object is that plugin's business. The core never sees a plugin type and never learns what
-an operation does — not even that `$board` is shorthand for reading a state field, which is
 Inside those eight the core reads a little further — `state` has a `schema` and an
 `initial`, an input has `params`, `actor`, `when` and `effects` — and where it does, it
 fixes the key set and refuses anything else.
 [The keys the core reads](doc/runtime.md#the-keys-the-core-reads) is all of it, on one page.
 
+Everything else in the document is vocabulary. A node is an object carrying an `op`; the
+value of `op` selects a factory from a table the plugins filled in, and the rest of the
+object is that plugin's business. The core never sees a plugin type and never learns what
+an operation does — not even that `$board` is shorthand for reading a state field, which is
 a string expansion a plugin registered against a character it reserved. State, Binding and
 Definition each reserve one:
 
