@@ -21,9 +21,9 @@ $ dotnet run --project sample/Reversi -- --auto
 Loaded 13 plugins:
   bind    Rulealize.Plugin.Binding 1.0.0  shorthand '@'
   branch  Rulealize.Plugin.Branch 1.0.0
+  chance  Rulealize.Plugin.Chance 1.0.0
   cmp     Rulealize.Plugin.Comparison 1.0.0
-  grid    Rulealize.Plugin.Grid 1.1.0
-  state   Rulealize.Plugin.State 1.0.0  shorthand '$'
+  def     Rulealize.Plugin.Definition 1.0.0  shorthand '#'
   …
 
 Rule set: reversi@1.0.0   inputs: place, pass
@@ -89,8 +89,8 @@ rulealize restore reversi.json
 ```
 
 ```console
+  Rulealize.Plugin.Arithmetic 1.0.0
   Rulealize.Plugin.Binding 1.0.0
-  Rulealize.Plugin.Grid 1.1.0
   …
 10 plugins -> plugin
 'reversi.json' compiles against it.
