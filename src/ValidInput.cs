@@ -26,8 +26,10 @@ namespace Rulealize
     /// and not its spelling, whichever way the move arrived.
     /// </para>
     /// <para>
-    /// <see cref="Arguments"/> is the readable view, everything rendered as text. What
-    /// travels in a document is <see cref="ToInputDocument"/>.
+    /// <see cref="Arguments"/> is the readable view, everything rendered as text and in the
+    /// order the parameters were declared, so that <see cref="ToString"/> writes the same move
+    /// the same way in every process. What travels in a document is
+    /// <see cref="ToInputDocument"/>.
     /// </para>
     /// </remarks>
     public sealed class ValidInput
@@ -37,7 +39,7 @@ namespace Rulealize
         internal ValidInput(
             string input,
             ImmutableArray<KeyValuePair<string, RuleValue>> values,
-            ImmutableDictionary<string, string> arguments,
+            ArgumentList arguments,
             string? actor)
         {
             Input = input;
@@ -49,12 +51,12 @@ namespace Rulealize
         /// <summary>Gets the name of the input.</summary>
         public string Input { get; }
 
-        /// <summary>Gets the arguments rendered as text, one per declared parameter.</summary>
+        /// <summary>Gets the arguments rendered as text, one per declared parameter, in that order.</summary>
         /// <remarks>
         /// The readable view. A number appears here as its digits; what goes into an input
         /// document is the number itself. See <see cref="ToInputDocument"/>.
         /// </remarks>
-        public ImmutableDictionary<string, string> Arguments { get; }
+        public ArgumentList Arguments { get; }
 
         /// <summary>Gets whose move this is, or <see langword="null"/> when the rule set does not say.</summary>
         public string? Actor { get; }
@@ -83,7 +85,7 @@ namespace Rulealize
         public override string ToString() =>
             Arguments.IsEmpty
                 ? Input
-                : $"{Input}({string.Join(", ", Arguments.Select(static pair => $"{pair.Key}: {pair.Value}"))})";
+                : $"{Input}({string.Join(", ", Arguments.Select(static argument => $"{argument.Key}: {argument.Value}"))})";
 
         internal void WriteTo(Utf8JsonWriter writer)
         {

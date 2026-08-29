@@ -872,8 +872,11 @@ namespace Rulealize
                 return;
             }
 
-            ImmutableDictionary<string, string>.Builder arguments =
-                ImmutableDictionary.CreateBuilder<string, string>(StringComparer.Ordinal);
+            // Both built in the order the parameters were declared, which is the order the
+            // move reads back in and the order it is written out in. Nothing downstream
+            // sorts them, so this loop is where that order is decided.
+            ImmutableArray<KeyValuePair<string, string>>.Builder arguments =
+                ImmutableArray.CreateBuilder<KeyValuePair<string, string>>(chosen.Length);
             ImmutableArray<KeyValuePair<string, RuleValue>>.Builder values =
                 ImmutableArray.CreateBuilder<KeyValuePair<string, RuleValue>>(chosen.Length);
 
@@ -883,16 +886,18 @@ namespace Rulealize
 
                 // Refused here rather than when the document is written, so that a rule set
                 // whose domain yields something unwritable says so with the parameter named.
-                arguments[name] = chosen[i].GetCanonicalText()
+                string text = chosen[i].GetCanonicalText()
                     ?? throw new RuleEvaluationException(
                         $"inputs.{offer.Name}.params.{name}",
                         $"{RuleValue.Describe(chosen[i])} has no text form, so it cannot be an input argument.");
 
+                arguments.Add(new KeyValuePair<string, string>(name, text));
                 values.Add(new KeyValuePair<string, RuleValue>(name, chosen[i]));
             }
 
             string? actor = input.Actor?.Evaluate(context).GetCanonicalText();
-            search.Found.Add(new ValidInput(offer.Name, values.MoveToImmutable(), arguments.ToImmutable(), actor));
+            search.Found.Add(new ValidInput(
+                offer.Name, values.MoveToImmutable(), new ArgumentList(arguments.MoveToImmutable()), actor));
         }
 
         /// <summary>Builds a session over one held rule set's part of a composite state.</summary>

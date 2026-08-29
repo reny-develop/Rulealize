@@ -345,7 +345,7 @@ the version's.
 | `RuleContext.GetValidInputs` | what is legal from here |
 | `RuleContext.GetOutcomes` | what could happen when one of them is applied, and how likely each of those is |
 | `RuleContext.GetTerminalStatus` | whether a state is final, and its outcome |
-| `ValidInput.Input` / `Arguments` / `Actor` | one legal move: what it is, what it was called with, and whose it is where a rule set says |
+| `ValidInput.Input` / `Arguments` / `Actor` | one legal move: what it is, what it was called with — by name or in declared parameter order — and whose it is where a rule set says |
 | `ValidInput.ToInputDocument` / `Outcome.ToOutcomeDocument` | write one back out, to be fed in again or recorded |
 | `ValidInputSet` / `OutcomeSet` / `TransitionResult` `.ToJson` | the same, for a whole answer, where a host is a boundary rather than a caller |
 | `PluginRequirement.ReadFrom` | read a document's `requires` — no runtime, no plugin loaded |

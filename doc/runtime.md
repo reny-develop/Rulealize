@@ -566,6 +566,17 @@ A value with neither a JSON form nor a canonical text form therefore cannot be a
 argument at all. A record is the case that comes up: a domain returning one fails when the
 argument is resolved, and a compound argument is a tuple instead.
 
+The readable view is ordered, and that is a guarantee rather than an accident of storage.
+`ValidInput.Arguments` was an `ImmutableDictionary` once, which answers by name and enumerates
+in hash order — and .NET reseeds string hashing per process, so the same move came out
+`deploy(service: web, version: 2)` in one run and `deploy(version: 2, service: web)` in the
+next. Stable within a run, different between runs, invisible with one argument, a coin flip
+with two. A text form that varies between runs is not a text form: anything that writes a move
+down and matches its own writing back — which is what a command line does — is right about
+half the time. So declared parameter order is what is kept, the same order
+`ToInputDocument` writes, and looking an argument up by name is a scan of the handful of
+parameters an input has.
+
 **A drawn value makes the same trip on the same terms.** `GetOutcomes` hands back what
 happened and `ApplyToState` has to be able to replay it, so the rules above hold word for
 word with "the domain" read as "what could have come out of that draw" — including the last

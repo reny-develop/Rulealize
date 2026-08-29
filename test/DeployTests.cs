@@ -182,6 +182,54 @@ namespace Rulealize.Tests
             Assert.Empty(policy.ApproversOf("nothing-owns-this"));
         }
 
+        // ── The readable view ──────────────────────────────────────────────────────
+
+        /// <summary>The order arguments read back in, which is the rule set's and nothing else's.</summary>
+        /// <remarks>
+        /// Everything else in this suite reads an argument by name, and by name a wrong order
+        /// is invisible. It is not invisible to a host that renders a move and matches its own
+        /// rendering back — which is what a command line does — and that is what this pins.
+        /// <c>Arguments</c> was an <c>ImmutableDictionary</c> once, so it enumerated in hash
+        /// order, and .NET reseeds string hashing per process: the same move came out
+        /// <c>deploy(service: …, version: …)</c> in one run and the other way round in the
+        /// next. Two parameters made it a coin flip and one parameter hid it entirely, which
+        /// is why the rule sets with a single argument caught nothing.
+        /// </remarks>
+        [Fact]
+        public void ArgumentsReadBackInDeclaredParameterOrder()
+        {
+            ValidInput deploy = Legal(Pipeline.InitialState).First(static move => move.Input == "deploy");
+            ValidInput approve = Legal(Pipeline.InitialState).First(static move => move.Input == "approve");
+
+            Assert.Equal(["service", "version"], deploy.Arguments.Keys);
+            Assert.Equal(["service", "stage", "by"], approve.Arguments.Keys);
+
+            // Positions and names are two ways at one thing, not two things.
+            Assert.Equal("service", deploy.Arguments[0].Key);
+            Assert.Equal(deploy.Arguments["version"], deploy.Arguments[1].Value);
+        }
+
+        [Fact]
+        public void TheTextFormFollowsThatOrder()
+        {
+            ValidInput move = Legal(Pipeline.InitialState).First(static m => m.Input == "approve");
+
+            Assert.Equal(
+                $"approve(service: {move.Arguments["service"]}, "
+                    + $"stage: {move.Arguments["stage"]}, by: {move.Arguments["by"]})",
+                move.ToString());
+        }
+
+        [Fact]
+        public void AParameterTheInputDoesNotDeclareIsNotThere()
+        {
+            ValidInput move = Legal(Pipeline.InitialState).First(static m => m.Input == "deploy");
+
+            Assert.False(move.Arguments.ContainsKey("stage"));
+            Assert.False(move.Arguments.TryGetValue("stage", out _));
+            Assert.Throws<KeyNotFoundException>(() => _ = move.Arguments["stage"]);
+        }
+
         // ── Reading the answer ─────────────────────────────────────────────────────
 
         private string[] Deployable(string service) =>
