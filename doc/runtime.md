@@ -22,10 +22,12 @@ with the .NET type of the node, and it is the placement it records rather than t
 [What may happen](#what-may-happen-draws-and-getoutcomes) is the rest of it.
 
 Placement is enforced while the rule set is compiled. So is everything else the document
-can settle on its own: unknown operations, missing keys, [a key that is not one the core
-reads](#the-keys-the-core-reads), an expression where a literal belongs, a local nothing
-declared, an undefined definition, an argument list that does not match a definition's
-parameters, a cycle between definitions, a state path that is not in the schema.
+can settle on its own: unknown operations, [an operation belonging to a vocabulary the
+document did not declare](#requires-is-the-scope), missing keys, [a key that is not one the
+core reads](#the-keys-the-core-reads), an expression where a literal belongs, a local
+nothing declared, an undefined definition, an argument list that does not match a
+definition's parameters, a cycle between definitions, a state path that is not in the
+schema.
 
 A rule set needs both `state.schema` and `state.initial`, and a schema declaring no fields
 is a build error. A state document is a public interface, so there has to be something to
@@ -50,19 +52,22 @@ null, and rule sets are built on their doing so.
 
 ## The keys the core reads
 
-Eight in the document and one in every node — `$schema`, `id`, `version`, `requires`,
-`state`, `definitions`, `inputs`, `terminal`, and `op`. Everything else is vocabulary. What
-follows is the whole of the rest: the objects the core opens itself, and what it takes from
-each.
+Ten in the document and one in every node — `$schema`, `id`, `version`, `requires`, `uses`,
+`state`, `definitions`, `held`, `inputs`, `terminal`, and `op`. Everything else is
+vocabulary. What follows is the whole of the rest: the objects the core opens itself, and
+what it takes from each.
 
 | Where | Keys | |
 | --- | --- | --- |
-| the document | `$schema` `id` `version` `requires` `state` `definitions` `inputs` `terminal` | `id`, `version`, `state` and `inputs` are required. `$schema` is reserved and not read |
+| the document | `$schema` `id` `version` `requires` `uses` `state` `definitions` `held` `inputs` `terminal` | `id` and `version` are required; so are `state` and `inputs` unless `uses` declares something. `$schema` is reserved and not read |
 | `requires[]` | `plugin` `version` | a constraint omitted means any version will do |
+| `uses[]` | `ruleSet` `version` `as` | `ruleSet` is required; `as` defaults to it and may not contain `.` |
 | `state` | `schema` `initial` | both required, and a schema declaring no fields is refused |
 | `state.initial` | one value per declared field | every field, and no field the schema did not declare |
 | `definitions.<name>` | `body` `params` | only where `body` is written. Otherwise the value **is** the body, so a definition can be a node, a record, or a plain named constant |
-| `inputs.<name>` | `params` `actor` `when` `effects` | `effects` is required; the other three are not |
+| `held.<alias>.<input>` | `when` | required. The alias has to be one `uses` declares and the input one that rule set has |
+| `inputs.<name>` | `params` `actor` `when` `effects` `fires` | `effects` is required unless `fires` is written; the rest are not. A name may not contain `.` |
+| `inputs.<name>.fires[]` | `held` `input` `args` | `held` and `input` are required; `args` gives one value per parameter of the input named, and no other |
 | `inputs.<name>.params.<name>` | `domain` | required |
 | `terminal` | `when` `result` | the section is optional; `when` is required once it is written and `result` is not |
 
@@ -76,6 +81,11 @@ guard, which is an input that is always legal, and nothing downstream can tell t
 rule set that meant it. Inside a node the rule reverses, and has to — the keys there belong
 to the plugin, and a core with an opinion about them would make adding an argument to an
 operation a change to the runtime.
+
+**An input's name may not contain `.`.** Nothing in the runtime spends the character yet; it
+is reserved against the day a rule set may hold another and offer its inputs under a
+qualified name. Taking a name away once documents are written with it is the one version of
+this that cannot be done.
 
 ### `actor`
 
@@ -99,6 +109,170 @@ faulting — mid-game, and `TerminalStatus.Result` is null where a rule set decl
 A rule set with no `terminal` section never reports one, which is an ordinary shape rather
 than an omission: a process with no end has nothing to write there, and a caller that stops
 when nothing is legal never asks.
+
+## `uses` and `held`: a rule set that holds others
+
+An ordinary business process — *to put somebody on a shift, a request has to be raised and
+granted* — has two halves a person naturally writes as two documents, and the guard that
+matters lives in neither. The request half cannot see the roster, so nothing stops a request
+being raised for a shift the roster will refuse; the roster half has never heard of a
+request, so nothing in it is wrong either. `definitions` does not close it: a definition
+shares an expression between documents, and this needs a guard over *both states at once*.
+
+`uses` names the rule sets a document holds. `held` is what it may say about them.
+
+```jsonc
+"uses": [
+  { "ruleSet": "request", "version": "^1.0", "as": "req" },
+  { "ruleSet": "shift",   "version": "^1.0", "as": "roster" }
+],
+
+"held": {
+  // The guard that could not be written as two documents.
+  "roster": {
+    "assign": { "when": { "op": "cmp.eq", "right": "granted",
+                          "left": { "op": "rec.at", "record": "$req", "key": "stage" } } }
+  }
+}
+```
+
+**A held rule set's state is a field.** `uses` declares it — it is not written in
+`state.schema` and takes no value in `state.initial`, because it opens where the component
+itself opens. A composite's case is therefore still one state document, still a string,
+still storable in a column and resumable on another machine. The field holds a record whose
+keys are the component's fields, so reading into it is `rec.at` and composition costs the
+core no vocabulary at all.
+
+**A held rule set's inputs are offered as `alias.input`.** In `RuleContext.Inputs`, in what
+`GetValidInputs` hands back, and in the `input` of an input document — the same string, the
+same document, so replay and recording need nothing new. That is why an input's own name may
+not contain `.`.
+
+**`held` may only refuse.** Its `when` is evaluated in the composite — over the whole
+composed state, against the composite's definitions — with the component input's parameters
+in scope under the names the component gave them, and it is asked *after* the component's
+own guard. So writing `false` there hides an input and nothing written there can grant one.
+
+**A composite has no other way into a component's state.** The field is in the composite's
+schema — it has to be, for `$req` to read it — so an effect can be *written* against it, and
+it is refused when it runs, at every depth. That is the restriction the rest of composition
+rests on: a composite that could set a component's state to whatever it liked would make the
+component's own reachable set say nothing about what the composite does to it.
+
+### `fires`: one input, several of a component's
+
+Narrowing alone models a longer process than the one being run. *A request is granted* and
+*somebody goes on the shift* are one decision; as two inputs the composite has a state
+between them — granted, not yet assigned — that the process never occupies. The merged
+document composition replaces has a `grant` that also performs the assignment, and this is
+how a composite has one:
+
+```jsonc
+"held": {
+  "req":    { "grant":  { "when": false } },   // hidden: the only way to it is what drives it
+  "roster": { "assign": { "when": false } }
+},
+
+"inputs": {
+  "grant": {
+    "fires": [
+      { "held": "req", "input": "grant" },
+      { "held": "roster", "input": "assign", "args": { "slot": "#reqShift", "who": "#reqWho" } }
+    ]
+  }
+}
+```
+
+Measured against the document it replaces, that reaches **the same fifteen states and the
+same twenty-eight transitions**, element for element, where narrowing alone reaches
+thirty-nine.
+
+**A static list, not an effect.** It may not sit inside a branch, so which component inputs
+an input drives can be read off the document without running it — the property a literal
+`path` buys for a write. It is also what lets `GetValidInputs` decide a firing candidate by
+asking each fired input, rather than the author writing that guard a second time and writing
+it differently.
+
+**Every fired input goes through its own rule set's two questions**: each argument has to be
+a value that component's domain produces, and then that component's guard has to accept it.
+An input is offered only where all of them are, so `ApplyToState` still refuses exactly what
+`GetValidInputs` would not have listed, and driving an input is never a way past a rule the
+component wrote. It writes nothing itself — what runs is the component's own effects.
+
+**A set of inputs all legal now, not a script of steps.** The arguments and every guard read
+the state the transition found, so none of them can depend on another's writes and none has
+to be guarded against them. Two that name one component share one draft, so their writes
+accumulate and land together — snapshot semantics, on the terms they hold everywhere else. A
+component that needs two of its own steps in one composite transition is a component that
+should offer one input for them.
+
+**`held` is not asked here.** The two say different things: `held` is when the composite
+*offers* a component's input as a move, and `fires` is the composite taking it having
+already decided. That is what makes `"when": false` the way to hide an input so the only
+route to it is the input that drives it.
+
+**An input that drives one that draws is one that draws**, so it goes through `GetOutcomes`
+like any other.
+
+### Why the restriction is worth what it costs
+
+**A composite must never be the thing that gets walked.** Its reachable set is the product of
+its parts, and two components of two hundred states are forty thousand together. It does not
+have to be: which inputs were ever legal, which guards were seen both ways, which endings
+were reached, and every property over a single component's state are questions about *a
+component*, and answering them costs the sum. Only a property spanning components needs the
+composite's own reachable set, and those are exactly the ones `held` and `fires` bear on,
+which is a small surface by construction.
+
+That decomposition is sound only because a component's state moves by the component's own
+inputs under the component's own rules. **Whatever a walk of a component alone found is an
+upper bound on what it does inside any composite that holds it** — so a rule set can be
+published on its own and true things said about it without knowing who will hold it. Read
+that over the component's *transition relation* and not over a walk that stops at its
+`terminal`: `GetValidInputs` does not consult `terminal`, and neither does a composite, so a
+component's own ending is the component's business and says nothing about the composite's.
+
+**A cycle is refused when the document is compiled**, naming the documents in it.
+
+**What a composite does not get.** It cannot start a case — *when A finishes, start a B* is
+I/O, and `GetValidInputs` answerable with no I/O is the property everything else rests on.
+It cannot hold *a list of* instances; one per declaration. And a component meant to be held
+and used more than once has to offer the transition that returns it to its start, because
+nothing else can: a composite may not write into a component's state, and the runtime will
+not invent an input the component did not declare.
+
+### Where the documents come from
+
+`CreateContext(document, held)` takes the document of every rule set reachable through
+`uses`, by identifier — the one thing composition adds to the runtime's surface.
+`ApplyToState`, `GetValidInputs`, `GetOutcomes` and `GetTerminalStatus` are unchanged.
+
+A dictionary rather than a callback, for the reason `PluginResolution` is pure: fetching a
+document is somebody else's business. And a caller has to know which documents to hand it
+*before* it hands them over, so `uses` is readable on its own, on the same terms `requires`
+is — no runtime, no plugin, and none of the documents it is about to go and get:
+
+```csharp
+ImmutableArray<RuleSetRequirement> held = RuleSetRequirement.ReadFrom(document);
+```
+
+A document a document holds may hold documents of its own, so a tool assembling a set walks
+the graph by calling this again on each one it fetches. Both readers parse a version
+constraint through the same code, for the reason [below](#requires-read-before-there-is-a-runtime)
+gives: two implementations of three constraint forms would disagree eventually, and the way
+they would disagree is a set assembled that the runtime then rejects.
+
+### What a stored composite state carries
+
+Each held field is written as its own frame — the component's `ruleSet` beside its `data` —
+and the identity is checked on the way in, on identifier and major version, exactly as a
+state document's own is.
+
+The composite's identity cannot do that job. A component may be revised across a major
+version without the composite being touched at all, so a stored state that named only
+`process@1.0.0` would go on being read after the thing it holds had stopped meaning what it
+said. Migration compounds under composition, and the runtime still declines to guess at it;
+what it will not do is fail to notice.
 
 ## Snapshot semantics
 
@@ -313,6 +487,24 @@ Reading a document off a stream genuinely is I/O, and that is what the asynchron
 overloads are for: `CreateContextAsync(Stream)`, `ApplyToStateAsync(Stream, Stream)` and
 `ApplyToStateAsync(Stream, Stream, Stream)`.
 They await the read and then run the same synchronous evaluation.
+
+## `requires` is the scope
+
+A name is resolved only among the plugins the document declared. An `op` whose namespace
+belongs to a loaded plugin the document did not name is refused, naming that plugin; so is a
+shorthand character, whether it is written bare or qualified.
+
+That is what makes `requires` the whole of what a rule set draws on rather than an
+approximation of it, and the reason to enforce it is what happens otherwise: a document
+reaching an undeclared vocabulary compiles wherever that plugin happens to be loaded and
+fails wherever it is not, which is a fault with no symptom until the document is moved — or
+published, and compiled by somebody else against a folder assembled from the `requires` it
+was too small to describe.
+
+One rule does two jobs where a character has more than one claimant. Narrowing to the
+declared vocabularies is what decides `$` between State and a second plugin that reserved
+it, so there is no separate tie-break: a character none of the declared vocabularies reserve
+is refused, and one that two of them reserve is ambiguous and has to be qualified.
 
 ## `requires`, read before there is a runtime
 

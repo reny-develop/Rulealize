@@ -65,6 +65,26 @@ namespace Rulealize.Tests
         /// <summary>Gets where the build put the plugin assemblies.</summary>
         public static string PluginFolder => Path.Combine(AppContext.BaseDirectory, "plugin");
 
+        /// <summary>Every published vocabulary, as a <c>requires</c> a test document can paste in.</summary>
+        /// <remarks>
+        /// A rule set may use no vocabulary it does not name, so a document written to
+        /// demonstrate one fault has to declare everything it happens to touch or it fails on
+        /// the declaration instead. Kept here rather than in each test class because there is
+        /// one such list and two of them would drift. No version constraints: which version
+        /// resolved is <see cref="ResolutionTests"/>'s question, never these.
+        /// </remarks>
+        public const string Requires = """
+              "requires": [
+                { "plugin": "Rulealize.Plugin.TypeSchema" },  { "plugin": "Rulealize.Plugin.State" },
+                { "plugin": "Rulealize.Plugin.Binding" },     { "plugin": "Rulealize.Plugin.Definition" },
+                { "plugin": "Rulealize.Plugin.Sequence" },    { "plugin": "Rulealize.Plugin.Comparison" },
+                { "plugin": "Rulealize.Plugin.Logic" },       { "plugin": "Rulealize.Plugin.Branch" },
+                { "plugin": "Rulealize.Plugin.Grid" },        { "plugin": "Rulealize.Plugin.Record" },
+                { "plugin": "Rulealize.Plugin.Tuple" },       { "plugin": "Rulealize.Plugin.Arithmetic" },
+                { "plugin": "Rulealize.Plugin.Chance" }
+              ],
+            """;
+
         public RuleRuntime Runtime { get; }
 
         /// <summary>Gets the rule set the README walks a reader through.</summary>

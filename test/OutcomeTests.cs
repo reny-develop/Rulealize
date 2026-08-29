@@ -380,7 +380,12 @@ namespace Rulealize.Tests
             Assert.Throws<RuleSetBuildException>(() => standard.Runtime.CreateContext($$"""
                 {
                   "id": "misplaced", "version": "1.0.0",
-                  "requires": [ { "plugin": "Rulealize.Plugin.Chance", "version": "^1.0" } ],
+                  "requires": [ { "plugin": "Rulealize.Plugin.Chance", "version": "^1.0" },
+                                { "plugin": "Rulealize.Plugin.TypeSchema" },
+                                { "plugin": "Rulealize.Plugin.State" },
+                                { "plugin": "Rulealize.Plugin.Sequence" },
+                                { "plugin": "Rulealize.Plugin.Definition" },
+                                { "plugin": "Rulealize.Plugin.Comparison" } ],
                   "state": { "schema": { "n": { "op": "type.int" } }, "initial": { "n": 0 } },
                   {{definitions}}
                   "inputs": { {{input}} }{{tail}}

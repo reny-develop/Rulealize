@@ -15,6 +15,14 @@ namespace Rulealize.Internal.Building
     /// </remarks>
     internal sealed class LiteralNode(RuleValue value) : ExpressionNode
     {
+        /// <summary>Gets the value, which is the same one however it is evaluated.</summary>
+        /// <remarks>
+        /// Read while the rule set is built, by the one caller that can act on knowing a guard
+        /// before there is a state: a <c>held</c> constraint written <c>false</c> offers
+        /// nothing in any state, so its input need not be enumerated at all.
+        /// </remarks>
+        public RuleValue Value => value;
+
         public override RuleValue Evaluate(IEvaluationContext context) => value;
     }
 

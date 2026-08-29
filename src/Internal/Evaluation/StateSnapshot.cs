@@ -49,12 +49,47 @@ namespace Rulealize.Internal.Evaluation
             return _writes[path.FieldIndex] ?? snapshot[path.FieldIndex];
         }
 
+        /// <summary>Where the state of a held rule set may not be written by an effect.</summary>
+        /// <remarks>
+        /// <para>
+        /// A composite may not write into a component's state except through that component's
+        /// own inputs. Its field is in the composite's schema — it has to be, for
+        /// <c>$req</c> to read it — so nothing stops the write being <em>written</em>, and
+        /// this is where it is stopped.
+        /// </para>
+        /// <para>
+        /// It is the restriction everything else about composition is affordable on. A
+        /// composite that could set a component's state to whatever it liked would make the
+        /// component's own reachable set say nothing about what the composite does to it, and
+        /// there would be nothing left to analyse but the product.
+        /// </para>
+        /// </remarks>
+        public string? SealedOrigin { get; set; }
+
         /// <inheritdoc />
         public void Set(StatePath path, RuleValue value)
         {
             ArgumentNullException.ThrowIfNull(path);
             ArgumentNullException.ThrowIfNull(value);
 
+            if (SealedOrigin is string origin && path.Schema is HeldStateSchema held)
+            {
+                throw new RuleEvaluationException(
+                    origin,
+                    $"wrote to '{path.Text}', which holds the state of '{held.Held.Qualified}'. "
+                    + "A held rule set's state changes through that rule set's own inputs and no other way; "
+                    + "an input drives one by naming it in 'fires'.");
+            }
+
+            _writes[path.FieldIndex] = value;
+        }
+
+        /// <summary>Writes a field the effects may not, which is how a held rule set's state moves.</summary>
+        /// <param name="path">The field.</param>
+        /// <param name="value">Its new value.</param>
+        public void Adopt(StatePath path, RuleValue value)
+        {
+            ArgumentNullException.ThrowIfNull(path);
             _writes[path.FieldIndex] = value;
         }
 

@@ -112,7 +112,7 @@ namespace Rulealize.Internal.Document
         /// into one.
         /// </para>
         /// </remarks>
-        private static bool IsCompatible(string claimed, CompiledRuleSet ruleSet)
+        internal static bool IsCompatible(string claimed, CompiledRuleSet ruleSet)
         {
             if (string.Equals(claimed, ruleSet.Qualified, StringComparison.Ordinal))
             {

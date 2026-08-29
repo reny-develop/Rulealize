@@ -203,12 +203,45 @@ namespace Rulealize
         /// required, unbound locals, undefined or cyclic definitions, and nodes used where
         /// their kind does not belong.
         /// </exception>
-        public RuleContext CreateContext(string ruleSetDocument)
+        public RuleContext CreateContext(string ruleSetDocument) => CreateContext(ruleSetDocument, null);
+
+        /// <summary>Compiles a rule set document, together with the documents it holds.</summary>
+        /// <param name="ruleSetDocument">The document.</param>
+        /// <param name="heldDocuments">
+        /// The document of every rule set reachable through <c>uses</c>, by identifier.
+        /// Anything a component holds in turn is looked up here too.
+        /// </param>
+        /// <returns>A context that states can be run through.</returns>
+        /// <exception cref="RuleSetBuildException">
+        /// The document is not a valid rule set, a document it holds was not supplied or does
+        /// not satisfy the version its holder asks for, or the rule sets hold one another.
+        /// </exception>
+        /// <remarks>
+        /// <para>
+        /// The one thing composition adds to this class's surface.
+        /// <see cref="RuleContext.ApplyToState(string, string, CancellationToken)"/>,
+        /// <see cref="RuleContext.GetValidInputs(string, int, CancellationToken)"/>,
+        /// <see cref="RuleContext.GetOutcomes(string, string, int, CancellationToken)"/> and
+        /// <see cref="RuleContext.GetTerminalStatus(string, CancellationToken)"/> are
+        /// unchanged, and so is what a case is: one state document, one string, storable in a
+        /// column and resumable on another machine.
+        /// </para>
+        /// <para>
+        /// A dictionary rather than a callback, because fetching a document is somebody
+        /// else's business for the reason fetching a plugin is —
+        /// <see cref="PluginResolution"/> says the whole of it. What a rule set holds is
+        /// readable from its <c>uses</c> before there is a runtime, the same way
+        /// <c>requires</c> is.
+        /// </para>
+        /// </remarks>
+        public RuleContext CreateContext(
+            string ruleSetDocument,
+            IReadOnlyDictionary<string, string>? heldDocuments)
         {
             ArgumentNullException.ThrowIfNull(ruleSetDocument);
 
             using JsonDocument document = Parse(ruleSetDocument);
-            return new RuleContext(new RuleSetCompiler(_operations).Compile(document.RootElement));
+            return new RuleContext(new RuleSetCompiler(_operations, heldDocuments).Compile(document.RootElement));
         }
 
         /// <summary>Compiles a rule set document read from a stream.</summary>

@@ -25,6 +25,14 @@ namespace Rulealize.Internal.Building
     /// expression and finding <c>grid.set</c> fails now, with the document in hand, rather
     /// than on the forty-first candidate of a <c>GetValidInputs</c> call.
     /// </para>
+    /// <para>
+    /// Which vocabularies may be consulted at all is the document's <c>requires</c>. A name
+    /// is looked up only in the plugins the rule set named, so a document reaching a
+    /// vocabulary it did not declare is refused here rather than compiling wherever that
+    /// vocabulary happens to be loaded and failing wherever it is not. That is what makes
+    /// <c>requires</c> the whole of what a document draws on, and it is what a rule set
+    /// published on its own rests on being true.
+    /// </para>
     /// </remarks>
     internal sealed class NodeBuilder
     {
@@ -74,6 +82,8 @@ namespace Rulealize.Internal.Building
                     {
                         return BuildRecord(element, path);
                     }
+
+                    Declared(op!, path);
 
                     if (_operations.TryGetExpression(op!, out ExpressionNodeFactory? factory))
                     {
@@ -136,6 +146,8 @@ namespace Rulealize.Internal.Building
                 throw new RuleSetBuildException(path, "an effect must be an object with an 'op'.");
             }
 
+            Declared(op!, path);
+
             if (_operations.TryGetEffect(op!, out EffectNodeFactory? factory))
             {
                 NodeBuildContext context = new(this, path, op!, element);
@@ -168,6 +180,8 @@ namespace Rulealize.Internal.Building
             {
                 throw new RuleSetBuildException(path, "a schema must be an object with an 'op'.");
             }
+
+            Declared(op!, path);
 
             if (_operations.TryGetSchema(op!, out SchemaNodeFactory? factory))
             {
@@ -212,21 +226,44 @@ namespace Rulealize.Internal.Building
                 {
                     throw new RuleSetBuildException(
                         path,
-                        $"'{@namespace}' does not reserve '{prefix}' for a shorthand. {Claimants(prefix)}");
+                        $"'{@namespace}' does not reserve '{prefix}' for a shorthand. {Reserving(prefix)}");
+                }
+
+                if (!_required.Contains(@namespace, StringComparer.Ordinal))
+                {
+                    throw new RuleSetBuildException(
+                        path,
+                        $"'{@namespace}' is a vocabulary this rule set does not name in 'requires'.");
                 }
             }
             else
             {
-                ImmutableArray<string> claimants = _operations.TryGetSugar(prefix, _required, out expander);
-                if (expander is null)
+                // A shorthand is vocabulary like anything else, so the candidates are the
+                // ones this document declared. Narrowing to those first is also what settles
+                // a character two plugins reserved, which is why there is one rule here and
+                // not two.
+                ImmutableArray<string> claimants = _operations.Claimants(prefix);
+                ImmutableArray<string> named =
+                    [.. claimants.Where(claimant => _required.Contains(claimant, StringComparer.Ordinal))];
+
+                if (named.Length == 0)
                 {
                     throw new RuleSetBuildException(
                         path,
-                        $"'{prefix}' is a shorthand for more than one vocabulary here, so this "
-                        + $"does not say which was meant. Write '{prefix}{claimants[0]}:', or the "
-                        + $"namespace of whichever of {string.Join(", ", claimants)} you mean, "
+                        $"'{prefix}' is a shorthand this rule set does not require. {Reserving(prefix)}");
+                }
+
+                if (named.Length > 1)
+                {
+                    throw new RuleSetBuildException(
+                        path,
+                        $"'{prefix}' is a shorthand for more than one vocabulary this rule set requires, "
+                        + $"so this does not say which was meant. Write '{prefix}{named[0]}:', or the "
+                        + $"namespace of whichever of {string.Join(", ", named)} you mean, "
                         + "or name just one of them in 'requires'.");
                 }
+
+                _operations.TryGetSugar(prefix, named[0], out expander);
             }
 
             ISugarExpander expanding = expander!;
@@ -259,12 +296,46 @@ namespace Rulealize.Internal.Building
             return end < text.Length && text[end] == ':' ? text[1..end] : null;
         }
 
-        private string Claimants(char prefix)
+        private string Reserving(char prefix)
         {
-            ImmutableArray<string> claimants = _operations.TryGetSugar(prefix, [], out ISugarExpander? _);
+            ImmutableArray<string> claimants = _operations.Claimants(prefix);
             return claimants.Length == 1
                 ? $"'{claimants[0]}' is the one vocabulary that does."
                 : $"It is reserved by {string.Join(", ", claimants)}.";
+        }
+
+        /// <summary>Holds an operation to the vocabularies the document named in <c>requires</c>.</summary>
+        /// <remarks>
+        /// <para>
+        /// Asked before the tables are consulted, so that a name belonging to a plugin the
+        /// document did not declare is reported as what it is rather than as an unknown
+        /// operation — the two have different fixes, and only one of them is adding a line to
+        /// <c>requires</c>.
+        /// </para>
+        /// <para>
+        /// An unqualified name is left alone. Registration qualifies every operation with the
+        /// namespace of the plugin that provided it, so nothing can be registered under one,
+        /// and the lookup that follows says so.
+        /// </para>
+        /// </remarks>
+        private void Declared(string op, SourcePath path)
+        {
+            int dot = op.IndexOf('.', StringComparison.Ordinal);
+            if (dot <= 0)
+            {
+                return;
+            }
+
+            string @namespace = op[..dot];
+            if (_required.Contains(@namespace, StringComparer.Ordinal)
+                || !_operations.TryGetProvider(@namespace, out PluginManifest? manifest))
+            {
+                return;
+            }
+
+            throw new RuleSetBuildException(
+                path,
+                $"'{op}' comes from {manifest!.Id}, which this rule set does not name in 'requires'.");
         }
 
         private ExpressionNode BuildRecord(JsonElement element, SourcePath path)

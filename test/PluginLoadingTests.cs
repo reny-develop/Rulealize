@@ -219,6 +219,9 @@ namespace Rulealize.Tests
             string ruleSet = $$"""
                 {
                   "id": "t", "version": "1.0.0",
+                  "requires": [ { "plugin": "Rulealize.Plugin.TypeSchema" },
+                                { "plugin": "Rulealize.Plugin.State" },
+                                { "plugin": "Rulealize.Plugin.Grid" } ],
                   "state": { "schema": { "n": { "op": "type.int" } }, "initial": { "n": 0 } },
                   "inputs": { "go": { "effects": [
                     { "op": "state.set", "path": "n", "value": { "op": "{{op}}" } } ] } }

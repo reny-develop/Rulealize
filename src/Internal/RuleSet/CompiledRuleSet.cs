@@ -33,6 +33,14 @@ namespace Rulealize.Internal.RuleSet
 
         public required CompiledTerminal? Terminal { get; init; }
 
+        /// <summary>Gets the rule sets this one holds, in the order <c>uses</c> declares them.</summary>
+        /// <remarks>
+        /// Empty for the great majority of rule sets, and everything that reads it is written
+        /// so that empty costs nothing: a rule set holding nothing runs the path it ran before
+        /// composition existed.
+        /// </remarks>
+        public ImmutableArray<HeldRuleSet> Held { get; init; } = [];
+
         /// <summary>Finds an input by the name an input document gives.</summary>
         /// <param name="name">The input name.</param>
         /// <returns>The input, or <see langword="null"/> when the rule set has none by that name.</returns>
@@ -48,6 +56,23 @@ namespace Rulealize.Internal.RuleSet
 
             return null;
         }
+
+        /// <summary>Finds a held rule set by its alias.</summary>
+        /// <param name="alias">The alias, as <c>uses</c> gave it.</param>
+        /// <returns>The held rule set, or <see langword="null"/> when nothing is held by that name.</returns>
+        public HeldRuleSet? FindHeld(string alias)
+        {
+            foreach (HeldRuleSet held in Held)
+            {
+                if (string.Equals(held.Alias, alias, StringComparison.Ordinal))
+                {
+                    return held;
+                }
+            }
+
+            return null;
+        }
+
     }
 
     /// <summary>The bodies of the <c>definitions</c> section, indexed as their descriptors are.</summary>
@@ -90,6 +115,16 @@ namespace Rulealize.Internal.RuleSet
         public required ExpressionNode? Guard { get; init; }
 
         public required ImmutableArray<EffectNode> Effects { get; init; }
+
+        /// <summary>Gets the held rule sets' inputs this one drives, in the order written.</summary>
+        /// <remarks>
+        /// A list rather than an effect, and not reachable from inside a branch, so which
+        /// component inputs an input drives can be read off the document without running it —
+        /// the property a literal <c>path</c> buys for a write. It is also what lets
+        /// <c>GetValidInputs</c> decide a candidate by asking each of them, instead of the
+        /// author writing that guard a second time and writing it differently.
+        /// </remarks>
+        public ImmutableArray<CompiledFire> Fires { get; init; } = [];
 
         /// <summary>Gets whether anything in this input's effects resolves a chance event.</summary>
         /// <remarks>

@@ -6,7 +6,7 @@
   // The smallest rule set that is still worth reading, and the one the README walks through.
   //
   // It exists to answer the first question a reader has — what does a rule set look like? —
-  // without asking them to hold sixty-four squares in their head first. Five plugins, three
+  // without asking them to hold sixty-four squares in their head first. Six plugins, three
   // inputs, two state fields.
   //
   // The one thing here that is not the shortest way to say it is `reason`. `reject` could
@@ -19,7 +19,8 @@
     { "plugin": "Rulealize.Plugin.State",      "version": "^1.0" },
     { "plugin": "Rulealize.Plugin.Comparison", "version": "^1.0" },
     { "plugin": "Rulealize.Plugin.Logic",      "version": "^1.0" },
-    { "plugin": "Rulealize.Plugin.Sequence",   "version": "^1.0" }
+    { "plugin": "Rulealize.Plugin.Sequence",   "version": "^1.0" },
+    { "plugin": "Rulealize.Plugin.Binding",    "version": "^1.0" }
   ],
 
   "state": {

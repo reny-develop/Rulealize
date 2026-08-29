@@ -47,8 +47,18 @@ namespace Rulealize
         /// <summary>Gets the identity a state document carries, <c>id@version</c>.</summary>
         public string RuleSet => _ruleSet.Qualified;
 
-        /// <summary>Gets the names of the inputs this rule set declares, in document order.</summary>
-        public ImmutableArray<string> Inputs => [.. _ruleSet.Inputs.Select(static input => input.Name)];
+        /// <summary>Gets the names of the inputs this rule set offers, in document order.</summary>
+        /// <remarks>
+        /// Its own first, then those of every rule set it holds, qualified by the aliases
+        /// <c>uses</c> gave them — as deep as the documents nest. A rule set holding nothing
+        /// lists exactly what it declares.
+        /// </remarks>
+        public ImmutableArray<string> Inputs => [.. Names(_ruleSet, string.Empty)];
+
+        private static IEnumerable<string> Names(CompiledRuleSet rules, string prefix) =>
+            rules.Inputs
+                .Select(input => prefix + input.Name)
+                .Concat(rules.Held.SelectMany(held => Names(held.Rules, $"{prefix}{held.Alias}.")));
 
         /// <summary>Gets the opening position, as a state document.</summary>
         public string InitialState => StateDocument.Write(_ruleSet, _ruleSet.InitialState);
@@ -299,19 +309,11 @@ namespace Rulealize
             ArgumentOutOfRangeException.ThrowIfNegativeOrZero(validationLimit);
 
             using JsonDocument state = Parse(stateDocument, "state");
-            StateSnapshot snapshot = new(StateDocument.Read(_ruleSet, state.RootElement));
-            EvaluationSession session = new(_ruleSet.Definitions, snapshot, cancellationToken);
+            ImmutableArray<RuleValue> fields = StateDocument.Read(_ruleSet, state.RootElement);
+            Part root = Part.Of(_ruleSet, fields, "inputs", cancellationToken);
 
             Search search = new(validationLimit);
-            foreach (CompiledInput input in _ruleSet.Inputs)
-            {
-                if (search.Exhausted)
-                {
-                    break;
-                }
-
-                Collect(session, input, search, cancellationToken);
-            }
+            Offered(root, null, null, string.Empty, search, cancellationToken);
 
             return new ValidInputSet(search.Found.ToImmutable(), search.Evaluated, search.Exhausted);
         }
@@ -358,34 +360,60 @@ namespace Rulealize
             ImmutableArray<RuleValue> fields = StateDocument.Read(_ruleSet, state);
             InputRequest request = InputDocument.Read(_ruleSet, input);
 
-            CompiledInput declared = _ruleSet.FindInput(request.Input)
-                ?? throw new RuleDocumentException($"'{request.Input}' is not an input of '{_ruleSet.Qualified}'.");
+            Part root = Part.Of(_ruleSet, fields, $"inputs.{request.Input}.effects", cancellationToken);
+            if (!root.TryResolveInput(
+                    request.Input,
+                    out ImmutableArray<string> path,
+                    out CompiledInput? declared,
+                    out HeldRuleSet? held))
+            {
+                throw new RuleDocumentException($"'{request.Input}' is not an input of '{_ruleSet.Qualified}'.");
+            }
 
-            if (declared.HasDraw && !outcomeSupplied)
+            if (declared!.HasDraw && !outcomeSupplied)
             {
                 throw new InvalidOperationException(
-                    $"'{declared.Name}' resolves something nobody chose, so applying it takes an outcome as well. "
+                    $"'{request.Input}' resolves something nobody chose, so applying it takes an outcome as well. "
                     + "GetOutcomes says what can happen and where each one leads; ApplyToState with an outcome "
                     + "document replays one that already did.");
             }
 
-            StateSnapshot snapshot = new(fields);
-            EvaluationSession session = new(_ruleSet.Definitions, snapshot, cancellationToken);
-            EvaluationContext context = session.CreateContext(declared.FrameSize);
-            BindArguments(session, declared, request, context, cancellationToken);
+            Part part = root.Descend(path);
+            Part? holder = path.IsEmpty ? null : root.Descend(path.RemoveAt(path.Length - 1));
+
+            EvaluationContext context = part.Session.CreateContext(declared.FrameSize);
+            BindArguments(part.Session, request.Input, declared, request, context, cancellationToken);
 
             if (declared.Guard is not null
-                && !declared.Guard.Evaluate(context).AsBoolean($"inputs.{declared.Name}.when"))
+                && !declared.Guard.Evaluate(context).AsBoolean($"inputs.{request.Input}.when"))
             {
                 throw new IllegalInputException(
-                    declared.Name,
-                    $"'{declared.Name}' is not allowed in this state.");
+                    request.Input,
+                    $"'{request.Input}' is not allowed in this state.");
             }
 
             ImmutableArray<RuleValue> arguments =
                 [.. declared.Parameters.Select(parameter => context.GetLocal(parameter.Slot))];
 
-            return new Prepared(fields, declared, arguments);
+            // Asked after the input's own rule set has allowed it, and only ever able to
+            // refuse. Everything a holder says, and every input this one drives, goes through
+            // the same code the candidate search uses, so this method refuses exactly what
+            // GetValidInputs would not have listed.
+            Offer offer = new(
+                request.Input,
+                declared,
+                part,
+                held?.FindConstraint(declared.Name),
+                holder);
+
+            if (offer.Refusal(arguments.AsSpan(), context, cancellationToken) is string refusal)
+            {
+                throw new IllegalInputException(
+                    request.Input,
+                    $"'{request.Input}' is allowed by '{part.Rules.Qualified}', and {refusal}");
+            }
+
+            return new Prepared(fields, request.Input, path, declared, arguments);
         }
 
         /// <summary>Runs an input's effects once, for the outcome a trail describes.</summary>
@@ -404,26 +432,66 @@ namespace Rulealize
         /// </remarks>
         private TransitionResult Run(Prepared prepared, DrawTrail trail, CancellationToken cancellationToken)
         {
-            StateSnapshot snapshot = new(prepared.Fields);
-            EvaluationSession session = new(_ruleSet.Definitions, snapshot, cancellationToken, trail);
-            EvaluationContext context = session.CreateContext(prepared.Declared.FrameSize);
+            string origin = $"inputs.{prepared.Name}.effects";
+            Part root = Part.Of(_ruleSet, prepared.Fields, origin, cancellationToken, trail);
 
-            for (int i = 0; i < prepared.Declared.Parameters.Length; i++)
-            {
-                context.Seed(prepared.Declared.Parameters[i].Slot, prepared.Arguments[i]);
-            }
+            Drive(root.Descend(prepared.Path), prepared.Name, prepared.Declared, prepared.Arguments, cancellationToken);
 
-            StateDraft draft = new(snapshot, _ruleSet.Schema.Fields);
-            foreach (EffectNode effect in prepared.Declared.Effects)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                effect.Apply(context, draft);
-            }
-
-            ImmutableArray<RuleValue> next = draft.Commit($"inputs.{prepared.Declared.Name}.effects");
+            ImmutableArray<RuleValue> next = root.Commit();
             TerminalStatus terminal = EvaluateTerminal(next, cancellationToken);
             return new TransitionResult(_ruleSet.Qualified, WriteData(next), terminal.IsTerminal, terminal.Result);
         }
+
+        /// <summary>Runs one input's effects, and then everything it drives.</summary>
+        /// <remarks>
+        /// <para>
+        /// Recursive, because a rule set a composite holds may hold rule sets of its own and
+        /// drive their inputs exactly as the composite drives its. Every level runs against
+        /// its own snapshot, its own definitions and its own draft, so snapshot semantics
+        /// hold inside a composite transition on the terms they hold in any other: the
+        /// expressions read the position as the input found it, and the writes pile up and
+        /// land together.
+        /// </para>
+        /// <para>
+        /// Two fired inputs naming one rule set share that rule set's draft, which is what
+        /// makes them a set of things that happen rather than a sequence of steps.
+        /// </para>
+        /// </remarks>
+        private static void Drive(
+            Part part,
+            string name,
+            CompiledInput declared,
+            ImmutableArray<RuleValue> arguments,
+            CancellationToken cancellationToken)
+        {
+            EvaluationContext context = part.Session.CreateContext(declared.FrameSize);
+            for (int i = 0; i < declared.Parameters.Length; i++)
+            {
+                context.Seed(declared.Parameters[i].Slot, arguments[i]);
+            }
+
+            foreach (EffectNode effect in declared.Effects)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                effect.Apply(context, part.Draft);
+            }
+
+            foreach (CompiledFire fire in declared.Fires)
+            {
+                Fired resolved = Fire(part, fire, context, cancellationToken);
+                if (!resolved.Allowed)
+                {
+                    // Settled before any of this ran, by Begin and by the candidate search.
+                    // Reaching it means the two disagreed, which is a fault in the runtime.
+                    throw new RuleEvaluationException(
+                        $"inputs.{name}.fires",
+                        $"'{fire.Name}' was allowed when the input was accepted and is not now: {resolved.Refusal}");
+                }
+
+                Drive(part.Held(fire.Alias), fire.Name, fire.Declared, resolved.Arguments, cancellationToken);
+            }
+        }
+
 
         private TransitionResult Replay(
             JsonElement input,
@@ -434,11 +502,11 @@ namespace Rulealize
             OutcomeRequest resolved = OutcomeDocument.Read(_ruleSet, outcome);
             Prepared prepared = Begin(input, state, outcomeSupplied: true, cancellationToken);
 
-            if (!string.Equals(resolved.Input, prepared.Declared.Name, StringComparison.Ordinal))
+            if (!string.Equals(resolved.Input, prepared.Name, StringComparison.Ordinal))
             {
                 throw new RuleDocumentException(
                     $"The outcome resolves '{resolved.Input}', and the input document applies "
-                    + $"'{prepared.Declared.Name}'.");
+                    + $"'{prepared.Name}'.");
             }
 
             DrawTrail trail = new(resolved.Draws);
@@ -450,7 +518,7 @@ namespace Rulealize
             if (trail.Consumed < resolved.Draws.Length)
             {
                 throw new RuleDocumentException(
-                    $"The outcome writes down {resolved.Draws.Length} draws and '{prepared.Declared.Name}' makes "
+                    $"The outcome writes down {resolved.Draws.Length} draws and '{prepared.Name}' makes "
                     + $"{trail.Consumed} of them in this state, so the two do not describe the same transition.");
             }
 
@@ -468,7 +536,7 @@ namespace Rulealize
         {
             TransitionResult result = Run(prepared, new DrawTrail([]), cancellationToken);
             return new OutcomeSet(
-                [new Outcome(prepared.Declared.Name, [], [], 1, result)],
+                [new Outcome(prepared.Name, [], [], 1, result)],
                 coverage: 1,
                 evaluated: 1,
                 truncated: false);
@@ -519,7 +587,7 @@ namespace Rulealize
                 {
                     TransitionResult result = Run(prepared, new DrawTrail(branch.Script), cancellationToken);
                     found.Add(new Outcome(
-                        prepared.Declared.Name, branch.Script, branch.Written, branch.Probability, result));
+                        prepared.Name, branch.Script, branch.Written, branch.Probability, result));
                     coverage += branch.Probability;
                 }
                 catch (UnscriptedDrawException unscripted)
@@ -565,6 +633,8 @@ namespace Rulealize
         /// <summary>What a transition has settled before its effects run.</summary>
         private readonly record struct Prepared(
             ImmutableArray<RuleValue> Fields,
+            string Name,
+            ImmutableArray<string> Path,
             CompiledInput Declared,
             ImmutableArray<RuleValue> Arguments);
 
@@ -597,8 +667,9 @@ namespace Rulealize
         /// matched leaves every expression downstream seeing exactly what the search saw.
         /// </para>
         /// </remarks>
-        private void BindArguments(
+        private static void BindArguments(
             EvaluationSession session,
+            string name,
             CompiledInput declared,
             InputRequest request,
             EvaluationContext context,
@@ -615,17 +686,17 @@ namespace Rulealize
                 if (!request.Arguments.TryGetValue(parameter.Name, out RuleValue? value))
                 {
                     throw new RuleDocumentException(
-                        $"'{declared.Name}' takes a '{parameter.Name}', and the input document does not give one.");
+                        $"'{name}' takes a '{parameter.Name}', and the input document does not give one.");
                 }
 
-                context.Seed(parameter.Slot, Resolve(declared, parameter, value, domainContext, cancellationToken));
+                context.Seed(parameter.Slot, Resolve(name, declared, parameter, value, domainContext, cancellationToken));
             }
 
             foreach (string supplied in request.Arguments.Keys)
             {
                 if (declared.FindParameter(supplied) is null)
                 {
-                    throw new RuleDocumentException($"'{declared.Name}' has no parameter named '{supplied}'.");
+                    throw new RuleDocumentException($"'{name}' has no parameter named '{supplied}'.");
                 }
             }
         }
@@ -637,13 +708,14 @@ namespace Rulealize
         /// it.
         /// </remarks>
         private static RuleValue Resolve(
+            string name,
             CompiledInput declared,
             CompiledParameter parameter,
             RuleValue supplied,
             EvaluationContext domainContext,
             CancellationToken cancellationToken)
         {
-            string origin = $"inputs.{declared.Name}.params.{parameter.Name}.domain";
+            string origin = $"inputs.{name}.params.{parameter.Name}.domain";
 
             foreach (RuleValue candidate in parameter.Domain.Evaluate(domainContext).AsSequence(origin))
             {
@@ -656,35 +728,91 @@ namespace Rulealize
             }
 
             throw new IllegalInputException(
-                declared.Name,
+                name,
                 $"{RuleValue.Describe(supplied)} is not among the values '{parameter.Name}' "
                 + $"may take in this state.");
         }
 
-        private void Collect(
-            EvaluationSession session,
-            CompiledInput input,
+        /// <summary>Sifts everything one rule set offers, and then everything it holds.</summary>
+        /// <remarks>
+        /// <para>
+        /// Depth-first over the aliases, so a rule set two levels down offers its inputs as
+        /// <c>a.b.c</c> and is sifted by its own guard, then by whatever holds it. The cost is
+        /// additive: each rule set's domains are enumerated once, and a holder adds one guard
+        /// evaluation per candidate it has an opinion about.
+        /// </para>
+        /// <para>
+        /// A rule set holding nothing runs this once over its own inputs, which is the path it
+        /// ran before composition existed.
+        /// </para>
+        /// </remarks>
+        private static void Offered(
+            Part part,
+            Part? holder,
+            HeldRuleSet? through,
+            string prefix,
             Search search,
             CancellationToken cancellationToken)
         {
+            foreach (CompiledInput input in part.Rules.Inputs)
+            {
+                if (search.Exhausted)
+                {
+                    return;
+                }
+
+                HeldConstraint? constraint = through?.FindConstraint(input.Name);
+
+                // An input its holder refuses everywhere is not enumerated at all. Walking its
+                // domains to discard every candidate would spend the caller's limit on
+                // candidates that cannot come back, which is the one way a hidden input could
+                // cost something.
+                if (constraint?.Never == true)
+                {
+                    continue;
+                }
+
+                Collect(
+                    new Offer(prefix + input.Name, input, part, constraint, holder),
+                    search,
+                    cancellationToken);
+            }
+
+            foreach (HeldRuleSet held in part.Rules.Held)
+            {
+                if (search.Exhausted)
+                {
+                    return;
+                }
+
+                Offered(part.Held(held.Alias), part, held, prefix + held.Alias + ".", search, cancellationToken);
+            }
+        }
+
+        private static void Collect(
+            Offer offer,
+            Search search,
+            CancellationToken cancellationToken)
+        {
+            CompiledInput input = offer.Declared;
+
             // Domains are evaluated once per input, with no argument bound: a candidate is
             // the product of the domains, so none of them may depend on another's choice.
-            EvaluationContext domainContext = session.CreateContext(input.FrameSize);
+            EvaluationContext domainContext = offer.Part.Session.CreateContext(input.FrameSize);
             SequenceValue[] domains = new SequenceValue[input.Parameters.Length];
             for (int i = 0; i < domains.Length; i++)
             {
                 domains[i] = input.Parameters[i].Domain
                     .Evaluate(domainContext)
-                    .AsSequence($"inputs.{input.Name}.params.{input.Parameters[i].Name}.domain");
+                    .AsSequence($"inputs.{offer.Name}.params.{input.Parameters[i].Name}.domain");
             }
 
             RuleValue[] chosen = new RuleValue[domains.Length];
-            Walk(session, input, domains, chosen, 0, search, cancellationToken);
+            Walk(offer, domains, chosen, 0, search, cancellationToken);
         }
 
-        private void Walk(
-            EvaluationSession session,
-            CompiledInput input,
+        private static void Walk(
+            Offer offer,
             SequenceValue[] domains,
             RuleValue[] chosen,
             int depth,
@@ -698,7 +826,7 @@ namespace Rulealize
 
             if (depth == domains.Length)
             {
-                Consider(session, input, chosen, search);
+                Consider(offer, chosen, search, cancellationToken);
                 return;
             }
 
@@ -707,7 +835,7 @@ namespace Rulealize
                 cancellationToken.ThrowIfCancellationRequested();
 
                 chosen[depth] = value;
-                Walk(session, input, domains, chosen, depth + 1, search, cancellationToken);
+                Walk(offer, domains, chosen, depth + 1, search, cancellationToken);
                 if (search.Exhausted)
                 {
                     return;
@@ -715,20 +843,31 @@ namespace Rulealize
             }
         }
 
-        private void Consider(EvaluationSession session, CompiledInput input, RuleValue[] chosen, Search search)
+        private static void Consider(
+            Offer offer,
+            RuleValue[] chosen,
+            Search search,
+            CancellationToken cancellationToken)
         {
+            CompiledInput input = offer.Declared;
+
             if (!search.Take())
             {
                 return;
             }
 
-            EvaluationContext context = session.CreateContext(input.FrameSize);
+            EvaluationContext context = offer.Part.Session.CreateContext(input.FrameSize);
             for (int i = 0; i < chosen.Length; i++)
             {
                 context.Seed(input.Parameters[i].Slot, chosen[i]);
             }
 
-            if (input.Guard is not null && !input.Guard.Evaluate(context).AsBoolean($"inputs.{input.Name}.when"))
+            if (input.Guard is not null && !input.Guard.Evaluate(context).AsBoolean($"inputs.{offer.Name}.when"))
+            {
+                return;
+            }
+
+            if (!offer.Allows(chosen, context, cancellationToken))
             {
                 return;
             }
@@ -746,14 +885,327 @@ namespace Rulealize
                 // whose domain yields something unwritable says so with the parameter named.
                 arguments[name] = chosen[i].GetCanonicalText()
                     ?? throw new RuleEvaluationException(
-                        $"inputs.{input.Name}.params.{name}",
+                        $"inputs.{offer.Name}.params.{name}",
                         $"{RuleValue.Describe(chosen[i])} has no text form, so it cannot be an input argument.");
 
                 values.Add(new KeyValuePair<string, RuleValue>(name, chosen[i]));
             }
 
             string? actor = input.Actor?.Evaluate(context).GetCanonicalText();
-            search.Found.Add(new ValidInput(input.Name, values.MoveToImmutable(), arguments.ToImmutable(), actor));
+            search.Found.Add(new ValidInput(offer.Name, values.MoveToImmutable(), arguments.ToImmutable(), actor));
+        }
+
+        /// <summary>Builds a session over one held rule set's part of a composite state.</summary>
+        /// <remarks>
+        /// A component's expressions were compiled against its own schema and its own
+        /// definitions, so they run against its own snapshot. Unpacking the field it occupies
+        /// is the whole of what a composite has to do to make that so, and it is what keeps a
+        /// component's meaning independent of who holds it.
+        /// </remarks>
+        /// <summary>One rule set's part of a composite state, and what is happening to it.</summary>
+        /// <remarks>
+        /// <para>
+        /// A composite's state is one document, and every rule set inside it has a part of
+        /// that document, a snapshot of it, the session its own expressions run in, and a
+        /// draft collecting its own writes. This is that, and it is a tree because a rule set
+        /// a composite holds may hold rule sets of its own.
+        /// </para>
+        /// <para>
+        /// Parts are made once per call and reached by alias, so two things that touch one
+        /// component touch one part: the definition results it memoises last a whole
+        /// <c>GetValidInputs</c> sweep, and two fired inputs naming it accumulate into one
+        /// draft over one snapshot.
+        /// </para>
+        /// <para>
+        /// Every draft is sealed. Effects at any depth are refused a write to a field holding
+        /// a rule set's state, which is the restriction the rest of composition rests on and
+        /// is not one a level of nesting is allowed to shed.
+        /// </para>
+        /// </remarks>
+        private sealed class Part
+        {
+            private readonly Dictionary<string, Part> _held = new(StringComparer.Ordinal);
+            private readonly string _origin;
+            private readonly CancellationToken _cancellationToken;
+            private readonly DrawTrail? _trail;
+
+            private Part(
+                CompiledRuleSet rules,
+                ImmutableArray<RuleValue> fields,
+                string origin,
+                CancellationToken cancellationToken,
+                DrawTrail? trail)
+            {
+                Rules = rules;
+                Snapshot = new StateSnapshot(fields);
+                Session = new EvaluationSession(rules.Definitions, Snapshot, cancellationToken, trail);
+                Draft = new StateDraft(Snapshot, rules.Schema.Fields) { SealedOrigin = origin };
+                _origin = origin;
+                _cancellationToken = cancellationToken;
+                _trail = trail;
+            }
+
+            public CompiledRuleSet Rules { get; }
+
+            public StateSnapshot Snapshot { get; }
+
+            public EvaluationSession Session { get; }
+
+            public StateDraft Draft { get; }
+
+            public static Part Of(
+                CompiledRuleSet rules,
+                ImmutableArray<RuleValue> fields,
+                string origin,
+                CancellationToken cancellationToken,
+                DrawTrail? trail = null) =>
+                new(rules, fields, origin, cancellationToken, trail);
+
+            /// <summary>Gets the part a held rule set occupies, making it the first time.</summary>
+            public Part Held(string alias)
+            {
+                if (!_held.TryGetValue(alias, out Part? part))
+                {
+                    HeldRuleSet held = Rules.FindHeld(alias)!;
+                    part = new Part(
+                        held.Rules,
+                        held.Schema.Unpack(Snapshot[held.Field.FieldIndex]),
+                        _origin,
+                        _cancellationToken,
+                        _trail);
+
+                    _held.Add(alias, part);
+                }
+
+                return part;
+            }
+
+            /// <summary>Follows a chain of aliases to the part that declares an input.</summary>
+            public Part Descend(ImmutableArray<string> path)
+            {
+                Part part = this;
+                foreach (string alias in path)
+                {
+                    part = part.Held(alias);
+                }
+
+                return part;
+            }
+
+            /// <summary>Splits a qualified input name into the aliases leading to it, and the input.</summary>
+            /// <param name="name">The name an input document gave, relative to this part.</param>
+            /// <param name="path">Receives the aliases, outermost first.</param>
+            /// <param name="declared">Receives the input.</param>
+            /// <param name="through">Receives the held rule set the input belongs to.</param>
+            /// <returns><see langword="true"/> when the name names an input.</returns>
+            /// <remarks>
+            /// An input's own name may not contain a dot, so every segment before the last is
+            /// an alias and there is nothing to disambiguate. Nesting goes as deep as the
+            /// documents do: <c>a.b.c</c> is what <c>a</c> holds under <c>b</c>, and its input
+            /// <c>c</c>.
+            /// </remarks>
+            public bool TryResolveInput(
+                string name,
+                out ImmutableArray<string> path,
+                out CompiledInput? declared,
+                out HeldRuleSet? through)
+            {
+                ImmutableArray<string>.Builder aliases = ImmutableArray.CreateBuilder<string>();
+                CompiledRuleSet rules = Rules;
+                through = null;
+
+                ReadOnlySpan<char> rest = name;
+                while (true)
+                {
+                    int dot = rest.IndexOf('.');
+                    if (dot < 0)
+                    {
+                        declared = rules.FindInput(rest.ToString());
+                        path = aliases.ToImmutable();
+                        return declared is not null;
+                    }
+
+                    HeldRuleSet? held = rules.FindHeld(rest[..dot].ToString());
+                    if (held is null)
+                    {
+                        declared = null;
+                        through = null;
+                        path = [];
+                        return false;
+                    }
+
+                    aliases.Add(held.Alias);
+                    rules = held.Rules;
+                    through = held;
+                    rest = rest[(dot + 1)..];
+                }
+            }
+
+            /// <summary>Produces the state this part arrives at, with everything it holds folded in.</summary>
+            public ImmutableArray<RuleValue> Commit()
+            {
+                foreach ((string alias, Part part) in _held)
+                {
+                    HeldRuleSet held = Rules.FindHeld(alias)!;
+                    Draft.Adopt(held.Field, held.Schema.Pack(part.Commit()));
+                }
+
+                return Draft.Commit(_origin);
+            }
+        }
+
+        /// <summary>One input on offer, and everything needed to decide whether it is allowed.</summary>
+        /// <remarks>
+        /// <see cref="Part"/> is the rule set that declared the input; <see cref="Holder"/> is
+        /// the one that holds it, and is what a <c>held</c> guard reads — the whole composed
+        /// state, which is the thing neither document could see on its own.
+        /// </remarks>
+        private readonly record struct Offer(
+            string Name,
+            CompiledInput Declared,
+            Part Part,
+            HeldConstraint? Constraint,
+            Part? Holder)
+        {
+            /// <summary>Asks whether anything refuses a candidate its own rule set allowed.</summary>
+            /// <param name="chosen">The candidate's arguments, in the input's parameter order.</param>
+            /// <param name="context">The context the guard was evaluated in, arguments bound.</param>
+            /// <param name="cancellationToken">Cancels a long domain walk.</param>
+            /// <returns><see langword="true"/> when nothing refuses it.</returns>
+            public bool Allows(
+                ReadOnlySpan<RuleValue> chosen,
+                EvaluationContext context,
+                CancellationToken cancellationToken) =>
+                Refusal(chosen, context, cancellationToken) is null;
+
+            /// <summary>Says why a candidate is refused, or <see langword="null"/> when it is not.</summary>
+            /// <remarks>
+            /// Two things can refuse, and neither can allow anything: the <c>held</c> guard
+            /// whoever holds this rule set wrote over the input, and — for an input that fires
+            /// — every input it drives, which has to be one its own rule set would have
+            /// allowed anyway.
+            /// </remarks>
+            public string? Refusal(
+                ReadOnlySpan<RuleValue> chosen,
+                EvaluationContext context,
+                CancellationToken cancellationToken)
+            {
+                if (Constraint is HeldConstraint constraint && Holder is not null)
+                {
+                    EvaluationContext outer = Holder.Session.CreateContext(constraint.FrameSize);
+                    for (int i = 0; i < chosen.Length && i < constraint.ParameterSlots.Length; i++)
+                    {
+                        outer.Seed(constraint.ParameterSlots[i], chosen[i]);
+                    }
+
+                    if (!constraint.When.Evaluate(outer).AsBoolean($"held.{Name}.when"))
+                    {
+                        return $"'held.{Name}.when' refuses it in this state.";
+                    }
+                }
+
+                foreach (CompiledFire fire in Declared.Fires)
+                {
+                    Fired resolved = Fire(Part, fire, context, cancellationToken);
+                    if (!resolved.Allowed)
+                    {
+                        return $"it drives '{fire.Name}', and {resolved.Refusal}";
+                    }
+                }
+
+                return null;
+            }
+        }
+
+        /// <summary>What a fired input resolved to, and whether it may run.</summary>
+        private readonly record struct Fired(bool Allowed, ImmutableArray<RuleValue> Arguments, string Refusal);
+
+        /// <summary>Resolves a fired input's arguments and asks its rule set whether it is allowed.</summary>
+        /// <remarks>
+        /// <para>
+        /// The component's own two questions, in the order it asks them: each argument has to
+        /// be a value its domain produces, and then its guard has to accept it. That is what
+        /// keeps a walk of the component alone an upper bound on what a composite does to it —
+        /// driving an input is never a way past the component's own rules. An input that
+        /// fires in turn is asked the same about what it drives, so a chain of them is legal
+        /// only where the whole chain is.
+        /// </para>
+        /// <para>
+        /// The holder's <c>held</c> guard is <em>not</em> asked, and the two are not the same
+        /// question. <c>held</c> says when a rule set offers something it holds as a move of
+        /// its own; <c>fires</c> is it taking that move itself, having already decided. Asking
+        /// here would make <c>"when": false</c> — which is how an input is hidden so that the
+        /// only way to it is the one that drives it — mean the input can never happen at all.
+        /// </para>
+        /// <para>
+        /// The arguments are expressions over the state the transition found, with the driving
+        /// input's parameters bound, and so is every guard here. A <c>fires</c> list is
+        /// therefore a set of inputs all legal <em>now</em> rather than a script of steps:
+        /// none of them can depend on another's writes, and none has to be guarded against
+        /// them.
+        /// </para>
+        /// </remarks>
+        private static Fired Fire(
+            Part part,
+            CompiledFire fire,
+            EvaluationContext outer,
+            CancellationToken cancellationToken)
+        {
+            Part inner = part.Held(fire.Alias);
+            CompiledInput declared = fire.Declared;
+
+            EvaluationContext domains = inner.Session.CreateContext(declared.FrameSize);
+            EvaluationContext bound = inner.Session.CreateContext(declared.FrameSize);
+            ImmutableArray<RuleValue>.Builder arguments =
+                ImmutableArray.CreateBuilder<RuleValue>(declared.Parameters.Length);
+
+            for (int i = 0; i < declared.Parameters.Length; i++)
+            {
+                CompiledParameter parameter = declared.Parameters[i];
+                RuleValue supplied = fire.Arguments[i].Evaluate(outer);
+                RuleValue? matched = null;
+
+                foreach (RuleValue candidate in parameter.Domain
+                    .Evaluate(domains)
+                    .AsSequence($"inputs.{fire.Name}.params.{parameter.Name}.domain"))
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    if (ValueMatch.Matches(supplied, candidate))
+                    {
+                        matched = candidate;
+                        break;
+                    }
+                }
+
+                if (matched is null)
+                {
+                    return new Fired(
+                        false,
+                        [],
+                        $"{RuleValue.Describe(supplied)} is not among the values '{parameter.Name}' "
+                        + $"may take in this state.");
+                }
+
+                arguments.Add(matched);
+                bound.Seed(parameter.Slot, matched);
+            }
+
+            if (declared.Guard is not null
+                && !declared.Guard.Evaluate(bound).AsBoolean($"inputs.{fire.Name}.when"))
+            {
+                return new Fired(false, [], $"'{inner.Rules.Qualified}' does not allow it in this state.");
+            }
+
+            foreach (CompiledFire onwards in declared.Fires)
+            {
+                Fired further = Fire(inner, onwards, bound, cancellationToken);
+                if (!further.Allowed)
+                {
+                    return new Fired(false, [], $"it drives '{onwards.Name}', and {further.Refusal}");
+                }
+            }
+
+            return new Fired(true, arguments.ToImmutable(), string.Empty);
         }
 
         private TerminalStatus EvaluateTerminal(ImmutableArray<RuleValue> fields, CancellationToken cancellationToken)

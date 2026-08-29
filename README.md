@@ -371,17 +371,68 @@ I/O, reading a document off a stream. That, along with snapshot semantics, the c
 purity rules for definitions, and how `validationLimit` behaves, is in
 [`doc/runtime.md`](doc/runtime.md).
 
+## A rule set that holds other rule sets
+
+A business process — *to put somebody on a shift, a request has to be raised and granted* —
+has two halves a person naturally writes as two documents, and the guard that matters lives
+in neither: the request half cannot see the roster, and the roster half has never heard of a
+request.
+
+`uses` names the rule sets a document holds; `held` is what it may say about them.
+
+```jsonc
+"uses": [ { "ruleSet": "shift", "version": "^1.0", "as": "roster" } ],
+
+"held": {
+  "roster": {
+    // An assignment only ever happens as the consequence of a grant. Neither document
+    // could say that; this one can, because it can see both states at once.
+    "assign": { "when": { "op": "cmp.eq", "right": "granted",
+                          "left": { "op": "rec.at", "record": "$req", "key": "stage" } } }
+  }
+}
+```
+
+A component's state is a field of the composite's, so a case is still one state document.
+Its inputs are offered as `roster.assign`, in the same `Input` string and the same input
+document. And `held` may only **refuse**: a component moves by its own inputs under its own
+rules, so whatever a walk of the component alone found is still an upper bound on what it
+does inside anything that holds it — which is what lets a rule set be published on its own
+and true things said about it without knowing who will hold it.
+
+An input of the composite's own may **drive** several of them at once, which is how *a
+request is granted* and *somebody goes on the shift* stay one decision rather than becoming
+two states:
+
+```jsonc
+"grant": {
+  "fires": [
+    { "held": "req", "input": "grant" },
+    { "held": "roster", "input": "assign", "args": { "slot": "#reqShift", "who": "#reqWho" } }
+  ]
+}
+```
+
+`fires` is a list and not an effect, so which component inputs an input drives is readable
+without running it, and `GetValidInputs` offers one only where every input it drives is
+allowed by the rule set that declared it. Composed that way, the worked example reaches the
+same fifteen states and twenty-eight transitions as the merged document it replaces.
+
+`CreateContext(document, held)` takes the documents a rule set holds. Nothing else about the
+surface changes. [`doc/runtime.md`](doc/runtime.md#uses-and-held-a-rule-set-that-holds-others)
+has the rest, including why a composite must never be the thing that gets walked.
+
 ## What the core knows
 
-Eight reserved keys, and one more for telling a node from anything else:
+Ten reserved keys, and one more for telling a node from anything else:
 
 ```
-$schema  id  version  requires  state  definitions  inputs  terminal        op
+$schema  id  version  requires  uses  state  definitions  held  inputs  terminal        op
 ```
 
-Inside those eight the core reads a little further — `state` has a `schema` and an
-`initial`, an input has `params`, `actor`, `when` and `effects` — and where it does, it
-fixes the key set and refuses anything else.
+Inside those ten the core reads a little further — `state` has a `schema` and an `initial`,
+an input has `params`, `actor`, `when`, `effects` and `fires` — and where it does, it fixes
+the key set and refuses anything else.
 [The keys the core reads](doc/runtime.md#the-keys-the-core-reads) is all of it, on one page.
 
 Everything else in the document is vocabulary. A node is an object carrying an `op`; the
@@ -398,7 +449,7 @@ Definition each reserve one:
 ```
 
 A character is not one plugin's to the exclusion of everybody else's. Two vocabularies may
-reserve `$`, and where both are loaded a rule set says which it meant by naming it:
+reserve `$`, and where a rule set requires both it says which it meant by naming it:
 `"$state:board"`. The qualifier is read by its own grammar — a namespace and a colon — and
 never by what a plugin folder happens to hold, so what a document means does not change
 when a plugin is added beside it. What changes is whether the bare form still says enough.
@@ -406,6 +457,13 @@ when a plugin is added beside it. What changes is whether the bare form still sa
 That is why `requires` is worth reading. It lists the vocabularies a rule set draws on, and
 it can only say something because the vocabularies are cut finely: a rule set that needs
 `Rulealize.Plugin.Arithmetic` is one that counts something.
+
+**And it is the whole of what a rule set may draw on.** An `op` is looked up only among the
+plugins the document named, and so is a shorthand character, so reaching a vocabulary that
+happens to be loaded and was not declared is a build error naming the plugin it came from.
+Without that, a document compiles wherever its undeclared vocabulary is loaded and fails
+wherever it is not — a fault with no symptom until the document is moved, and the one thing
+that would make `requires` not worth reading.
 
 Nodes come in three kinds — expression, effect and schema — and where each may appear is
 enforced at compile time. Operations come in four: a **draw** builds an expression like

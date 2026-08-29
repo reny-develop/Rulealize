@@ -15,17 +15,51 @@ namespace Rulealize.Tests
     [Collection(StandardCollection.Name)]
     public class RuleSetBuildTests(StandardRuntime standard)
     {
-        /// <summary>A rule set with one integer field and nothing else, to hang a fault on.</summary>
-        private const string Preamble = """
+        /// <summary>The vocabularies these documents reach for.</summary>
+        private const string Requires = StandardRuntime.Requires;
+
+        /// <summary>The same document with its <c>requires</c> left to whoever is writing it.</summary>
+        private const string Bare = """
               "id": "t", "version": "1.0.0",
               "state": { "schema": { "n": { "op": "type.int" } }, "initial": { "n": 0 } },
             """;
+
+        /// <summary>A rule set with one integer field and nothing else, to hang a fault on.</summary>
+        private const string Preamble = Requires + Bare;
 
         [Fact]
         public void AnUnknownOperationNamesThePluginList() =>
             Assert.Contains("requires", Rejects($$"""
                 { {{Preamble}} "inputs": { "go": { "effects": [
                   { "op": "nope.thing" } ] } } }
+                """), StringComparison.Ordinal);
+
+        [Fact]
+        public void AVocabularyTheDocumentDoesNotRequireIsRefusedThoughItIsLoaded()
+        {
+            // The fault this catches has no symptom until the document is moved: a rule set
+            // that reaches an operation it did not declare compiles wherever that plugin
+            // happens to be loaded and fails wherever it is not, which is what makes
+            // 'requires' worth reading only if it is complete.
+            string refused = Rejects("""
+                { "id": "t", "version": "1.0.0",
+                  "requires": [ { "plugin": "Rulealize.Plugin.TypeSchema" },
+                                { "plugin": "Rulealize.Plugin.State" } ],
+                  "state": { "schema": { "n": { "op": "type.int" } }, "initial": { "n": 0 } },
+                  "inputs": { "go": { "when": { "op": "cmp.eq", "left": 1, "right": 1 }, "effects": [] } } }
+                """);
+
+            Assert.Contains("Rulealize.Plugin.Comparison", refused, StringComparison.Ordinal);
+            Assert.Contains("does not name in 'requires'", refused, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void AnInputNameMayNotContainTheCharacterThatQualifiesOne() =>
+            // Nothing holds another rule set yet. The name is reserved now because a document
+            // written with a dot in it would become ambiguous the day one does, and a format
+            // that takes a name away later takes it from documents already in production.
+            Assert.Contains("may not contain '.'", Rejects($$"""
+                { {{Preamble}} "inputs": { "req.raise": { "effects": [] } } }
                 """), StringComparison.Ordinal);
 
         [Fact]
@@ -173,14 +207,14 @@ namespace Rulealize.Tests
         [Fact]
         public void AnUnloadedPluginIsNamed() =>
             Assert.Contains("Rulealize.Plugin.Nope", Rejects($$"""
-                { {{Preamble}} "requires": [ { "plugin": "Rulealize.Plugin.Nope" } ],
+                { {{Bare}} "requires": [ { "plugin": "Rulealize.Plugin.Nope" } ],
                   "inputs": { "go": { "effects": [] } } }
                 """), StringComparison.Ordinal);
 
         [Fact]
         public void AVersionConstraintIsEnforced() =>
             Assert.Contains("needs Rulealize.Plugin.Grid ^2.0", Rejects($$"""
-                { {{Preamble}} "requires": [ { "plugin": "Rulealize.Plugin.Grid", "version": "^2.0" } ],
+                { {{Bare}} "requires": [ { "plugin": "Rulealize.Plugin.Grid", "version": "^2.0" } ],
                   "inputs": { "go": { "effects": [] } } }
                 """), StringComparison.Ordinal);
 
@@ -195,7 +229,8 @@ namespace Rulealize.Tests
         public void SatisfiableConstraintsAreAccepted(string constraint)
         {
             RuleContext context = standard.Runtime.CreateContext($$"""
-                { {{Preamble}} "requires": [ { "plugin": "Rulealize.Plugin.Logic", "version": "{{constraint}}" } ],
+                { {{Bare}} "requires": [ { "plugin": "Rulealize.Plugin.TypeSchema" },
+                    { "plugin": "Rulealize.Plugin.Logic", "version": "{{constraint}}" } ],
                   "inputs": { "go": { "effects": [] } } }
                 """);
 
@@ -204,8 +239,9 @@ namespace Rulealize.Tests
 
         [Fact]
         public void AnInitialStateThatBreaksItsOwnSchemaIsRejected() =>
-            Assert.Contains("Expected at most 2", Rejects("""
+            Assert.Contains("Expected at most 2", Rejects($$"""
                 {
+                {{Requires}}
                   "id": "t", "version": "1.0.0",
                   "state": { "schema": { "n": { "op": "type.int", "max": 2 } }, "initial": { "n": 9 } },
                   "inputs": { "go": { "effects": [] } }
@@ -241,6 +277,7 @@ namespace Rulealize.Tests
         public void SchemaNodesValidateTheirOwnKeys(string schema, string expected) =>
             Assert.Contains(expected, Rejects($$"""
                 {
+                {{Requires}}
                   "id": "t", "version": "1.0.0",
                   "state": { "schema": { "f": {{schema}} }, "initial": { "f": null } },
                   "inputs": { "go": { "effects": [] } }
@@ -282,8 +319,9 @@ namespace Rulealize.Tests
         public void CommentsAndTrailingCommasAreAccepted()
         {
             // A rule set of any size needs somewhere to say why a rule is the way it is.
-            RuleContext context = standard.Runtime.CreateContext("""
+            RuleContext context = standard.Runtime.CreateContext($$"""
                 {
+                {{Requires}}
                   // the identity of this rule set
                   "id": "t", "version": "1.0.0",
                   "state": { "schema": { "n": { "op": "type.int" } }, "initial": { "n": 0 } },
@@ -330,25 +368,26 @@ namespace Rulealize.Tests
               "inputs": { "go": { "effects": [] } } }
             """)]
         [InlineData("a definition", """
-            { "id": "t", "version": "1.0.0",
+            { "id": "t", "version": "1.0.0", "requires": [ { "plugin": "Rulealize.Plugin.TypeSchema" } ],
               "state": { "schema": { "n": { "op": "type.int" } }, "initial": { "n": 0 } },
               "definitions": { "d": { "body": 1, "nonsense": 1 } },
               "inputs": { "go": { "effects": [] } } }
             """)]
         [InlineData("an input", """
-            { "id": "t", "version": "1.0.0",
+            { "id": "t", "version": "1.0.0", "requires": [ { "plugin": "Rulealize.Plugin.TypeSchema" } ],
               "state": { "schema": { "n": { "op": "type.int" } }, "initial": { "n": 0 } },
               "inputs": { "go": { "nonsense": 1, "effects": [] } } }
             """)]
         [InlineData("a parameter", """
             { "id": "t", "version": "1.0.0",
+              "requires": [ { "plugin": "Rulealize.Plugin.TypeSchema" }, { "plugin": "Rulealize.Plugin.Sequence" } ],
               "state": { "schema": { "n": { "op": "type.int" } }, "initial": { "n": 0 } },
               "inputs": { "go": {
                 "params": { "p": { "nonsense": 1, "domain": { "op": "seq.of", "of": [1] } } },
                 "effects": [] } } }
             """)]
         [InlineData("the terminal section", """
-            { "id": "t", "version": "1.0.0",
+            { "id": "t", "version": "1.0.0", "requires": [ { "plugin": "Rulealize.Plugin.TypeSchema" } ],
               "state": { "schema": { "n": { "op": "type.int" } }, "initial": { "n": 0 } },
               "inputs": { "go": { "effects": [] } },
               "terminal": { "nonsense": 1, "when": true } }
@@ -388,8 +427,8 @@ namespace Rulealize.Tests
         [Fact]
         public void AFieldStateInitialDeclaresAndTheSchemaDoesNotIsReportedWithTheRest()
         {
-            string refused = Rejects("""
-                { "id": "t", "version": "1.0.0",
+            string refused = Rejects($$"""
+                { {{Requires}} "id": "t", "version": "1.0.0",
                   "state": { "schema": { "n": { "op": "type.int" } }, "initial": { "n": 0, "m": 1 } },
                   "inputs": { "go": { "effects": [] } } }
                 """);

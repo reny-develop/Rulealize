@@ -16,6 +16,9 @@ namespace Rulealize.Tests
     [Collection(StandardCollection.Name)]
     public class CollectionTests(StandardRuntime standard)
     {
+        /// <summary>The vocabularies the documents below reach for.</summary>
+        private const string Requires = StandardRuntime.Requires;
+
         // ── Records ────────────────────────────────────────────────────────────
 
         [Fact]
@@ -105,8 +108,9 @@ namespace Rulealize.Tests
             // Caught when the rule set is built, the way pointing grid.set at a counter is.
             Assert.Contains(
                 "is not a record",
-                Assert.Throws<RuleSetBuildException>(() => standard.Runtime.CreateContext("""
+                Assert.Throws<RuleSetBuildException>(() => standard.Runtime.CreateContext($$"""
                     {
+                      {{Requires}}
                       "id": "t", "version": "1.0.0",
                       "state": { "schema": { "n": { "op": "type.int" } }, "initial": { "n": 0 } },
                       "inputs": { "go": { "effects": [
@@ -247,8 +251,9 @@ namespace Rulealize.Tests
         // ── Helpers ────────────────────────────────────────────────────────────
 
         /// <summary>A rule set whose only field is a record of two counters.</summary>
-        private RuleContext Tally() => standard.Runtime.CreateContext("""
+        private RuleContext Tally() => standard.Runtime.CreateContext($$"""
             {
+              {{Requires}}
               "id": "tally", "version": "1.0.0",
               "state": {
                 "schema": { "tally": { "op": "rec.map", "keys": ["a", "b"],
@@ -278,8 +283,9 @@ namespace Rulealize.Tests
         /// twice and nothing checks that the two agree, so writing them to agree is the
         /// rule set's job — see <see cref="Overrun"/> for what happens when they do not.
         /// </remarks>
-        private RuleContext Log() => standard.Runtime.CreateContext("""
+        private RuleContext Log() => standard.Runtime.CreateContext($$"""
             {
+              {{Requires}}
               "id": "log", "version": "1.0.0",
               "state": {
                 "schema": { "entries": { "op": "type.list", "maxLength": 4,
@@ -302,8 +308,9 @@ namespace Rulealize.Tests
         /// Deliberately inconsistent, which is the only way to reach the check a transition
         /// makes on its way out.
         /// </remarks>
-        private RuleContext Overrun() => standard.Runtime.CreateContext("""
+        private RuleContext Overrun() => standard.Runtime.CreateContext($$"""
             {
+              {{Requires}}
               "id": "overrun", "version": "1.0.0",
               "state": {
                 "schema": { "entries": { "op": "type.list", "maxLength": 1,
@@ -325,6 +332,7 @@ namespace Rulealize.Tests
         {
             RuleContext context = standard.Runtime.CreateContext($$"""
                 {
+                  {{Requires}}
                   "id": "probe", "version": "1.0.0",
                   "state": {
                     "schema": { "tally": { "op": "rec.map", "keys": ["a", "b"],

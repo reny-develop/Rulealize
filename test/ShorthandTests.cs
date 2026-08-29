@@ -19,18 +19,34 @@ namespace Rulealize.Tests
     /// namespace between the character and a colon.
     /// </para>
     /// <para>
-    /// The qualifier is read by its grammar and never by what a folder happens to hold, so
-    /// what these documents mean does not change when a plugin is added beside them. What
-    /// changes is only whether a bare form is still allowed to stand.
+    /// A shorthand is vocabulary, so the candidates are what the document named in
+    /// <c>requires</c> and never what a folder happens to hold. That is one rule doing two
+    /// jobs: a character nobody the document requires reserved is refused, and a character
+    /// two of them reserved is ambiguous. Which of the two a rule set is in does not change
+    /// when a plugin is added beside it.
+    /// </para>
+    /// <para>
+    /// The qualifier is read by its grammar, so what these documents mean does not change
+    /// either. It still has to name a vocabulary the document requires.
     /// </para>
     /// </remarks>
     public class ShorthandTests
     {
         /// <summary>A rule set that copies a state field to another, through the shorthand under test.</summary>
+        /// <remarks>
+        /// The <c>requires</c> is not a parameter of these tests but a precondition of them:
+        /// <c>type.int</c> and <c>state.set</c> are used by the template itself, so a document
+        /// leaving their vocabularies out never reaches the literal under test. What a test
+        /// varies is what is named <em>beyond</em> that.
+        /// </remarks>
         private const string Template = """
             {
               "id": "t", "version": "1.0.0",
-              {{requires}}
+              "requires": [
+                { "plugin": "Rulealize.Plugin.TypeSchema" }, { "plugin": "Rulealize.Plugin.State" },
+                { "plugin": "Rulealize.Plugin.Binding" },    { "plugin": "Rulealize.Plugin.Definition" },
+                { "plugin": "Rulealize.Plugin.Grid" }{{more}}
+              ],
               "state": {
                 "schema": { "n": { "op": "type.int" }, "m": { "op": "type.int" } },
                 "initial": { "n": 7, "m": 0 }
@@ -39,6 +55,9 @@ namespace Rulealize.Tests
                 { "op": "state.set", "path": "m", "value": "{{value}}" } ] } }
             }
             """;
+
+        /// <summary>The other vocabulary that reserves '$', as a <c>requires</c> entry.</summary>
+        private const string Twin = """{ "plugin": "Twin", "version": "^1.0" }""";
 
         private static readonly RuleRuntime Standard =
             new RuleRuntime().LoadPluginsFrom(StandardRuntime.PluginFolder);
@@ -78,6 +97,9 @@ namespace Rulealize.Tests
             string state = Go(Standard.CreateContext("""
                 {
                   "id": "t", "version": "1.0.0",
+                  "requires": [ { "plugin": "Rulealize.Plugin.TypeSchema" },
+                                { "plugin": "Rulealize.Plugin.State" },
+                                { "plugin": "Rulealize.Plugin.Definition" } ],
                   "state": { "schema": { "n": { "op": "type.int" }, "m": { "op": "type.int" } },
                              "initial": { "n": 7, "m": 0 } },
                   "definitions": { "seven": "$state:n" },
@@ -111,6 +133,8 @@ namespace Rulealize.Tests
             string state = Go(Standard.CreateContext("""
                 {
                   "id": "t", "version": "1.0.0",
+                  "requires": [ { "plugin": "Rulealize.Plugin.TypeSchema" },
+                                { "plugin": "Rulealize.Plugin.State" } ],
                   "state": { "schema": { "s": { "op": "type.string" } }, "initial": { "s": "" } },
                   "inputs": { "go": { "effects": [
                     { "op": "state.set", "path": "s", "value": "state:n" } ] } }
@@ -146,9 +170,9 @@ namespace Rulealize.Tests
                     .Order(StringComparer.Ordinal));
 
         [Fact]
-        public void ABareShorthandIsRefusedWhenTwoVocabulariesReserveTheCharacter()
+        public void ABareShorthandIsRefusedWhereTheDocumentRequiresBothClaimants()
         {
-            string message = Rejects(Contested, "$n");
+            string message = Rejects(Contested, "$n", Twin);
 
             Assert.Contains("more than one vocabulary", message, StringComparison.Ordinal);
             Assert.Contains("state", message, StringComparison.Ordinal);
@@ -157,70 +181,66 @@ namespace Rulealize.Tests
 
         [Fact]
         public void AQualifiedShorthandResolvesWhereTheBareFormIsAmbiguous() =>
-            Assert.Equal(7, Read(Run(Contested, "$state:n")));
+            Assert.Equal(7, Read(Run(Contested, "$state:n", Twin)));
 
         [Fact]
         public void TheOtherClaimantIsReachableByItsOwnNamespace() =>
             // Whichever was loaded second is no less reachable than the first, which is the
             // whole of what not spending the character first-come comes to.
-            Assert.Equal(1, Read(Run(Contested, "$twin:anything")));
+            Assert.Equal(1, Read(Run(Contested, "$twin:anything", Twin)));
 
         [Fact]
         public void RequiresDecidesABareShorthandBetweenTwoClaimants() =>
-            // The document named one of the two vocabularies and not the other, so the bare
-            // form is not ambiguous in it — a rule set written before the second plugin
+            // Twin is loaded and the document does not name it, so the bare form is not
+            // ambiguous in this document — a rule set written before the second plugin
             // existed goes on building beside it.
-            Assert.Equal(
-                7,
-                Read(Run(Contested, "$n", """{ "plugin": "Rulealize.Plugin.State", "version": "^1.0" }""")));
+            Assert.Equal(7, Read(Run(Contested, "$n")));
 
         [Fact]
-        public void RequiresNamingNeitherClaimantLeavesItAmbiguous() =>
+        public void AShorthandOfAVocabularyTheDocumentDoesNotRequireIsRefused()
+        {
+            // Not the tie-break: one vocabulary reserves '$' here and the document still may
+            // not write it, because 'requires' is what a rule set may draw on and a shorthand
+            // is drawn on like anything else. Written out rather than run through the
+            // template, which needs State for its own effect.
+            string message = Assert.Throws<RuleSetBuildException>(() => Standard.CreateContext("""
+                {
+                  "id": "t", "version": "1.0.0",
+                  "requires": [ { "plugin": "Rulealize.Plugin.TypeSchema" } ],
+                  "state": { "schema": { "n": { "op": "type.int" } }, "initial": { "n": 7 } },
+                  "inputs": { "go": { "when": "$n", "effects": [] } }
+                }
+                """)).Message;
+
+            Assert.Contains("does not require", message, StringComparison.Ordinal);
+            Assert.Contains("'state' is the one vocabulary that does", message, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void AQualifierNamingAVocabularyTheDocumentDoesNotRequireIsRefused() =>
+            // The qualifier says which vocabulary, not whether the document may reach it.
             Assert.Contains(
-                "more than one vocabulary",
-                Rejects(Contested, "$n", """{ "plugin": "Rulealize.Plugin.Grid", "version": "^1.0" }"""),
+                "does not name in 'requires'",
+                Rejects(Contested, "$twin:anything"),
                 StringComparison.Ordinal);
 
-        [Fact]
-        public void RequiresNamingBothClaimantsLeavesItAmbiguous() =>
-            Assert.Contains(
-                "more than one vocabulary",
-                Rejects(
-                    Contested,
-                    "$n",
-                    """
-                    { "plugin": "Rulealize.Plugin.State", "version": "^1.0" },
-                    { "plugin": "Twin", "version": "^1.0" }
-                    """),
-                StringComparison.Ordinal);
-
-        [Fact]
-        public void RequiresIsNotConsultedForACharacterOnlyOneVocabularyReserves() =>
-            // A rule set that leaves State out of 'requires' and writes "$n" anyway built
-            // before this change and still does. The tie-break is a tie-break and not a
-            // scope: it is reached only when there is something to decide.
-            Assert.Equal(7, Read(Run(Standard, "$n")));
-
-        private static string Document(string value, string requires) =>
+        private static string Document(string value, string more) =>
             Template
                 .Replace("{{value}}", value, StringComparison.Ordinal)
-                .Replace(
-                    "{{requires}}",
-                    requires.Length == 0 ? string.Empty : $"\"requires\": [ {requires} ],",
-                    StringComparison.Ordinal);
+                .Replace("{{more}}", more.Length == 0 ? string.Empty : $", {more}", StringComparison.Ordinal);
 
-        private static string Run(RuleRuntime runtime, string value, string requires = "") =>
-            Go(runtime.CreateContext(Document(value, requires)));
+        private static string Run(RuleRuntime runtime, string value, string more = "") =>
+            Go(runtime.CreateContext(Document(value, more)));
 
-        private static string Rejects(RuleRuntime runtime, string value, string requires = "") =>
-            Assert.Throws<RuleSetBuildException>(() => runtime.CreateContext(Document(value, requires))).Message;
+        private static string Rejects(RuleRuntime runtime, string value, string more = "") =>
+            Assert.Throws<RuleSetBuildException>(() => runtime.CreateContext(Document(value, more))).Message;
 
         /// <summary>Runs the one input of a rule set built from a node written out in full.</summary>
         private static int Field(RuleRuntime runtime, string value) =>
             Read(Go(runtime.CreateContext(
                 Template
                     .Replace("\"{{value}}\"", value, StringComparison.Ordinal)
-                    .Replace("{{requires}}", string.Empty, StringComparison.Ordinal))));
+                    .Replace("{{more}}", string.Empty, StringComparison.Ordinal))));
 
         private static string Go(RuleContext context) =>
             context.ApplyToState(

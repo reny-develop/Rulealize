@@ -15,6 +15,9 @@ namespace Rulealize.Tests
     [Collection(StandardCollection.Name)]
     public class VocabularyTests(StandardRuntime standard)
     {
+        /// <summary>The vocabularies the probe documents below reach for.</summary>
+        private const string Requires = StandardRuntime.Requires;
+
         private RuleContext Sink => standard.KitchenSink;
 
         [Fact]
@@ -134,8 +137,9 @@ namespace Rulealize.Tests
         {
             // The two methods have to answer the same question. Here the whole rule is in the
             // domain and there is no guard at all: only squares already marked may be picked.
-            RuleContext context = standard.Runtime.CreateContext("""
+            RuleContext context = standard.Runtime.CreateContext($$"""
                 {
+                {{Requires}}
                   "id": "probe", "version": "1.0.0",
                   "state": {
                     "schema": { "board": { "op": "grid.board", "width": 2, "height": 2, "coord": "algebraic",
@@ -258,6 +262,7 @@ namespace Rulealize.Tests
 
             RuleContext context = standard.Runtime.CreateContext($$"""
                 {
+                {{Requires}}
                   "id": "t", "version": "1.0.0",
                   "state": { "schema": { "board": { "op": "grid.board", "width": 2, "height": 2,
                                                     "cell": { "op": "type.bool", "nullable": true } } },
@@ -347,8 +352,9 @@ namespace Rulealize.Tests
         {
             // A sequence has no text form, so neither does a tuple holding one, so it cannot
             // make the trip out through GetValidInputs. The parameter is named.
-            RuleContext context = standard.Runtime.CreateContext("""
+            RuleContext context = standard.Runtime.CreateContext($$"""
                 {
+                {{Requires}}
                   "id": "probe", "version": "1.0.0",
                   "state": { "schema": { "n": { "op": "type.int" } }, "initial": { "n": 0 } },
                   "inputs": { "go": { "params": { "m": { "domain": { "op": "seq.of", "of": [
@@ -396,8 +402,9 @@ namespace Rulealize.Tests
         {
             // The reason grid.square exists. Both fields read "b2" in the document; only the
             // one declared as a square comes back as something a coordinate compares equal to.
-            RuleContext context = standard.Runtime.CreateContext("""
+            RuleContext context = standard.Runtime.CreateContext($$"""
                 {
+                {{Requires}}
                   "id": "probe", "version": "1.0.0",
                   "state": {
                     "schema": {
@@ -426,8 +433,9 @@ namespace Rulealize.Tests
         [Fact]
         public void ASquareFieldSurvivesAStateDocument()
         {
-            RuleContext context = standard.Runtime.CreateContext("""
+            RuleContext context = standard.Runtime.CreateContext($$"""
                 {
+                {{Requires}}
                   "id": "probe", "version": "1.0.0",
                   "state": {
                     "schema": {
@@ -472,6 +480,7 @@ namespace Rulealize.Tests
         {
             RuleContext context = standard.Runtime.CreateContext($$"""
                 {
+                {{Requires}}
                   "id": "probe", "version": "1.0.0",
                   "state": {
                     "schema": { "board": { "op": "grid.board", "width": 2, "height": 2, "coord": "algebraic",

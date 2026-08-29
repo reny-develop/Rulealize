@@ -55,7 +55,9 @@ namespace Rulealize.Internal.Plugin
         /// <remarks>
         /// A shorthand character is not among the things that can be taken. Two plugins
         /// reserving one character load together, and a rule set that writes the bare form
-        /// where both are present is asked which it meant.
+        /// while requiring both is asked which it meant — requiring one of them is what
+        /// settles it, and requiring neither is refused for the same reason any undeclared
+        /// vocabulary is.
         /// </remarks>
         public void Claim(PluginManifest manifest)
         {
@@ -82,6 +84,18 @@ namespace Rulealize.Internal.Plugin
         /// <param name="manifest">Receives the manifest when the plugin is loaded.</param>
         /// <returns><see langword="true"/> when the plugin is loaded.</returns>
         public bool TryGetPlugin(string id, out PluginManifest? manifest) => _byId.TryGetValue(id, out manifest);
+
+        /// <summary>Finds the loaded plugin that claimed a namespace.</summary>
+        /// <param name="namespace">The part of an operation name before its first dot.</param>
+        /// <param name="manifest">Receives the manifest when some plugin claimed it.</param>
+        /// <returns><see langword="true"/> when a loaded plugin provides that namespace.</returns>
+        /// <remarks>
+        /// What this answers is <em>whose</em> an operation is, which is what lets a rule set
+        /// using a vocabulary it did not name in <c>requires</c> be told which one it reached
+        /// for rather than that the name is unknown.
+        /// </remarks>
+        public bool TryGetProvider(string @namespace, out PluginManifest? manifest) =>
+            _byNamespace.TryGetValue(@namespace, out manifest);
 
         /// <summary>Registers an expression operation.</summary>
         /// <param name="manifest">The registering plugin.</param>
@@ -184,47 +198,17 @@ namespace Rulealize.Internal.Plugin
             return expander is not null;
         }
 
-        /// <summary>Looks up the one expander for a character, among those a rule set may mean.</summary>
+        /// <summary>Lists the namespaces that reserved a character, in load order.</summary>
         /// <param name="prefix">The leading character of a string literal.</param>
-        /// <param name="required">
-        /// The namespaces of the plugins the rule set named in <c>requires</c>, which decide
-        /// between claimants when more than one reserved the character.
-        /// </param>
-        /// <param name="expander">Receives the expander when exactly one is meant.</param>
-        /// <returns>The namespaces that reserved the character, in load order.</returns>
+        /// <returns>The namespaces, or empty when nobody reserved it.</returns>
         /// <remarks>
-        /// A character one plugin reserved needs no deciding, and <c>requires</c> is not
-        /// consulted for it — a rule set that leaves a vocabulary out of <c>requires</c> and
-        /// writes its shorthand anyway goes on building exactly as it did.
+        /// Which of them a rule set meant is settled by the builder against the document's
+        /// <c>requires</c>, so this reports the claims and decides nothing.
         /// </remarks>
-        public ImmutableArray<string> TryGetSugar(
-            char prefix,
-            ImmutableArray<string> required,
-            out ISugarExpander? expander)
-        {
-            expander = null;
-            if (!_sugar.TryGetValue(prefix, out List<SugarClaim>? claims))
-            {
-                return [];
-            }
-
-            if (claims.Count == 1)
-            {
-                expander = claims[0].Expander;
-                return [claims[0].Namespace];
-            }
-
-            List<SugarClaim> named = claims
-                .Where(claim => required.Contains(claim.Namespace, StringComparer.Ordinal))
-                .ToList();
-
-            if (named.Count == 1)
-            {
-                expander = named[0].Expander;
-            }
-
-            return [.. claims.Select(static claim => claim.Namespace)];
-        }
+        public ImmutableArray<string> Claimants(char prefix) =>
+            _sugar.TryGetValue(prefix, out List<SugarClaim>? claims)
+                ? [.. claims.Select(static claim => claim.Namespace)]
+                : [];
 
         /// <summary>
         /// Says what an operation is, for the message that explains why it cannot appear
