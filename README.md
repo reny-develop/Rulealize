@@ -350,10 +350,16 @@ the version's.
 | `ValidInputSet` / `OutcomeSet` / `TransitionResult` `.ToJson` | the same, for a whole answer, where a host is a boundary rather than a caller |
 | `PluginRequirement.ReadFrom` | read a document's `requires` — no runtime, no plugin loaded |
 | `PluginResolution.Resolve` | which versions those constraints call for, given what is published |
+| `RuleSetRequirement.ReadFrom` | read a document's `uses` — no runtime, and none of the documents it names |
+| `RuleSetRequirement.Choose` | which published version one of those constraints calls for |
+| `RuleSetIdentity.ReadFrom` | what a fetched document calls itself, and whether it is the one that was asked for |
 
-The last two are what a tool needs before there is a runtime to load anything into, and they
+The last five are what a tool needs before there is a runtime to load anything into, and they
 are here so that resolving and running cannot read `^1.0` differently
-([why](doc/runtime.md#requires-read-before-there-is-a-runtime)).
+([why](doc/runtime.md#requires-read-before-there-is-a-runtime)). The first two answer for a
+whole document at once; `uses` is a graph found by fetching, so its two answer one step of a
+walk that stays the fetcher's
+([why](doc/runtime.md#uses-and-held-a-rule-set-that-holds-others)).
 
 Exceptions: `RuleSetBuildException` for a document that is not a valid rule set,
 `RuleDocumentException` for a state, input or outcome document this rule set cannot accept,
@@ -418,9 +424,13 @@ without running it, and `GetValidInputs` offers one only where every input it dr
 allowed by the rule set that declared it. Composed that way, the worked example reaches the
 same fifteen states and twenty-eight transitions as the merged document it replaces.
 
-`CreateContext(document, held)` takes the documents a rule set holds. Nothing else about the
-surface changes. [`doc/runtime.md`](doc/runtime.md#uses-and-held-a-rule-set-that-holds-others)
-has the rest, including why a composite must never be the thing that gets walked.
+`CreateContext(document, held)` takes the documents a rule set holds; running is otherwise
+unchanged. Working out which documents those are is `RuleSetRequirement.ReadFrom`, which
+version of each is `RuleSetRequirement.Choose`, and whether the one that arrived is the one
+asked for is `RuleSetIdentity.ReadFrom` — the same three questions `requires` answers, in
+the shape a graph found by fetching allows.
+[`doc/runtime.md`](doc/runtime.md#uses-and-held-a-rule-set-that-holds-others) has the rest,
+including why a composite must never be the thing that gets walked.
 
 ## What the core knows
 

@@ -262,6 +262,38 @@ constraint through the same code, for the reason [below](#requires-read-before-t
 gives: two implementations of three constraint forms would disagree eventually, and the way
 they would disagree is a set assembled that the runtime then rejects.
 
+### Which version of each, and what arrived
+
+A constraint says which versions will do; an index says which exist. Choosing between them
+is `RuleSetRequirement.Choose`, and **the lowest satisfying version wins** — the same rule
+`PluginResolution` follows, through the same code, for the same reason. It is not the
+obvious rule: most resolvers take the newest. A restore that was reproducible for `requires`
+and not for `uses` would be one command that is half reproducible, and nothing about it
+would look wrong.
+
+There is no `RuleSetResolution` answering for a whole document, because `uses` is not flat.
+Which version is taken decides which document arrives, which decides what else is named, so
+the set is discovered by fetching and is never complete in one pass. The loop, the cycle and
+what to do when a late constraint contradicts an early choice are the fetcher's. `Choose` is
+the question it asks at each step, one identifier at a time.
+
+```csharp
+Version? version = RuleSetRequirement.Choose(entriesNamingOne, publishedVersions);
+
+// ... fetch it, and then read what actually arrived
+RuleSetIdentity identity = RuleSetIdentity.ReadFrom(fetched);
+bool asked = identity.Satisfies(entry);
+```
+
+The second half matters because the two halves are about different things. An index answers
+about a package; a `uses` entry is met by the `version` written **inside** the document, and
+that is what `CreateContext` checks — it refuses a document whose `id` is not the one named
+or whose version the constraint excludes, naming both. `RuleSetIdentity.ReadFrom` is that
+check made at the point of the fetch, for a parse rather than a compilation, which is what a
+fetcher can afford before the rest of the set is in hand. Nothing but `id` and `version` is
+examined, for the reason `requires` is readable on its own: a document worth fetching is
+usually one that does not compile yet, because what it holds has not been fetched.
+
 ### What a stored composite state carries
 
 Each held field is written as its own frame — the component's `ruleSet` beside its `data` —
@@ -544,6 +576,9 @@ An unmet requirement is reported rather than thrown, with the versions that do e
 a document whose vocabulary is partly unpublished is a real and reasonable document — one
 naming a vocabulary the host registers with `AddPlugin` is exactly that — and what resolved
 is the useful half of the answer.
+
+`uses` is read on the same terms and chooses by the same rule, in the smaller shape a graph
+allows: [above](#which-version-of-each-and-what-arrived).
 
 ## Arguments have to survive the round trip
 

@@ -2,6 +2,7 @@
 // Licensed under the Apache License, Version 2.0.
 
 using System.Collections.Immutable;
+using Rulealize.Internal.Building;
 
 namespace Rulealize
 {
@@ -154,8 +155,8 @@ namespace Rulealize
                 }
 
                 ImmutableArray<Version> ordered = [.. versions.Order()];
-                Version? chosen = ordered.FirstOrDefault(
-                    version => wanted.All(requirement => requirement.IsSatisfiedBy(version)));
+                Version? chosen = VersionChoice.Lowest(
+                    ordered, version => wanted.All(requirement => requirement.IsSatisfiedBy(version)));
 
                 if (chosen is null)
                 {

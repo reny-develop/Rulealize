@@ -52,8 +52,9 @@ namespace Rulealize.Internal.Building
                 "a rule set",
                 "$schema", "id", "version", "requires", "uses", "state", "definitions", "held", "inputs", "terminal");
 
-            string id = RequireString(document, "id", Root);
-            string version = RequireString(document, "version", Root);
+            RuleSetIdentity identity = ReadIdentity(document);
+            string id = identity.Id;
+            string version = identity.Version;
 
             ImmutableArray<string> required = CheckRequirements(document);
 
@@ -168,6 +169,24 @@ namespace Rulealize.Internal.Building
             }
 
             return components.MoveToImmutable();
+        }
+
+        /// <summary>Reads <c>id</c> and <c>version</c>, without compiling anything.</summary>
+        /// <remarks>
+        /// Separated for a reason the two below do not have: this one is read <i>after</i> a
+        /// fetch rather than before it, to check that the document which arrived is the one
+        /// that was chosen. Reached from outside through <see cref="RuleSetIdentity.ReadFrom"/>.
+        /// </remarks>
+        internal static RuleSetIdentity ReadIdentity(JsonElement document)
+        {
+            if (document.ValueKind != JsonValueKind.Object)
+            {
+                throw new RuleSetBuildException(Root, "a rule set must be a JSON object.");
+            }
+
+            return new RuleSetIdentity(
+                RequireString(document, "id", Root),
+                RequireString(document, "version", Root));
         }
 
         /// <summary>Reads <c>uses</c>, without compiling or fetching anything.</summary>

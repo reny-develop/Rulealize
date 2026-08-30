@@ -5,12 +5,20 @@ using System.Collections.Immutable;
 
 namespace Rulealize.Tests
 {
-    /// <summary>Reading a rule set's <c>requires</c>, and working out what would satisfy it.</summary>
+    /// <summary>Reading what a rule set needs, and working out what would satisfy it.</summary>
     /// <remarks>
-    /// These two answer the question a tool asks before there is a runtime at all: which
-    /// vocabulary does this document need, and which versions of it should be fetched. The
-    /// point of them living in this library is that resolving and running cannot then read
-    /// <c>^1.0</c> differently — the last test here is the one that says so.
+    /// <para>
+    /// These answer the questions a tool asks before there is a runtime at all: which
+    /// vocabulary this document needs, which documents it holds, and which versions of
+    /// either to fetch. The point of them living in this library is that resolving and
+    /// running cannot then read <c>^1.0</c> differently.
+    /// </para>
+    /// <para>
+    /// <c>requires</c> is flat and answers in one call. <c>uses</c> is a graph discovered by
+    /// fetching, so the walk stays the fetcher's and only the choice at each step is here —
+    /// followed by <see cref="RuleSetIdentity"/>, which is how a fetcher checks that what
+    /// arrived is what it chose.
+    /// </para>
     /// </remarks>
     [Collection(StandardCollection.Name)]
     public class ResolutionTests(StandardRuntime standard)
@@ -198,6 +206,156 @@ namespace Rulealize.Tests
             Assert.Equal("Acme.Deploy.Rules", Assert.Single(resolution.Unsatisfied).Plugin);
             Assert.NotEmpty(resolution.Plugins);
         }
+
+        [Fact]
+        public void TheLowestSatisfyingVersionWinsForUsesToo()
+        {
+            // The same rule as above, and through the same code. A restore reproducible for
+            // `requires` and not for `uses` would be one command that is half reproducible,
+            // which is worse than neither because nothing about it looks wrong.
+            ImmutableArray<RuleSetRequirement> uses = RuleSetRequirement.ReadFrom(
+                """{ "uses": [ { "ruleSet": "counter", "version": "^1.0" } ] }""");
+
+            Assert.Equal(
+                new Version(1, 0, 0),
+                RuleSetRequirement.Choose(uses, Published("1.0.0", "1.1.0", "1.2.0", "2.0.0")));
+        }
+
+        [Fact]
+        public void TwoUsesEntriesForOneRuleSetAreMetTogether()
+        {
+            // A composite may hold one rule set twice, under two aliases and two constraints.
+            // There is still one document to fetch for it, so both are met or neither is.
+            ImmutableArray<RuleSetRequirement> uses = RuleSetRequirement.ReadFrom(
+                """
+                { "uses": [ { "ruleSet": "counter", "version": "^1.0", "as": "left" },
+                            { "ruleSet": "counter", "version": ">=1.2", "as": "right" } ] }
+                """);
+
+            Assert.Equal(
+                new Version(1, 2, 0),
+                RuleSetRequirement.Choose(uses, Published("1.0.0", "1.1.0", "1.2.0", "1.3.0")));
+        }
+
+        [Fact]
+        public void WhenNothingPublishedWillDoThereIsNoVersionRatherThanAShortfall()
+        {
+            // The caller passed the constraints and the versions, so an empty index and an
+            // index with nothing suitable in it are its own to tell apart. That is the whole
+            // difference from PluginResolution, and it is why this answers with a version.
+            ImmutableArray<RuleSetRequirement> uses = RuleSetRequirement.ReadFrom(
+                """{ "uses": [ { "ruleSet": "counter", "version": "^2.0" } ] }""");
+
+            Assert.Null(RuleSetRequirement.Choose(uses, Published("1.0.0", "1.9.9")));
+            Assert.Null(RuleSetRequirement.Choose(uses, []));
+        }
+
+        [Fact]
+        public void ConstraintsOnTwoRuleSetsAreNotOneQuestion()
+        {
+            // Meeting them at once would answer about a version nothing asked for. The caller
+            // walked the graph that produced them, so grouping them is its job.
+            ImmutableArray<RuleSetRequirement> uses = RuleSetRequirement.ReadFrom(
+                """{ "uses": [ { "ruleSet": "counter" }, { "ruleSet": "clock" } ] }""");
+
+            Assert.Throws<ArgumentException>(
+                () => RuleSetRequirement.Choose(uses, Published("1.0.0")));
+        }
+
+        [Fact]
+        public void ADocumentSaysWhatItIsWithoutBeingCompiled()
+        {
+            // The other end of a fetch. This document does not compile — it holds one whose
+            // document is not here — and it still answers what it is, which is the point: an
+            // index answered about a package, the runtime will read the document, and
+            // somebody has to be able to compare the two.
+            RuleSetIdentity identity = RuleSetIdentity.ReadFrom("""
+                { "id": "counter", "version": "1.2.0", "uses": [ { "ruleSet": "nowhere" } ] }
+                """);
+
+            Assert.Equal("counter", identity.Id);
+            Assert.Equal("1.2.0", identity.Version);
+            Assert.Equal("counter@1.2.0", identity.RuleSet);
+        }
+
+        [Fact]
+        public void WhatChoosingPicksIsWhatCompilingAccepts()
+        {
+            // The test the arrangement exists for, one requirement over. The version chosen
+            // against an index is the version the document declares, the document that
+            // declares it satisfies the entry that asked for it, and CreateContext agrees.
+            RuleSetRequirement entry = Assert.Single(RuleSetRequirement.ReadFrom(Composite));
+
+            Version? chosen = RuleSetRequirement.Choose([entry], Published("1.0.0", "1.2.0", "2.0.0"));
+            Assert.Equal(new Version(1, 2, 0), chosen);
+
+            RuleSetIdentity identity = RuleSetIdentity.ReadFrom(Component);
+            Assert.Equal(chosen!.ToString(), identity.Version);
+            Assert.True(identity.Satisfies(entry));
+
+            RuleContext context = standard.Runtime.CreateContext(Composite, Held(Component));
+            Assert.Equal("tally@1.0.0", context.RuleSet);
+        }
+
+        [Fact]
+        public void AnIdentityThatFallsShortIsTheDocumentCreateContextRefuses()
+        {
+            // And the other way. What this catches is a document fetched under a version it
+            // does not itself declare, which a fetcher trusting an index has no way to see
+            // until it compiles — by which point it has assembled the whole set.
+            RuleSetRequirement entry = Assert.Single(RuleSetRequirement.ReadFrom(Composite));
+            string stale = Component.Replace(
+                "\"version\": \"1.2.0\"", "\"version\": \"1.0.0\"", StringComparison.Ordinal);
+
+            Assert.False(RuleSetIdentity.ReadFrom(stale).Satisfies(entry));
+            Assert.Throws<Abstraction.RuleSetBuildException>(
+                () => standard.Runtime.CreateContext(Composite, Held(stale)));
+        }
+
+        [Fact]
+        public void AVersionThatSatisfiesSaysNothingAboutWhoseItIs()
+        {
+            // Both halves are checked, because either alone is answered too easily.
+            RuleSetRequirement entry = Assert.Single(RuleSetRequirement.ReadFrom(Composite));
+
+            Assert.True(entry.IsSatisfiedBy(new Version(1, 2, 0)));
+            Assert.False(
+                RuleSetIdentity.ReadFrom("""{ "id": "clock", "version": "1.2.0" }""").Satisfies(entry));
+        }
+
+        /// <summary>A component, published at 1.2.0.</summary>
+        private const string Component = $$"""
+            {
+              "id": "counter", "version": "1.2.0",
+            {{StandardRuntime.Requires}}
+              "state": {
+                "schema": { "n": { "op": "type.int", "min": 0 } },
+                "initial": { "n": 0 }
+              },
+              "inputs": {
+                "bump": {
+                  "effects": [
+                    { "op": "state.set", "path": "n",
+                      "value": { "op": "math.add", "of": ["$n", 1] } } ]
+                }
+              }
+            }
+            """;
+
+        /// <summary>A composite that holds it, and says which versions of it will do.</summary>
+        private const string Composite = $$"""
+            {
+              "id": "tally", "version": "1.0.0",
+            {{StandardRuntime.Requires}}
+              "uses": [ { "ruleSet": "counter", "version": "^1.1" } ]
+            }
+            """;
+
+        private static Dictionary<string, string> Held(string component) =>
+            new(StringComparer.Ordinal) { ["counter"] = component };
+
+        private static ImmutableArray<Version> Published(params string[] versions) =>
+            [.. versions.Select(Version.Parse)];
 
         private static PluginResolution Resolve(string document, string[] versions) =>
             PluginResolution.Resolve(
