@@ -19,11 +19,11 @@ provides no operations at all, not even booleans.
 ```console
 $ dotnet run --project sample/Reversi -- --auto
 Loaded 13 plugins:
-  bind    Rulealize.Plugin.Binding 1.0.0  shorthand '@'
-  branch  Rulealize.Plugin.Branch 1.0.0
+  bind    Rulealize.Plugin.Binding 1.0.1  shorthand '@'
+  branch  Rulealize.Plugin.Branch 1.0.1
   chance  Rulealize.Plugin.Chance 1.0.0
-  cmp     Rulealize.Plugin.Comparison 1.0.0
-  def     Rulealize.Plugin.Definition 1.0.0  shorthand '#'
+  cmp     Rulealize.Plugin.Comparison 1.0.1
+  def     Rulealize.Plugin.Definition 1.0.1  shorthand '#'
   …
 
 Rule set: reversi@1.0.0   inputs: place, pass

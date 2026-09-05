@@ -218,16 +218,21 @@ namespace Rulealize.Tests
                   "inputs": { "go": { "effects": [] } } }
                 """), StringComparison.Ordinal);
 
-        // Written against Logic rather than Grid, which the rest of this file leans on:
-        // an exact-version constraint has to name a version, and pinning one to a plugin
-        // whose vocabulary is still growing means editing this test every time it does.
+        // An exact-version constraint has to name a version, and the one it names is read off
+        // the loaded manifest rather than written here: a plugin released for a dependency
+        // bump alone moved it once, in a test that had chosen Logic to avoid exactly that.
         [Theory]
         [InlineData("^1.0")]
         [InlineData("^1.0.0")]
         [InlineData(">=0.9")]
-        [InlineData("1.0.0")]
+        [InlineData("exact")]
         public void SatisfiableConstraintsAreAccepted(string constraint)
         {
+            if (constraint == "exact")
+            {
+                constraint = standard.Runtime.Plugins.Single(static p => p.Id == "Rulealize.Plugin.Logic").Version.ToString();
+            }
+
             RuleContext context = standard.Runtime.CreateContext($$"""
                 { {{Bare}} "requires": [ { "plugin": "Rulealize.Plugin.TypeSchema" },
                     { "plugin": "Rulealize.Plugin.Logic", "version": "{{constraint}}" } ],

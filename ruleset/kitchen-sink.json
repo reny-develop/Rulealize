@@ -6,7 +6,8 @@
   "requires": [
     { "plugin": "Rulealize.Plugin.Binding",    "version": "^1.0" },
     { "plugin": "Rulealize.Plugin.Branch",     "version": ">=1.0" },
-    { "plugin": "Rulealize.Plugin.Definition", "version": "1.0.0" },
+    // The exact form, which is the one that has to move with the plugin it names.
+    { "plugin": "Rulealize.Plugin.Definition", "version": "1.0.1" },
     { "plugin": "Rulealize.Plugin.Logic" },
     { "plugin": "Rulealize.Plugin.Comparison", "version": "^1.0" },
     { "plugin": "Rulealize.Plugin.Arithmetic", "version": "^1.0" },
