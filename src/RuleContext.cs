@@ -900,13 +900,6 @@ namespace Rulealize
                 offer.Name, values.MoveToImmutable(), new ArgumentList(arguments.MoveToImmutable()), actor));
         }
 
-        /// <summary>Builds a session over one held rule set's part of a composite state.</summary>
-        /// <remarks>
-        /// A component's expressions were compiled against its own schema and its own
-        /// definitions, so they run against its own snapshot. Unpacking the field it occupies
-        /// is the whole of what a composite has to do to make that so, and it is what keeps a
-        /// component's meaning independent of who holds it.
-        /// </remarks>
         /// <summary>One rule set's part of a composite state, and what is happening to it.</summary>
         /// <remarks>
         /// <para>
@@ -967,6 +960,12 @@ namespace Rulealize
                 new(rules, fields, origin, cancellationToken, trail);
 
             /// <summary>Gets the part a held rule set occupies, making it the first time.</summary>
+            /// <remarks>
+            /// A component's expressions were compiled against its own schema and its own
+            /// definitions, so they run against its own snapshot. Unpacking the field it occupies
+            /// is the whole of what a composite has to do to make that so, and it is what keeps a
+            /// component's meaning independent of who holds it.
+            /// </remarks>
             public Part Held(string alias)
             {
                 if (!_held.TryGetValue(alias, out Part? part))

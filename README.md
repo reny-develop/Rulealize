@@ -129,7 +129,8 @@ rejected for a reason from a fixed list.
     { "plugin": "Rulealize.Plugin.State",      "version": "^1.0" },
     { "plugin": "Rulealize.Plugin.Comparison", "version": "^1.0" },
     { "plugin": "Rulealize.Plugin.Logic",      "version": "^1.0" },
-    { "plugin": "Rulealize.Plugin.Sequence",   "version": "^1.0" }
+    { "plugin": "Rulealize.Plugin.Sequence",   "version": "^1.0" },
+    { "plugin": "Rulealize.Plugin.Binding",    "version": "^1.0" }
   ],
 
   // What a state is, and where one starts. `$stage` below is shorthand for reading
@@ -155,6 +156,8 @@ rejected for a reason from a fixed list.
 
     // A parameter is a domain and a guard. The domain says what the argument may be,
     // and `GetValidInputs` walks it — so this one input becomes three legal moves.
+    // `@reason` reads the argument back: a string expansion the Binding plugin
+    // registered against `@`, which is why that vocabulary is in `requires`.
     "reject": {
       "params": { "reason": { "domain": { "op": "seq.of", "of": ["scope", "cost", "timing"] } } },
       "when": { "op": "cmp.eq", "left": "$stage", "right": "review" },
