@@ -184,6 +184,10 @@ rejected for a reason from a fixed list.
 Comments and trailing commas are accepted in every document this runtime reads. A rule set
 of any size needs somewhere to say why a rule is the way it is.
 
+That is one document shown once, which is enough to see the shape and not enough to write
+your own. [A rule set in five minutes](doc/ruleset-quickguide.md) is the short way in, and
+[writing a rule set](doc/ruleset-guide.md) is the long one.
+
 ## Run it
 
 ```csharp
@@ -262,7 +266,7 @@ message carries a JSON pointer to the node:
 /inputs/submit/when/left: 'stagee' is not a field of the state schema.
 /inputs/reject/effects[0]/path: 'staeg' is not a field of the state schema.
 /inputs/submit/effects[0]: 'cmp.eq' is an expression and cannot appear where an effect is expected.
-/inputs/submit/whn: is not a key an input takes; those are 'params', 'actor', 'when' and 'effects'.
+/inputs/submit/whn: is not a key an input takes; those are 'params', 'actor', 'when', 'effects' and 'fires'.
 ```
 
 Unknown operations, missing keys, unbound locals, undefined or cyclic definitions, an
@@ -532,16 +536,22 @@ not on the feed. [`sample/Deploy/`](sample/Deploy/) is the worked example.
 | [`test/`](test/) | xUnit tests — `dotnet test` |
 | [`sample/`](sample/) | one directory per sample application — see [`sample/README.md`](sample/README.md) |
 | [`ruleset/`](ruleset/) | the rule set documents, one copy of each |
-| [`doc/`](doc/README.md) | what a vocabulary is, and the runtime's semantics |
+| [`doc/`](doc/README.md) | the two guides to writing a rule set, and the two normative documents they defer to |
 
 A rule set lives in one place and is consumed from two: the test suite compiles every
 document in `ruleset/`, and a sample links the one it demonstrates.
 
 ## Documentation
 
-[`doc/`](doc/README.md) holds two things, and both are normative.
+[`doc/`](doc/README.md) holds two guides and two normative documents.
 
-**The specification** is what you read to write a rule set: [the value model and the three
+**To learn the DSL**, start with [a rule set in five minutes](doc/ruleset-quickguide.md) —
+one complete document annotated, and what a runtime answers when you feed it in. Then
+[writing a rule set](doc/ruleset-guide.md), which is the whole language with the reasons in
+it: the value model, the three kinds of node, domains and guards, chance, composition, and
+how to read a vocabulary you have never met.
+
+**The specification** is what the guides defer to: [the value model and the three
 kinds of node](https://github.com/reny-develop/Rulealize.Abstraction/blob/main/doc/value-model.md),
 which `Rulealize.Abstraction` carries because it is what both sides depend on, then
 [vocabulary](doc/plugin.md), which says where a plugin releases its own specification and

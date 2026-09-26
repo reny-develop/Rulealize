@@ -25,6 +25,7 @@ namespace Rulealize.Tests
         {
             Runtime = new RuleRuntime().LoadPluginsFrom(PluginFolder);
             Approval = Runtime.CreateContext(ReadRuleSet("approval.json"));
+            Countdown = Runtime.CreateContext(ReadRuleSet("countdown.json"));
             Reversi = Runtime.CreateContext(ReadRuleSet("reversi.json"));
             KitchenSink = Runtime.CreateContext(ReadRuleSet("kitchen-sink.json"));
             Chess = Runtime.CreateContext(ReadRuleSet("chess.json"));
@@ -89,12 +90,24 @@ namespace Rulealize.Tests
 
         /// <summary>Gets the rule set the README walks a reader through.</summary>
         /// <remarks>
-        /// The smallest one here, and the only one whose audience is somebody who has not
-        /// decided to use the library yet. It is pinned down like the rest because a
-        /// document quoted in a README is a document that has to keep working, and the one
-        /// most likely to be read is the worst one to let rot.
+        /// One of the two here written for somebody who has not decided to use the library
+        /// yet — <see cref="Countdown"/> is the other, and smaller. This is the one that has
+        /// a reader choosing between inputs rather than only between arguments. It is pinned
+        /// down like the rest because a document quoted in a README is a document that has to
+        /// keep working, and the one most likely to be read is the worst one to let rot.
         /// </remarks>
         public RuleContext Approval { get; }
+
+        /// <summary>Gets the rule set the quick guide is built around.</summary>
+        /// <remarks>
+        /// Counting to ten, one to three at a time. It is here for the same reason
+        /// <see cref="Approval"/> is — a document printed in full somewhere a beginner will
+        /// read it — and it is pinned harder, because <see cref="CountdownTests"/> compares
+        /// the copy printed in the guide against the document itself. The README's copy of
+        /// approval.json is what that check exists to prevent: it lost a <c>requires</c>
+        /// entry, went on compiling, and nothing noticed.
+        /// </remarks>
+        public RuleContext Countdown { get; }
 
         /// <summary>Gets the Reversi rule set, which the design was worked out on.</summary>
         public RuleContext Reversi { get; }

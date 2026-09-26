@@ -34,6 +34,16 @@
     <!-- The sample's policy documents, so the reader that parses them is exercised too. -->
     <Content Include="..\sample\Deploy\Policy\*.json" Link="Policy\%(Filename)%(Extension)"
              CopyToOutputDirectory="PreserveNewest" />
+
+    <!--
+      The quick guide, because it prints a rule set document in full and a printed copy is
+      the one thing here that nothing else could hold down. The README's copy of approval.json
+      drifted from the document exactly this way — its `requires` lost an entry, and the
+      document went on compiling, so nothing said a word. CountdownTests parses the block out
+      of this file and compares it to ruleset/countdown.json.
+    -->
+    <Content Include="..\doc\ruleset-quickguide.md" Link="Doc\ruleset-quickguide.md"
+             CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <!-- Builds the standard plugins and drops their DLLs into a plugin folder. -->
@@ -43,6 +53,7 @@
        that is only claimed to work. -->
   <ItemGroup>
     <RulealizeRuleSet Include="approval" />
+    <RulealizeRuleSet Include="countdown" />
     <RulealizeRuleSet Include="reversi" />
     <RulealizeRuleSet Include="chess" />
     <RulealizeRuleSet Include="shogi" />

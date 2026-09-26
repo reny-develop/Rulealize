@@ -1,0 +1,71 @@
+{
+  "$schema": "rulealize/ruleset/v1",
+  "id": "countdown",
+  "version": "1.0.0",
+
+  // Count to ten, one to three at a time. The rule set the quick guide is built around, and
+  // it exists to be read by somebody who has never seen one before.
+  //
+  // The smallest document here — one field, one input — and the difference from approval,
+  // which is the next smallest at two and three, is what it spends that room on. Approval has
+  // three inputs, so it shows a reader *choosing between different things to do*. This has
+  // one, so nothing competes with the single idea it is for: where legal moves come from.
+  //
+  // The shortest honest way to show that is an input whose argument is sometimes allowed and
+  // sometimes not:
+  //
+  //   total 0   add(n: 1), add(n: 2), add(n: 3)   3 candidates, 3 legal
+  //   total 8   add(n: 1), add(n: 2)              3 candidates, 2 legal
+  //   total 10  —                                 terminal, result: done
+  //
+  // Those three positions are the whole lesson. The domain is the same three values in every
+  // position, and the guard is what removes `add(n: 3)` at eight — so a reader sees that a
+  // domain says what an argument *may* be while a guard says whether *this one* is allowed
+  // now, without having to hold a board in their head to see it.
+  //
+  // ── What it deliberately does not have ──
+  //
+  // No turn and no actor: two players alternating would make this Nim, and the player to move
+  // is a second idea arriving before the first has landed. No definitions, because the one
+  // expression worth naming — the total after the move — is used twice and reads perfectly
+  // well written twice at this size; a document whose every feature is exercised is
+  // kitchen-sink's job and it is not a document anybody learns from.
+  //
+  // `max: 10` on the field restates what `terminal` already stops at, and the two say
+  // different things on purpose: the guard is a rule about transitions, the bound is a
+  // constraint on which states exist at all. It is what refuses a state document saying 11.
+
+  "requires": [
+    { "plugin": "Rulealize.Plugin.TypeSchema", "version": "^1.0" },
+    { "plugin": "Rulealize.Plugin.State",      "version": "^1.0" },
+    { "plugin": "Rulealize.Plugin.Comparison", "version": "^1.0" },
+    { "plugin": "Rulealize.Plugin.Arithmetic", "version": "^1.0" },
+    { "plugin": "Rulealize.Plugin.Sequence",   "version": "^1.4" },
+    { "plugin": "Rulealize.Plugin.Binding",    "version": "^1.0" }
+  ],
+
+  "state": {
+    "schema":  { "total": { "op": "type.int", "min": 0, "max": 10 } },
+    "initial": { "total": 0 }
+  },
+
+  "inputs": {
+    "add": {
+      "params": { "n": { "domain": { "op": "seq.range", "from": 1, "count": 3 } } },
+      "when": {
+        "op": "cmp.lte",
+        "left": { "op": "math.add", "of": ["$total", "@n"] },
+        "right": 10
+      },
+      "effects": [
+        { "op": "state.set", "path": "total",
+          "value": { "op": "math.add", "of": ["$total", "@n"] } }
+      ]
+    }
+  },
+
+  "terminal": {
+    "when": { "op": "cmp.eq", "left": "$total", "right": 10 },
+    "result": "done"
+  }
+}

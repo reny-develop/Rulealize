@@ -3,7 +3,8 @@
   "id": "approval",
   "version": "1.0.0",
 
-  // The smallest rule set that is still worth reading, and the one the README walks through.
+  // The rule set the README walks through: the smallest one here that still has a reader
+  // choosing between different things to do, which countdown.json gives up to be smaller.
   //
   // It exists to answer the first question a reader has — what does a rule set look like? —
   // without asking them to hold sixty-four squares in their head first. Six plugins, three

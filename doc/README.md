@@ -1,15 +1,29 @@
 # Documentation
 
-Two documents live here, and both are normative.
+Four documents live here, in two halves. Two of them **teach** the DSL, and two of them
+**define** it — and where a guide and a specification disagree, the specification is right
+and the guide has a bug.
 
-**The specification** says what the DSL is. It is what you read to write a rule set.
+## The guides
 
-**[The runtime's semantics](runtime.md)** says what this library does with a rule set once
-it has one. Read second: the DSL can be written without it, but nothing about
-`GetValidInputs`, what `GetOutcomes` enumerates, or the order two effects see the state in
-can be predicted without it.
+Neither is normative. Both link into the half below at every point where the difference
+could matter.
+
+| | | |
+| --- | --- | --- |
+| [A rule set in five minutes](ruleset-quickguide.md) | start here | one complete document, annotated, and what a runtime answers when you feed it in. Enough to read a rule set and write a small one |
+| [Writing a rule set](ruleset-guide.md) | then here | the same subject with the reasons in it, from an empty file to composition and chance. Fourteen sections, meant to be read straight through once |
+
+The guides cover the language a document is written in. Getting one *running* — the API, the
+exceptions, loading plugins — is [the README](../README.md).
 
 ## The specification
+
+Normative, and split down one line: **what the DSL is**, which is what a rule set has to
+satisfy, and **what this library does with a rule set once it has one**, which is
+[the runtime's surface](runtime.md). A document can be written knowing only the first — but
+nothing about `GetValidInputs`, what `GetOutcomes` enumerates, or the order two effects see
+the state in can be predicted without the second.
 
 Read in this order. Every plugin specification assumes the value model, and says so.
 
@@ -25,8 +39,10 @@ assumes describe types `Rulealize.Abstraction` defines, a plugin's specification
 by the plugin, and the index of what is published is kept by Rulealize.Registry. The
 runtime's surface is the exception, because it describes this repository.
 
-Getting a rule set running at all — the smallest complete document, the API, the exceptions,
-loading plugins — is in [the README](../README.md). The worked rule sets live in
-[`ruleset/`](../ruleset/), every one of them held down by a test and most of them
-demonstrated by a sample; [`sample/README.md`](../sample/README.md) says what each one is
-for.
+## The worked documents
+
+Neither half is where to look for a rule set to read. Those live in
+[`ruleset/`](../ruleset/) — every one of them held down by a test, and most of them
+demonstrated by a sample, which [`sample/README.md`](../sample/README.md) describes. The
+smallest is [`countdown.json`](../ruleset/countdown.json), which the quick guide prints in
+full; the largest are chess and shogi.
