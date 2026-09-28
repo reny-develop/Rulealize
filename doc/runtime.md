@@ -84,10 +84,10 @@ rule set that meant it. Inside a node the rule reverses, and has to — the keys
 to the plugin, and a core with an opinion about them would make adding an argument to an
 operation a change to the runtime.
 
-**An input's name may not contain `.`.** Nothing in the runtime spends the character yet; it
-is reserved against the day a rule set may hold another and offer its inputs under a
-qualified name. Taking a name away once documents are written with it is the one version of
-this that cannot be done.
+**An input's name may not contain `.`.** The character is spent rather than reserved: a rule
+set that holds another offers its inputs as `alias.input`, and resolving one splits on every
+dot, so `a.b.c` is what `a` holds under `b`, and its input `c`. A name carrying one would make
+which input a caller meant depend on what the document happens to declare.
 
 ### `actor`
 
@@ -179,15 +179,17 @@ how a composite has one:
   "grant": {
     "fires": [
       { "held": "req", "input": "grant" },
-      { "held": "roster", "input": "assign", "args": { "slot": "#reqShift", "who": "#reqWho" } }
+      { "held": "roster", "input": "assign", "args": { "slot": "#reqShift" } }
     ]
   }
 }
 ```
 
-Measured against the document it replaces, that reaches **the same fifteen states and the
-same twenty-eight transitions**, element for element, where narrowing alone reaches
-thirty-nine.
+Measured against the document it replaces, that reaches **the same states and the same
+transitions**, element for element — five and four for the pair the test suite carries, where
+narrowing alone leaves seven and six reachable. The three are walked in `CompositionTests`,
+which is what holds the comparison: a claim of this shape is worth nothing unless something
+re-measures it.
 
 **A static list, not an effect.** It may not sit inside a branch, so which component inputs
 an input drives can be read off the document without running it — the property a literal

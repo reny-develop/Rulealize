@@ -245,5 +245,23 @@ namespace Rulealize.Tests
             public Abstraction.Node.ExpressionNode Expand(IBuildContext context, string text) =>
                 throw new NotSupportedException();
         }
+
+        [Fact]
+        public void AFolderOfUsableVocabulariesSkipsNothing() =>
+            // The ordinary case, and the one the reporting must not spoil: an entry here would
+            // send somebody looking for a problem that is not there.
+            Assert.Empty(new RuleRuntime().LoadPluginsFrom(StandardRuntime.PluginFolder).Skipped);
+
+        [Fact]
+        public void AnAssemblyThatWasNeverAPluginIsStillPassedOverInSilence()
+        {
+            // The test run's own output folder: the runtime, the test framework, the sample,
+            // and a plugin folder beside them. Sweeping it finds whatever is a plugin and says
+            // nothing about the rest, because a sweep is pointed at folders like this one on
+            // purpose and the rest is not its business.
+            RuleRuntime swept = new RuleRuntime().LoadPluginsFrom(AppContext.BaseDirectory);
+
+            Assert.Empty(swept.Skipped);
+        }
     }
 }

@@ -72,8 +72,8 @@ lockdown policy without recompiling, and the Roster sample runs a completely dif
 were never in the document.
 
 **A wrong rule set is refused before it runs.** Everything decidable from the document is
-decided in `CreateContext`, with a JSON pointer to the offending node. A guard that is only
-reached by the forty-first candidate is not a place to discover a typo.
+decided in `CreateContext`, and the refusal carries the path of the offending node. A guard
+that is only reached by the forty-first candidate is not a place to discover a typo.
 
 **The core knows nothing about your domain.** No plugin type crosses into it, no operation
 is built in. What your rules can say is exactly what you loaded, and a rule set's `requires`
@@ -105,9 +105,11 @@ that comes back is one the document runs on, and it is the folder [Run it](#run-
 
 A plugin can also arrive as an ordinary package reference: `dotnet add package
 Rulealize.Plugin.Grid` puts the assembly in the application's own output folder, and
-`LoadPluginsFrom(AppContext.BaseDirectory)` passes over everything that is not a plugin. That
-is the simpler arrangement when the rules ship with the binary rather than travelling on
-their own schedule. [Vocabulary](doc/plugin.md) says where the published ones are indexed.
+`LoadPluginsFrom(AppContext.BaseDirectory)` passes over everything that is not a plugin —
+in silence, except for an assembly built against this abstraction whose types will not load,
+which is nearly always a plugin built against a different version of it and is named in
+`RuleRuntime.Skipped`. That is the simpler arrangement when the rules ship with the binary
+rather than travelling on their own schedule. [Vocabulary](doc/plugin.md) says where the published ones are indexed.
 
 The samples are described in [`sample/README.md`](sample/README.md). Read Reversi
 first — it is the shortest complete host there is.
@@ -260,7 +262,8 @@ arrangement that rolls anything.
 ## What is checked, and when
 
 Everything the document can settle on its own is settled in `CreateContext`, and the
-message carries a JSON pointer to the node:
+message carries the path of the node — a member is `/name` and an array element is `[n]`,
+which is **not** a JSON pointer and does not parse as one:
 
 ```
 /inputs/submit/when/left: 'stagee' is not a field of the state schema.
@@ -359,6 +362,7 @@ the version's.
 | `InputRejectedException.Rejections` | which clauses refused the value supplied for one, each with its code and the parameter it is about |
 | `ValidInput.ToInputDocument` / `Outcome.ToOutcomeDocument` | write one back out, to be fed in again or recorded |
 | `ValidInputSet` / `OutcomeSet` / `TransitionResult` `.ToJson` | the same, for a whole answer, where a host is a boundary rather than a caller |
+| `RuleRuntime.Skipped` | what a folder sweep took for a plugin and could not use, with the reason |
 | `PluginRequirement.ReadFrom` | read a document's `requires` — no runtime, no plugin loaded |
 | `PluginResolution.Resolve` | which versions those constraints call for, given what is published |
 | `RuleSetRequirement.ReadFrom` | read a document's `uses` — no runtime, and none of the documents it names |
@@ -429,7 +433,7 @@ two states:
 "grant": {
   "fires": [
     { "held": "req", "input": "grant" },
-    { "held": "roster", "input": "assign", "args": { "slot": "#reqShift", "who": "#reqWho" } }
+    { "held": "roster", "input": "assign", "args": { "slot": "#reqShift" } }
   ]
 }
 ```
@@ -437,7 +441,9 @@ two states:
 `fires` is a list and not an effect, so which component inputs an input drives is readable
 without running it, and `GetValidInputs` offers one only where every input it drives is
 allowed by the rule set that declared it. Composed that way, the worked example reaches the
-same fifteen states and twenty-eight transitions as the merged document it replaces.
+same states and the same transitions as the merged document it replaces — five and four,
+element for element, where narrowing alone leaves seven and six reachable.
+`CompositionTests` walks all three and holds the comparison.
 
 `CreateContext(document, held)` takes the documents a rule set holds; running is otherwise
 unchanged. Working out which documents those are is `RuleSetRequirement.ReadFrom`, which
