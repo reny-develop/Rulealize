@@ -1222,7 +1222,8 @@ that is not a valid rule set, `RuleDocumentException` for a state, input or outc
 this rule set cannot accept, `IllegalInputException` for a move the rules do not allow —
 including a value a parameter's `open` schema does not admit —
 `RuleEvaluationException` for values that make an operation meaningless, and
-`PluginLoadException` for a set of plugins that cannot be used together.
+`PluginLoadException` for a plugin that cannot be used or a set of them that cannot be used
+together.
 
 ---
 

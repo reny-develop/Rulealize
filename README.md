@@ -377,8 +377,10 @@ Exceptions: `RuleSetBuildException` for a document that is not a valid rule set,
 `IllegalInputException` for a move the rules do not allow — `InputRejectedException` is the
 kind of that one meaning the move *was* on offer and the value supplied for an open parameter
 is what is wrong, and it carries a code per clause that refused — `RuleEvaluationException` for
-values that make an operation meaningless, and `PluginLoadException` for a set of plugins
-that cannot be used together. `InvalidOperationException` is the wrong method rather than a bad
+values that make an operation meaningless, and `PluginLoadException` for a plugin that cannot
+be used or a set of them that cannot be used together — two claiming one identifier or one
+namespace, but never two reserving one shorthand character, which is recorded rather than
+owned. `InvalidOperationException` is the wrong method rather than a bad
 document, and is refused before anything is evaluated: applying an input that draws without
 saying what it drew, or writing out a move that is still waiting for an argument.
 
