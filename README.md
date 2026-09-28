@@ -72,8 +72,8 @@ lockdown policy without recompiling, and the Roster sample runs a completely dif
 were never in the document.
 
 **A wrong rule set is refused before it runs.** Everything decidable from the document is
-decided in `CreateContext`, with a JSON pointer to the offending node. A guard that is only
-reached by the forty-first candidate is not a place to discover a typo.
+decided in `CreateContext`, and the refusal carries the path of the offending node. A guard
+that is only reached by the forty-first candidate is not a place to discover a typo.
 
 **The core knows nothing about your domain.** No plugin type crosses into it, no operation
 is built in. What your rules can say is exactly what you loaded, and a rule set's `requires`
@@ -260,7 +260,8 @@ arrangement that rolls anything.
 ## What is checked, and when
 
 Everything the document can settle on its own is settled in `CreateContext`, and the
-message carries a JSON pointer to the node:
+message carries the path of the node — a member is `/name` and an array element is `[n]`,
+which is **not** a JSON pointer and does not parse as one:
 
 ```
 /inputs/submit/when/left: 'stagee' is not a field of the state schema.

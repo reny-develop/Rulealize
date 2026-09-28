@@ -587,6 +587,54 @@ namespace Rulealize.Tests
                 StringComparison.Ordinal);
         }
 
+        [Fact]
+        public void FiringLeavesFewerPositionsReachableThanNarrowingDoes()
+        {
+            // The claim these numbers come from is the whole argument for `fires`: driving a
+            // component's input reaches the same positions as a document written out by hand,
+            // where narrowing on its own leaves more of them reachable. It was stated in two
+            // documents and measured by nobody, which is the shape of claim that rots quietly.
+            (int states, int transitions) = Explore(standard.Runtime.CreateContext(Atomic, Halves));
+
+            (int narrowStates, int narrowTransitions) = Explore(Composite());
+
+            // The counts the two documents print — fifteen, twenty-eight, thirty-nine — belong
+            // to a larger example that is not in this repository, so what is held here is the
+            // relation they were quoted for: driving a component input leaves strictly fewer
+            // positions reachable than narrowing one does.
+            Assert.True(states < narrowStates, $"{states} is not fewer than {narrowStates}");
+            Assert.True(transitions < narrowTransitions, $"{transitions} is not fewer than {narrowTransitions}");
+        }
+
+        /// <summary>Walks every position reachable from the opening one, breadth first.</summary>
+        /// <remarks>
+        /// A state document is canonical, so two of them are the same position exactly when
+        /// their text matches. Nothing here draws, so one move is one transition.
+        /// </remarks>
+        private static (int States, int Transitions) Explore(RuleContext rules)
+        {
+            HashSet<string> seen = new(StringComparer.Ordinal) { rules.InitialState };
+            Queue<string> pending = new();
+            pending.Enqueue(rules.InitialState);
+            int transitions = 0;
+
+            while (pending.Count > 0)
+            {
+                string state = pending.Dequeue();
+                foreach (ValidInput move in rules.GetValidInputs(state, 4096))
+                {
+                    transitions++;
+                    string next = rules.ApplyToState(move.ToInputDocument(rules.RuleSet), state).State;
+                    if (seen.Add(next))
+                    {
+                        pending.Enqueue(next);
+                    }
+                }
+            }
+
+            return (seen.Count, transitions);
+        }
+
         private RuleContext Composite() => standard.Runtime.CreateContext(Process, Halves);
 
         private static string Apply(

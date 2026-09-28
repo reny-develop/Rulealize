@@ -84,10 +84,10 @@ rule set that meant it. Inside a node the rule reverses, and has to — the keys
 to the plugin, and a core with an opinion about them would make adding an argument to an
 operation a change to the runtime.
 
-**An input's name may not contain `.`.** Nothing in the runtime spends the character yet; it
-is reserved against the day a rule set may hold another and offer its inputs under a
-qualified name. Taking a name away once documents are written with it is the one version of
-this that cannot be done.
+**An input's name may not contain `.`.** The character is spent rather than reserved: a rule
+set that holds another offers its inputs as `alias.input`, and resolving one splits on every
+dot, so `a.b.c` is what `a` holds under `b`, and its input `c`. A name carrying one would make
+which input a caller meant depend on what the document happens to declare.
 
 ### `actor`
 

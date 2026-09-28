@@ -1,5 +1,5 @@
 ## Project
-Rulealize — "Plugin-oriented state transition and rule execution runtime driven by declarative JSON DSL" (README.md).
+Rulealize — "Plugin-oriented state transition and rule execution runtime driven by declarative JSON DSL" (`src/Rulealize.csproj`, `<Description>`).
 
 One C# class library (`src/Rulealize.csproj`, `net10.0`, nullable + implicit usings enabled), with an xUnit suite in `test/` and six host applications in `sample/`.
 
