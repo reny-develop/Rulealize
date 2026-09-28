@@ -5,6 +5,7 @@ using System.Collections;
 using System.Collections.Immutable;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Rulealize.Abstraction.Value;
 
 namespace Rulealize
@@ -29,22 +30,35 @@ namespace Rulealize
     /// <see cref="Arguments"/> is the readable view, everything rendered as text and in the
     /// order the parameters were declared, so that <see cref="ToString"/> writes the same move
     /// the same way in every process. What travels in a document is
-    /// <see cref="ToInputDocument"/>.
+    /// <see cref="ToInputDocument(string)"/>.
+    /// </para>
+    /// <para>
+    /// A move whose input leaves a parameter <c>open</c> comes back <b>incomplete</b>: the
+    /// value is somebody's to supply, so <see cref="Open"/> names what is missing and
+    /// <see cref="IsComplete"/> is false. The round trip above is a promise about a complete
+    /// move, which is why <see cref="ToInputDocument(string)"/> refuses an incomplete one rather than
+    /// writing a document that would mean something else. A rule set with no open parameter
+    /// has no incomplete moves, so nothing that was true before has stopped being true.
     /// </para>
     /// </remarks>
     public sealed class ValidInput
     {
         private readonly ImmutableArray<KeyValuePair<string, RuleValue>> _values;
+        private readonly ImmutableArray<string> _parameters;
 
         internal ValidInput(
             string input,
             ImmutableArray<KeyValuePair<string, RuleValue>> values,
             ArgumentList arguments,
+            OpenParameterList open,
+            ImmutableArray<string> parameters,
             string? actor)
         {
             Input = input;
             _values = values;
+            _parameters = parameters;
             Arguments = arguments;
+            Open = open;
             Actor = actor;
         }
 
@@ -54,9 +68,20 @@ namespace Rulealize
         /// <summary>Gets the arguments rendered as text, one per declared parameter, in that order.</summary>
         /// <remarks>
         /// The readable view. A number appears here as its digits; what goes into an input
-        /// document is the number itself. See <see cref="ToInputDocument"/>.
+        /// document is the number itself. See <see cref="ToInputDocument(string)"/>.
         /// </remarks>
         public ArgumentList Arguments { get; }
+
+        /// <summary>Gets the parameters still waiting for a value, in declared order.</summary>
+        public OpenParameterList Open { get; }
+
+        /// <summary>Gets a value indicating whether every parameter of this move has a value.</summary>
+        /// <remarks>
+        /// Only a move of an input that leaves a parameter <c>open</c> is ever incomplete. A
+        /// caller that walks moves and applies them — a solver, a perft count — can ask this
+        /// once of the set it was handed rather than of each move.
+        /// </remarks>
+        public bool IsComplete => Open.IsEmpty;
 
         /// <summary>Gets whose move this is, or <see langword="null"/> when the rule set does not say.</summary>
         public string? Actor { get; }
@@ -64,8 +89,20 @@ namespace Rulealize
         /// <summary>Writes this as an input document, ready to apply.</summary>
         /// <returns>A <c>rulealize/input/v1</c> document.</returns>
         /// <param name="ruleSet">The rule set identity to stamp on it, as <c>id@version</c>.</param>
+        /// <exception cref="InvalidOperationException">
+        /// This move is incomplete: an open parameter has no value yet. Refused rather than
+        /// written with the argument left out, because that document would name a different
+        /// move — and a caller walking moves is better stopped here than handed one.
+        /// </exception>
         public string ToInputDocument(string ruleSet)
         {
+            if (!IsComplete)
+            {
+                throw new InvalidOperationException(
+                    $"'{Input}' leaves {Listed(Open)} open, and a move is not a document until every "
+                    + "argument has a value. The value comes from whoever is being asked for it.");
+            }
+
             using MemoryStream buffer = new();
             using (Utf8JsonWriter writer = new(buffer, new JsonWriterOptions { Indented = true }))
             {
@@ -82,10 +119,119 @@ namespace Rulealize
         }
 
         /// <inheritdoc />
-        public override string ToString() =>
-            Arguments.IsEmpty
-                ? Input
-                : $"{Input}({string.Join(", ", Arguments.Select(static argument => $"{argument.Key}: {argument.Value}"))})";
+        /// <remarks>
+        /// Parameters in the order the rule set declared them, whether each has a value or is
+        /// still open, so that one move reads the same way everywhere it is written down.
+        /// </remarks>
+        public override string ToString()
+        {
+            if (_parameters.IsEmpty)
+            {
+                return Input;
+            }
+
+            IEnumerable<string> rendered = _parameters.Select(name =>
+                Arguments.TryGetValue(name, out string? argument)
+                    ? $"{name}: {argument}"
+                    : Open[name].ToString());
+
+            return $"{Input}({string.Join(", ", rendered)})";
+        }
+
+        private static string Listed(OpenParameterList open) =>
+            open.Count is 1
+                ? $"'{open[0].Name}'"
+                : string.Join(", ", open.Take(open.Count - 1).Select(static p => $"'{p.Name}'"))
+                  + $" and '{open[^1].Name}'";
+
+        /// <summary>Writes this as an input document, supplying what it is still waiting for.</summary>
+        /// <returns>A <c>rulealize/input/v1</c> document.</returns>
+        /// <param name="ruleSet">The rule set identity to stamp on it, as <c>id@version</c>.</param>
+        /// <param name="open">A value for every parameter in <see cref="Open"/>, by name.</param>
+        /// <remarks>
+        /// <para>
+        /// The arguments this move already has are written from the values their domains
+        /// produced, each in its own JSON form. That is the whole reason this overload exists
+        /// rather than leaving a caller to assemble the document: <see cref="Arguments"/> is
+        /// text, an argument's JSON form is part of what it means — <c>"2"</c> is not <c>2</c>
+        /// — and a caller rebuilding a move by hand has to guess a type nothing told it. A move
+        /// with one argument chosen and one still open is the case that makes the guess
+        /// unavoidable, and this is the answer to it.
+        /// </para>
+        /// <para>
+        /// Only an open parameter may be given a value here. One that came out of a domain is
+        /// already settled, and replacing it would describe a different move than the one this
+        /// is.
+        /// </para>
+        /// <para>
+        /// Nothing is checked against the schema here. Whether the value is one the rules admit
+        /// is <c>ApplyToState</c>'s answer, and it is the same answer wherever the document came
+        /// from; what a caller can settle before asking is the shape, out of
+        /// <see cref="OpenParameter"/>.
+        /// </para>
+        /// </remarks>
+        public string ToInputDocument(string ruleSet, IReadOnlyDictionary<string, JsonNode?> open)
+        {
+            ArgumentNullException.ThrowIfNull(open);
+
+            foreach (string name in open.Keys)
+            {
+                if (!Open.ContainsKey(name))
+                {
+                    throw new ArgumentException(
+                        $"'{Input}' does not leave '{name}' open, so there is no value to supply for it.",
+                        nameof(open));
+                }
+            }
+
+            foreach (OpenParameter parameter in Open)
+            {
+                if (!open.ContainsKey(parameter.Name))
+                {
+                    throw new ArgumentException(
+                        $"'{Input}' leaves '{parameter.Name}' open and no value was given for it.",
+                        nameof(open));
+                }
+            }
+
+            using MemoryStream buffer = new();
+            using (Utf8JsonWriter writer = new(buffer, new JsonWriterOptions { Indented = true }))
+            {
+                writer.WriteStartObject();
+                writer.WriteString("$schema", Internal.Document.InputDocument.SchemaId);
+                writer.WriteString("ruleSet", ruleSet);
+                writer.WriteString("input", Input);
+                writer.WritePropertyName("args");
+                writer.WriteStartObject();
+
+                // Declared order, the same order every other rendering of this move uses.
+                foreach (string name in _parameters)
+                {
+                    writer.WritePropertyName(name);
+
+                    if (open.TryGetValue(name, out JsonNode? supplied))
+                    {
+                        if (supplied is null)
+                        {
+                            writer.WriteNullValue();
+                        }
+                        else
+                        {
+                            supplied.WriteTo(writer);
+                        }
+
+                        continue;
+                    }
+
+                    Write(writer, _values.First(value => string.Equals(value.Key, name, StringComparison.Ordinal)).Value);
+                }
+
+                writer.WriteEndObject();
+                writer.WriteEndObject();
+            }
+
+            return Encoding.UTF8.GetString(buffer.ToArray());
+        }
 
         internal void WriteTo(Utf8JsonWriter writer)
         {
@@ -93,6 +239,26 @@ namespace Rulealize
             writer.WriteString("input", Input);
             writer.WritePropertyName("args");
             WriteArguments(writer);
+
+            if (!IsComplete)
+            {
+                writer.WritePropertyName("open");
+                writer.WriteStartObject();
+                foreach (OpenParameter parameter in Open)
+                {
+                    writer.WritePropertyName(parameter.Name);
+                    writer.WriteStartObject();
+                    if (parameter.Op is string op)
+                    {
+                        writer.WriteString("op", op);
+                    }
+
+                    writer.WriteEndObject();
+                }
+
+                writer.WriteEndObject();
+            }
+
             if (Actor is not null)
             {
                 writer.WriteString("actor", Actor);
@@ -163,6 +329,14 @@ namespace Rulealize
 
         /// <summary>Gets how many candidates had their guard evaluated.</summary>
         public int Evaluated => evaluated;
+
+        /// <summary>Gets a value indicating whether any move here is waiting for an argument.</summary>
+        /// <remarks>
+        /// False for every rule set that leaves no parameter <c>open</c>, which is what lets a
+        /// traversal — a solver, a perft count — establish in one question that every move it
+        /// is about to walk can be applied as it stands.
+        /// </remarks>
+        public bool HasOpenParameters => inputs.Any(static input => !input.IsComplete);
 
         /// <inheritdoc />
         public ValidInput this[int index] => inputs[index];

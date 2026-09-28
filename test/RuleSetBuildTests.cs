@@ -406,6 +406,18 @@ namespace Rulealize.Tests
         }
 
         [Fact]
+        public void TheKeysAnInputTakesAreNamedInTheRefusal() =>
+            // The list is where a reader is sent when a key is misspelt, and it is printed in
+            // the README and in the guide. Pinned here rather than left to agree by luck.
+            Assert.Contains(
+                "is not a key an input takes; those are 'params', 'actor', 'when', 'validate', "
+                + "'effects' and 'fires'.",
+                Rejects($$"""
+                { {{Preamble}} "inputs": { "go": { "whn": true, "effects": [] } } }
+                """),
+                StringComparison.Ordinal);
+
+        [Fact]
         public void AnOptionalKeyMisspeltIsRefusedRatherThanReadAsAbsent()
         {
             // Without this, 'go' is an input with no guard, so it is legal in every state.

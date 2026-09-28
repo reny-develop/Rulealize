@@ -8,7 +8,7 @@ using Rulealize.Internal.RuleSet;
 namespace Rulealize.Internal.Document
 {
     /// <summary>An input document, read.</summary>
-    internal sealed record InputRequest(string Input, IReadOnlyDictionary<string, RuleValue> Arguments);
+    internal sealed record InputRequest(string Input, IReadOnlyDictionary<string, JsonElement> Arguments);
 
     /// <summary>Reads the <c>rulealize/input/v1</c> document.</summary>
     /// <remarks>
@@ -20,8 +20,11 @@ namespace Rulealize.Internal.Document
     /// round trip that <c>GetValidInputs</c> opens.
     /// </para>
     /// <para>
-    /// Arrays are refused. The value model has no literal for a sequence, so an array in
-    /// argument position could only be a mistake.
+    /// The JSON is kept rather than converted, because which conversion is right depends on
+    /// the parameter it turns out to belong to. One with a domain gets the scalar reading
+    /// below and is then matched against the domain; one left <c>open</c> is read by its own
+    /// schema node, which owns the JSON its values are written as and may therefore accept a
+    /// shape — an array, an object — that no domain argument could be.
     /// </para>
     /// </remarks>
     internal static class InputDocument
@@ -50,7 +53,7 @@ namespace Rulealize.Internal.Document
                 throw new RuleDocumentException("An input document needs an 'input' naming the input to apply.");
             }
 
-            Dictionary<string, RuleValue> arguments = new(StringComparer.Ordinal);
+            Dictionary<string, JsonElement> arguments = new(StringComparer.Ordinal);
             if (document.TryGetProperty("args", out JsonElement args))
             {
                 if (args.ValueKind != JsonValueKind.Object)
@@ -60,14 +63,24 @@ namespace Rulealize.Internal.Document
 
                 foreach (JsonProperty argument in args.EnumerateObject())
                 {
-                    arguments[argument.Name] = ReadValue(argument.Value, argument.Name);
+                    arguments[argument.Name] = argument.Value;
                 }
             }
 
             return new InputRequest(name.GetString()!, arguments);
         }
 
-        private static RuleValue ReadValue(JsonElement element, string path) => element.ValueKind switch
+        /// <summary>Reads an argument of a parameter that has a domain.</summary>
+        /// <param name="element">The JSON the document gave for it.</param>
+        /// <param name="path">The argument name, for a message.</param>
+        /// <returns>The value, to be matched against the domain.</returns>
+        /// <exception cref="RuleDocumentException">The argument is an array.</exception>
+        /// <remarks>
+        /// Scalars and records, and an array is refused: the value model has no literal for a
+        /// sequence, so an array against a domain could only be a mistake. An open parameter
+        /// does not come through here.
+        /// </remarks>
+        public static RuleValue ReadValue(JsonElement element, string path) => element.ValueKind switch
         {
             JsonValueKind.String => RuleValue.Text(element.GetString()!),
             JsonValueKind.Number => RuleValue.Number(element.GetDecimal()),

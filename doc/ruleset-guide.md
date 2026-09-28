@@ -274,7 +274,7 @@ later; the section is given for each so you can look ahead if one is unfamiliar.
 | --- | --- | --- |
 | **expression** | a value | an input's `when` and `actor`, the arguments of an effect, a parameter's `domain` ([§6](#6-inputs--what-may-be-done)), a definition body ([§7](#7-definitions--naming-an-expression)), `terminal` ([§8](#8-terminal--when-it-is-over)) |
 | **effect** | a write to the state | only the elements of an input's `effects` ([§6](#6-inputs--what-may-be-done)) |
-| **schema** | the type of one state field | only inside `state.schema` ([§5](#5-state--what-a-position-is)) |
+| **schema** | the type of one state field | `state.schema` ([§5](#5-state--what-a-position-is)), and a parameter's `open` ([§6](#6-inputs--what-may-be-done)) |
 
 You can usually tell which kind an operation is from its name once you have seen a few:
 `cmp.eq` computes something, so it is an expression; `state.set` writes, so it is an effect;
@@ -532,16 +532,17 @@ ends the game at two. The redundancy is deliberate and the two say different thi
 
 ## 6. `inputs` — what may be done
 
-An input is a named thing somebody may do. It takes five keys and all but one are optional.
+An input is a named thing somebody may do. It takes six keys and all but one are optional.
 
 ```jsonc
 "inputs": {
   "reject": {
-    "params":  { /* what it may be called with */ },
-    "actor":   /* whose move this is */,
-    "when":    /* whether it is allowed */,
-    "effects": [ /* what it does */ ],
-    "fires":   [ /* component inputs it drives — §10 */ ]
+    "params":   { /* what it may be called with */ },
+    "actor":    /* whose move this is */,
+    "when":     /* whether it is allowed */,
+    "validate": [ /* what an argument from outside is held to */ ],
+    "effects":  [ /* what it does */ ],
+    "fires":    [ /* component inputs it drives — §10 */ ]
   }
 }
 ```
@@ -562,9 +563,10 @@ character is reserved for the qualified names a composite offers (§10).
 }
 ```
 
-A parameter is a name and a `domain`, and the domain is an expression returning a `Sequence`.
-`GetValidInputs` takes the product of an input's parameter domains and sifts it with the
-guard, so this one input becomes three legal moves in the `review` stage:
+A parameter is a name and either a `domain` or an `open`, and this is the first of the two.
+A domain is an expression returning a `Sequence`. `GetValidInputs` takes the product of an
+input's parameter domains and sifts it with the guard, so this one input becomes three legal
+moves in the `review` stage:
 
 ```
 draft      submit
@@ -587,6 +589,101 @@ coordinate out as `"d3"`, an input document brings `"d3"` back, and the text is 
 the domain so that the expression downstream sees the coordinate and not its spelling.
 
 `"params": {}` and no `params` key mean the same thing.
+
+### `open` — a parameter with no domain
+
+Some values are nobody's to enumerate. A name somebody types has no list to be the product
+of, and a rule set that wanted one would have to invent a finite set it does not believe in.
+Such a parameter is declared `open` instead, and what stands where the domain would be is a
+**schema node** — the same vocabulary `state.schema` is written in ([§5](#5-state--what-a-position-is)).
+
+```jsonc
+"rename": {
+  "params": { "to": { "open": { "op": "type.string", "minLength": 3, "maxLength": 20 } } },
+  "when": { "op": "cmp.eq", "left": "$stage", "right": "draft" },
+  "effects": [ { "op": "state.set", "path": "name", "value": "@to" } ]
+}
+```
+
+A schema node is there because admitting a value is what one already does. It says whether a
+value is allowed (`Validate`), and it reads the JSON an argument arrives as (`ReadJson`) —
+which it owns, so an open parameter accepts exactly what a field of that schema accepts, read
+the same way. A list parameter therefore takes a list, which no domain argument could
+([§11](#11-the-three-documents-that-travel)).
+
+Exactly one of `domain` and `open`, and a parameter with both or neither is refused.
+
+**A parameter that is simply a field's editor names the field instead.**
+
+```jsonc
+"to": { "open": { "field": "name" } }
+```
+
+That *is* the schema node of `name` — the node itself, not a copy of its bounds. So a
+parameter edited into a field admits exactly what the field holds, and a parameter admitting
+what its field forbids is not something this document can say. There is one declaration rather
+than two that have to agree, which is why nothing checks them against each other: there is
+nothing to check. `field` is the whole of that form, and qualifying it with an `op` as well is
+refused, because that would be two declarations again.
+
+Writing the schema out instead is for a parameter that is *not* simply a field's editor — one
+narrower than the field, or one whose value is computed into the state rather than stored. It
+claims no field, so nothing is checked against one, and a value that overflows where it ends
+up is caught when the transition commits. That is the position every computed effect value is
+already in.
+
+**What this costs is the per-value answer.** A domain is asked per value: every candidate is
+formed and put to the guard, so a move `GetValidInputs` hands back is one the rules have
+already allowed. An open parameter cannot be, because there is no value yet. So:
+
+```
+rename(to: <type.string>)
+```
+
+The move is offered **incomplete** — one candidate, not a domain's worth — with the argument
+still to come. `ValidInput.Open` names what is missing and `ValidInput.IsComplete` is false;
+`ToInputDocument` refuses it, because the round trip `GetValidInputs` opens is a promise about
+a complete move and a document with the argument left out would name a different one. A rule
+set that leaves nothing open has no incomplete moves, so none of this changes what any
+existing document does.
+
+Supplying the missing values writes it: `ToInputDocument(ruleSet, open)` takes one per open
+parameter and writes the rest from the values their domains produced. That overload is there
+because the alternative is a caller assembling the document itself, and it cannot — an
+argument's JSON form is part of what it means, `Arguments` renders everything as text, and a
+move with one argument chosen and one still open would leave the caller guessing whether `"2"`
+meant `2`.
+
+Each `OpenParameter` also carries `Description`, the bounds its schema declares, as a record
+under the keys the document writes them as. That is what lets something asking for the value
+say how long it may be without the rule being written down twice — and it is the half of a
+refusal that can be settled before asking. The other half is `validate`, below.
+
+The trade runs the other way too, and not only for typed text. Forty-seven prefectures in a
+domain are forty-seven candidates per call; open, they are one, and a host builds the list
+from the schema instead. Which you want depends on whether the guard has anything to say about
+the individual value.
+
+#### Where an open parameter may be read
+
+Not in any position that is evaluated while candidates are being formed — there is no value
+for it then. Refused when the document is compiled, with the node named:
+
+| | |
+| --- | --- |
+| `when` | evaluated once per candidate, with no argument yet to guard |
+| `actor` | evaluated beside the guard |
+| `fires[].args` | resolved during the candidate search ([§10](#10-uses-and-held--a-rule-set-made-of-rule-sets)) |
+| another parameter's `domain` | domains are built with no parameter in scope at all |
+| a holder's `held.<input>.when` | evaluated per candidate exactly as the guard is |
+
+It may be read in `effects`, which run once the argument has arrived.
+
+This is the same rule §9 applies to a draw, for the same reason: a domain that drew would
+refuse the move it had just offered, and a guard reading an argument that does not exist yet
+could only guess, then publish the guess as a legal move. **Whether a parameter is open is
+part of what an input is**, which is why the last row crosses the `uses` boundary — opening a
+parameter that was closed is a breaking change to every rule set that holds it.
 
 ### `when` — the guard
 
@@ -621,6 +718,66 @@ one rule set cannot disagree about whose turn it is.
 
 Leave it out where there is no turn, and every `Actor` comes back null. The roster does exactly
 that, and a schedule is not thereby a smaller kind of game.
+
+### `validate` — what only the argument can settle
+
+A guard is asked before the input is offered, so it cannot ask anything about a value that has
+not been typed yet. `validate` is the other half: clauses asked **when the argument arrives**,
+each one a condition that has to hold and a code naming the refusal if it does not.
+
+```jsonc
+"rename": {
+  "params": { "to": { "open": { "field": "name" } } },
+  "when": { "op": "cmp.eq", "left": "$stage", "right": "draft" },
+  "validate": [
+    { "require": { "op": "logic.not",
+                   "value": { "op": "cmp.eq", "left": "@to", "right": "$name" } },
+      "code": "name.unchanged" }
+  ],
+  "effects": [ { "op": "state.set", "path": "name", "value": "@to" } ]
+}
+```
+
+**There is no message here, only a code.** Wording belongs to a label document, keyed by
+pointer into the rule set and kept one file per language. A rule set holding a sentence would
+hold it in one language, and it travels alone — a `requires` naming the vocabulary that only
+the wording used would be false. A host with no label for a code shows the code, which is
+honest in a way an invented phrase is not.
+
+A refusal comes back as an `InputRejectedException`, which is a kind of `IllegalInputException`
+and carries every clause that refused, each with its code and the parameter it is about. The
+parameter is **inferred** from what the clause read: one open parameter means the refusal
+belongs against that field, several mean it belongs to the form. So a document says which
+field a rule is about by writing the rule, not by writing it and then saying so.
+
+**Every clause is asked**, rather than stopping at the first failure, for the reason a state
+document reports every violation in one pass: a form wrong in three places should take one
+round trip to learn that. Clauses are therefore written independent of one another — one that
+relied on an earlier one having passed is evaluated anyway.
+
+Nothing has been written when a clause refuses. Evaluation is pure until a transition commits,
+so a caller may apply an input to find out whether it is acceptable and lose nothing by the
+answer being no.
+
+#### Two refusals, and what they are protecting
+
+| | |
+| --- | --- |
+| an input with no open parameter may not have a `validate` | a rule about a value that is known when the input is offered belongs in `when` |
+| a clause that reads no open parameter is refused | the same fault from the other side: it could have been decided before the input was offered |
+
+Both are raised when the document is compiled, and between them they are the whole of one
+guarantee: **a complete move `GetValidInputs` offers is a move that will apply.** Without the
+first, an input whose arguments are all enumerated could be offered and then refused. Without
+the second, `validate` becomes somewhere to put guards, and every answer gets a little less
+true. §9 keeps a draw out of a domain for exactly this reason, and this is the same rule
+arriving from the other direction.
+
+What a clause can say is bounded by the vocabularies loaded, as everything is. There is no
+string vocabulary at present, so a rule about the *shape* of text — a length, a character
+class — goes in the schema the parameter is open to, and `validate` is left with what only the
+state can settle: whether the name is taken, whether it differs from the current one, whether
+this actor may use it.
 
 ### `effects` — what it does
 
@@ -1022,7 +1179,7 @@ message carries the path of the offending node:
 /inputs/submit/when/left: 'stagee' is not a field of the state schema.
 /inputs/reject/effects[0]/path: 'staeg' is not a field of the state schema.
 /inputs/submit/effects[0]: 'cmp.eq' is an expression and cannot appear where an effect is expected.
-/inputs/submit/whn: is not a key an input takes; those are 'params', 'actor', 'when', 'effects' and 'fires'.
+/inputs/submit/whn: is not a key an input takes; those are 'params', 'actor', 'when', 'validate', 'effects' and 'fires'.
 ```
 
 **That path is the runtime's own, and it is not a JSON pointer.** A member is `/name` and an
@@ -1062,7 +1219,8 @@ They produce null, and rule sets are built on their doing so (§2).
 
 Each exception says which class of thing went wrong: `RuleSetBuildException` for a document
 that is not a valid rule set, `RuleDocumentException` for a state, input or outcome document
-this rule set cannot accept, `IllegalInputException` for a move the rules do not allow,
+this rule set cannot accept, `IllegalInputException` for a move the rules do not allow —
+including a value a parameter's `open` schema does not admit —
 `RuleEvaluationException` for values that make an operation meaningless, and
 `PluginLoadException` for a set of plugins that cannot be used together.
 

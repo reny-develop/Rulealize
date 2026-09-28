@@ -184,7 +184,7 @@ And every operation is one of three kinds, which decides where it may be written
 | --- | --- | --- |
 | **expression** | computes a value | `when`, `domain`, effect arguments, `terminal` |
 | **effect** | writes to the state | only inside `effects` |
-| **schema** | declares a field's type | only inside `state.schema` |
+| **schema** | declares a field's type | `state.schema`, and a parameter's `open` |
 
 Long version: [§3](ruleset-guide.md#3-nodes). What an `op` you have never seen means:
 [§14](ruleset-guide.md#14-reading-a-vocabulary-you-have-not-met).

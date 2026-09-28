@@ -114,6 +114,15 @@ namespace Rulealize.Internal.RuleSet
         /// <summary>Gets the guard, or null when the input is always available.</summary>
         public required ExpressionNode? Guard { get; init; }
 
+        /// <summary>Gets what the arguments are checked against once they arrive, in written order.</summary>
+        /// <remarks>
+        /// Empty unless the input leaves a parameter open, which is the only case the document
+        /// is allowed to write one for. A guard answers before the input is offered and a
+        /// clause here answers after a value has been supplied, and keeping them apart is what
+        /// stops a rule set from turning a legal move into one that is merely likely.
+        /// </remarks>
+        public ImmutableArray<CompiledValidation> Validations { get; init; } = [];
+
         public required ImmutableArray<EffectNode> Effects { get; init; }
 
         /// <summary>Gets the held rule sets' inputs this one drives, in the order written.</summary>
@@ -152,11 +161,25 @@ namespace Rulealize.Internal.RuleSet
         }
     }
 
-    /// <summary>One parameter of an input, and the domain its candidates come from.</summary>
+    /// <summary>One parameter of an input, and where its value is allowed to come from.</summary>
     /// <remarks>
-    /// The domain is an ordinary expression that yields a sequence, not a node kind of its
-    /// own. Its being enumerable is the whole reason <c>GetValidInputs</c> can exist, and it
-    /// is the tightest constraint the DSL design works under.
+    /// <para>
+    /// Exactly one of <see cref="Domain"/> and <see cref="Open"/> is set, which is the
+    /// difference between the two things a parameter can be.
+    /// </para>
+    /// <para>
+    /// A domain is an ordinary expression that yields a sequence, not a node kind of its own.
+    /// Its being enumerable is what lets <c>GetValidInputs</c> answer per value: every
+    /// candidate is formed and put to the guard, so what comes back is a complete move that
+    /// the rules have already allowed.
+    /// </para>
+    /// <para>
+    /// An open parameter gives that up deliberately. Where a value comes from outside — text
+    /// somebody typed — there is nothing to enumerate, and what stands in its place is a
+    /// schema node saying which values would be admissible. The input is then offered with the
+    /// argument still missing, and whether this particular value is allowed is asked when it
+    /// arrives rather than before.
+    /// </para>
     /// </remarks>
     internal sealed class CompiledParameter
     {
@@ -164,7 +187,52 @@ namespace Rulealize.Internal.RuleSet
 
         public required LocalSlot Slot { get; init; }
 
-        public required ExpressionNode Domain { get; init; }
+        /// <summary>Gets the expression the candidates are enumerated from, or null when open.</summary>
+        public required ExpressionNode? Domain { get; init; }
+
+        /// <summary>Gets the schema a value from outside is admitted by, or null when this has a domain.</summary>
+        public required SchemaNode? Open { get; init; }
+
+        /// <summary>Gets the <c>op</c> the open schema node was written as, or null when this has a domain.</summary>
+        /// <remarks>
+        /// Carried because it is what a host reads <c>SchemaNode.Describe</c> against:
+        /// the core does not interpret the record, so what names its keys is the operation the
+        /// rule set wrote.
+        /// </remarks>
+        public required string? OpenOp { get; init; }
+
+        /// <summary>Gets the state field the open schema was taken from, or null where one was written out.</summary>
+        /// <remarks>
+        /// Where a parameter names a field, it uses that field's own schema node, so the two
+        /// cannot disagree about what is admissible. What the name buys besides is the label:
+        /// a screen asking for a value already has wording for the field it is edited into.
+        /// </remarks>
+        public required string? OpenField { get; init; }
+
+        /// <summary>Gets a value indicating whether this parameter takes a value from outside.</summary>
+        public bool IsOpen => Open is not null;
+    }
+
+    /// <summary>One clause of an input's <c>validate</c>.</summary>
+    /// <remarks>
+    /// The wording belongs to a label document rather than to the rule set, so what is carried
+    /// is the code: a rule set that held a sentence would hold it in one language, and a
+    /// <c>requires</c> naming the vocabulary only that sentence used would be false.
+    /// </remarks>
+    internal sealed class CompiledValidation
+    {
+        /// <summary>Gets what has to be true of the arguments.</summary>
+        public required ExpressionNode Require { get; init; }
+
+        /// <summary>Gets the code naming this refusal, unique within the input.</summary>
+        public required string Code { get; init; }
+
+        /// <summary>Gets the one open parameter this clause reads, or null where it reads several.</summary>
+        /// <remarks>
+        /// Inferred from what the clause resolved while it was built, so a host can put the
+        /// refusal against the field it is about without the document saying so twice.
+        /// </remarks>
+        public required string? Parameter { get; init; }
     }
 
     /// <summary>The <c>terminal</c> section.</summary>

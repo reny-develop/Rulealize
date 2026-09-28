@@ -266,7 +266,7 @@ message carries a JSON pointer to the node:
 /inputs/submit/when/left: 'stagee' is not a field of the state schema.
 /inputs/reject/effects[0]/path: 'staeg' is not a field of the state schema.
 /inputs/submit/effects[0]: 'cmp.eq' is an expression and cannot appear where an effect is expected.
-/inputs/submit/whn: is not a key an input takes; those are 'params', 'actor', 'when', 'effects' and 'fires'.
+/inputs/submit/whn: is not a key an input takes; those are 'params', 'actor', 'when', 'validate', 'effects' and 'fires'.
 ```
 
 Unknown operations, missing keys, unbound locals, undefined or cyclic definitions, an
@@ -353,6 +353,10 @@ the version's.
 | `RuleContext.GetOutcomes` | what could happen when one of them is applied, and how likely each of those is |
 | `RuleContext.GetTerminalStatus` | whether a state is final, and its outcome |
 | `ValidInput.Input` / `Arguments` / `Actor` | one legal move: what it is, what it was called with — by name or in declared parameter order — and whose it is where a rule set says |
+| `ValidInput.Open` / `IsComplete` / `ValidInputSet.HasOpenParameters` | what a move is still waiting for, where a rule set leaves a parameter `open`, and whether anything in the answer is |
+| `OpenParameter.Description` / `Field` / `Op` | the bounds the admitting schema declares, the state field it is edited into, and the operation to read both against |
+| `ValidInput.ToInputDocument(ruleSet, open)` | write out a move that was waiting, supplying what it waited for |
+| `InputRejectedException.Rejections` | which clauses refused the value supplied for one, each with its code and the parameter it is about |
 | `ValidInput.ToInputDocument` / `Outcome.ToOutcomeDocument` | write one back out, to be fed in again or recorded |
 | `ValidInputSet` / `OutcomeSet` / `TransitionResult` `.ToJson` | the same, for a whole answer, where a host is a boundary rather than a caller |
 | `PluginRequirement.ReadFrom` | read a document's `requires` — no runtime, no plugin loaded |
@@ -370,11 +374,13 @@ walk that stays the fetcher's
 
 Exceptions: `RuleSetBuildException` for a document that is not a valid rule set,
 `RuleDocumentException` for a state, input or outcome document this rule set cannot accept,
-`IllegalInputException` for a move the rules do not allow, `RuleEvaluationException` for
+`IllegalInputException` for a move the rules do not allow — `InputRejectedException` is the
+kind of that one meaning the move *was* on offer and the value supplied for an open parameter
+is what is wrong, and it carries a code per clause that refused — `RuleEvaluationException` for
 values that make an operation meaningless, and `PluginLoadException` for a set of plugins
-that cannot be used together. Applying an input that draws without saying what it drew is an
-`InvalidOperationException` — the wrong method rather than a bad document, and refused before
-anything is evaluated.
+that cannot be used together. `InvalidOperationException` is the wrong method rather than a bad
+document, and is refused before anything is evaluated: applying an input that draws without
+saying what it drew, or writing out a move that is still waiting for an argument.
 
 A context is immutable and holds no position, so one serves any number of concurrent games.
 
@@ -448,7 +454,7 @@ $schema  id  version  requires  uses  state  definitions  held  inputs  terminal
 ```
 
 Inside those ten the core reads a little further — `state` has a `schema` and an `initial`,
-an input has `params`, `actor`, `when`, `effects` and `fires` — and where it does, it fixes
+an input has `params`, `actor`, `when`, `validate`, `effects` and `fires` — and where it does, it fixes
 the key set and refuses anything else.
 [The keys the core reads](doc/runtime.md#the-keys-the-core-reads) is all of it, on one page.
 
