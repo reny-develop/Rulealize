@@ -16,11 +16,11 @@ namespace Rulealize.Internal.Building
     /// <summary>Reads a rule set document and turns it into nodes.</summary>
     /// <remarks>
     /// <para>
-    /// The core reserves ten keys — <c>$schema</c>, <c>id</c>, <c>version</c>,
+    /// The core reserves eleven keys — <c>$schema</c>, <c>id</c>, <c>version</c>,
     /// <c>requires</c>, <c>uses</c>, <c>state</c>, <c>definitions</c>, <c>held</c>,
-    /// <c>inputs</c>, <c>terminal</c> — plus <c>op</c> for telling a node from anything else.
-    /// Everything inside a node is vocabulary, and this class hands it straight to whichever
-    /// plugin claimed the name.
+    /// <c>inputs</c>, <c>projections</c>, <c>terminal</c> — plus <c>op</c> for telling a node
+    /// from anything else. Everything inside a node is vocabulary, and this class hands it
+    /// straight to whichever plugin claimed the name.
     /// </para>
     /// <para>
     /// Order matters. What <c>uses</c> names is compiled first, because a held rule set's

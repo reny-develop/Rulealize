@@ -99,6 +99,39 @@ namespace Rulealize.Tests
                 () => Approval.GetValidInputs(Submitted("approval@2.0.0"), Limit));
         }
 
+        [Fact]
+        public void TheRuleSetSaysWhatItMakesOfACaseAsWellAsWhatMayBeDoneToOne()
+        {
+            // The shape a screen binds to, built by the document out of computed parts. The
+            // three keys are the rule set's, not the runtime's, and `waiting` is the part
+            // that would otherwise be a reading of `stage` living somewhere else.
+            Assert.Equal(["summary"], Approval.Projections.AsEnumerable());
+
+            using JsonDocument draft = JsonDocument.Parse(
+                Approval.Project("summary", Approval.InitialState));
+            Assert.Equal("draft", draft.RootElement.GetProperty("stage").GetString());
+            Assert.Equal(JsonValueKind.Null, draft.RootElement.GetProperty("reason").ValueKind);
+            Assert.False(draft.RootElement.GetProperty("waiting").GetBoolean());
+
+            using JsonDocument review = JsonDocument.Parse(Approval.Project("summary", Submitted()));
+            Assert.True(review.RootElement.GetProperty("waiting").GetBoolean());
+        }
+
+        [Fact]
+        public void TheDocumentPrintedInTheReadmeIsThisDocument()
+        {
+            // The copy that drifted. It lost a `requires` entry and went on compiling, because
+            // the shorthand it dropped was still reachable, so nothing said a word until a
+            // reject was applied. Comments are what the two are entitled to differ in.
+            string printed = StandardRuntime.PrintedDocument(
+                File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Doc", "README.md")),
+                "## Write a rule set");
+
+            Assert.Equal(
+                StandardRuntime.Canonical(StandardRuntime.ReadRuleSet("approval.json")),
+                StandardRuntime.Canonical(printed));
+        }
+
         private static string Submitted(string ruleSet = "approval@1.0.0") =>
             $$"""
             { "$schema": "rulealize/state/v1", "ruleSet": "{{ruleSet}}",

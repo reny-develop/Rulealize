@@ -53,6 +53,17 @@
     }
   },
 
+  // What this rule set will say about a position, beyond what may be done to it. A screen
+  // binds to `summary`; nothing on the screen works out for itself what `waiting` means,
+  // which is the whole point — that reading would be a second account of the rules.
+  "projections": {
+    "summary": {
+      "stage":   "$stage",
+      "reason":  "$reason",
+      "waiting": { "op": "cmp.eq", "left": "$stage", "right": "review" }
+    }
+  },
+
   "terminal": {
     "when": {
       "op": "logic.or",

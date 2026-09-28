@@ -47,7 +47,9 @@ namespace Rulealize.Tests
                   "then": "done", "else": "counting" },
                 "steps": { "op": "seq.select", "as": "s",
                   "source": { "op": "seq.range", "from": 1, "count": 3 },
-                  "select": { "op": "math.add", "of": ["$total", "@s"] } }
+                  "select": { "op": "math.add", "of": ["$total", "@s"] } },
+                "view": { "left": "#left", "who": "$who",
+                  "progress": { "done": "$total", "left": "#left" } }
               },
               "inputs": {
                 "add": {
@@ -66,7 +68,7 @@ namespace Rulealize.Tests
         {
             RuleContext tally = Context();
 
-            Assert.Equal(["remaining", "headline", "steps"], tally.Projections.AsEnumerable());
+            Assert.Equal(["remaining", "headline", "steps", "view"], tally.Projections.AsEnumerable());
 
             // And a rule set that declares none says so rather than leaving a caller to find
             // out by asking.
@@ -95,6 +97,24 @@ namespace Rulealize.Tests
             // rather than a rendering of it.
             Assert.Equal(JsonValueKind.Array, answer.RootElement.ValueKind);
             Assert.Equal([1, 2, 3], answer.RootElement.EnumerateArray().Select(item => item.GetInt32()));
+        }
+
+        [Fact]
+        public void AnAnswerMayBeARecordBuiltOutOfComputedParts()
+        {
+            RuleContext tally = Context();
+
+            using JsonDocument answer = JsonDocument.Parse(tally.Project("view", tally.InitialState));
+            JsonElement view = answer.RootElement;
+
+            // No plugin is reached for this. An object with no 'op' is not a node, and the
+            // value model has exactly one thing it can be, so a rule set assembles a shape
+            // out of computed parts in the notation it would write the shape down in.
+            Assert.Equal(JsonValueKind.Object, view.ValueKind);
+            Assert.Equal(10, view.GetProperty("left").GetInt32());
+            Assert.Equal("nobody", view.GetProperty("who").GetString());
+            Assert.Equal(0, view.GetProperty("progress").GetProperty("done").GetInt32());
+            Assert.Equal(10, view.GetProperty("progress").GetProperty("left").GetInt32());
         }
 
         [Fact]

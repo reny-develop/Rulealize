@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Reny
 // Licensed under the Apache License, Version 2.0.
 
+using System.Text.Json;
 using Rulealize;
 using Rulealize.Sample.Deploy;
 
@@ -259,6 +260,61 @@ namespace Rulealize.Tests
         /// <returns>The document.</returns>
         public static string ReadRuleSet(string name) =>
             File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "RuleSet", name));
+
+        /// <summary>Reads a document a Markdown file prints, out of the fence under a heading.</summary>
+        /// <remarks>
+        /// A document printed in prose is a second copy, and a second copy drifts. The
+        /// README’s copy of approval.json is what that looks like: it quietly lost a
+        /// <c>requires</c> entry, went on compiling because the shorthand it dropped was still
+        /// reachable, and answered the same moves. Reading the block back out is what lets a
+        /// test compare it.
+        /// </remarks>
+        /// <param name="markdown">The file’s text.</param>
+        /// <param name="heading">The heading the block sits under, or null for the first one in the file.</param>
+        /// <returns>The document, comments and all.</returns>
+        public static string PrintedDocument(string markdown, string? heading = null)
+        {
+            ArgumentNullException.ThrowIfNull(markdown);
+
+            string[] lines = markdown.ReplaceLineEndings("\n").Split('\n');
+
+            int from = 0;
+            if (heading is not null)
+            {
+                from = Array.FindIndex(lines, line => string.Equals(line, heading, StringComparison.Ordinal));
+                Assert.True(from >= 0, $"the file no longer has a heading '{heading}'.");
+            }
+
+            int open = Array.FindIndex(
+                lines,
+                from,
+                static line => line.StartsWith("```json", StringComparison.Ordinal));
+            Assert.True(open >= 0, "the file no longer prints a rule set document.");
+
+            int close = Array.FindIndex(lines, open + 1, static line => line.StartsWith("```", StringComparison.Ordinal));
+            Assert.True(close > open, "the block the file opens is never closed.");
+
+            return string.Join('\n', lines[(open + 1)..close]);
+        }
+
+        /// <summary>Writes a document back out with its comments and its formatting gone.</summary>
+        /// <remarks>
+        /// Comments are what two copies of one document are entitled to differ in — the one in
+        /// <c>ruleset/</c> explains itself to somebody reading the repository, and the printed
+        /// one to somebody who has never seen a rule set. Everything else has to be the same,
+        /// down to the order of the keys, because a reordering is a diff somebody should have
+        /// to look at.
+        /// </remarks>
+        /// <param name="document">The document.</param>
+        /// <returns>Its canonical text.</returns>
+        public static string Canonical(string document)
+        {
+            using JsonDocument parsed = JsonDocument.Parse(
+                document,
+                new JsonDocumentOptions { CommentHandling = JsonCommentHandling.Skip, AllowTrailingCommas = true });
+
+            return JsonSerializer.Serialize(parsed, new JsonSerializerOptions { WriteIndented = true });
+        }
 
         /// <summary>Builds a position in which neither player can move.</summary>
         /// <remarks>

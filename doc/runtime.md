@@ -10,7 +10,7 @@ Normative, like the specification.
 
 | Kind | Produces | Appears in |
 | --- | --- | --- |
-| expression | a value | guards, effect arguments, definition bodies, parameter domains, the actor an input names, `terminal` |
+| expression | a value | guards, effect arguments, definition bodies, parameter domains, the actor an input names, a `projections` entry, `terminal` |
 | effect | a write to the state | elements of an input's `effects` |
 | schema | the type of a state field | `state.schema`, a parameter's `open` |
 
@@ -52,14 +52,14 @@ null, and rule sets are built on their doing so.
 
 ## The keys the core reads
 
-Ten in the document and one in every node — `$schema`, `id`, `version`, `requires`, `uses`,
-`state`, `definitions`, `held`, `inputs`, `terminal`, and `op`. Everything else is
-vocabulary. What follows is the whole of the rest: the objects the core opens itself, and
-what it takes from each.
+Eleven in the document and one in every node — `$schema`, `id`, `version`, `requires`,
+`uses`, `state`, `definitions`, `held`, `inputs`, `projections`, `terminal`, and `op`.
+Everything else is vocabulary. What follows is the whole of the rest: the objects the core
+opens itself, and what it takes from each.
 
 | Where | Keys | |
 | --- | --- | --- |
-| the document | `$schema` `id` `version` `requires` `uses` `state` `definitions` `held` `inputs` `terminal` | `id` and `version` are required; so are `state` and `inputs` unless `uses` declares something. `$schema` is reserved and not read |
+| the document | `$schema` `id` `version` `requires` `uses` `state` `definitions` `held` `inputs` `projections` `terminal` | `id` and `version` are required; so are `state` and `inputs` unless `uses` declares something. `$schema` is reserved and not read |
 | `requires[]` | `plugin` `version` | a constraint omitted means any version will do |
 | `uses[]` | `ruleSet` `version` `as` | `ruleSet` is required; `as` defaults to it and may not contain `.` |
 | `state` | `schema` `initial` | both required, and a schema declaring no fields is refused |
@@ -71,6 +71,7 @@ what it takes from each.
 | `inputs.<name>.params.<name>` | `domain` `open` | exactly one of the two |
 | `inputs.<name>.params.<name>.open` | a schema node, or `field` | `field` names a state field and is the whole of that form |
 | `inputs.<name>.validate[]` | `require` `code` | both required; `code` is unique within the input |
+| `projections.<name>` | the value **is** the expression | the section is optional. A name may not contain `.` |
 | `terminal` | `when` `result` | the section is optional; `when` is required once it is written and `result` is not |
 
 Everything below one of those — a schema node, a domain, a guard, an effect — is a node,
@@ -101,6 +102,36 @@ Nothing consults it. The runtime does not check that an actor is entitled to mov
 whether it is entitled is what `when` is for. `actor` is what a caller filters and displays
 by, and stating it in the document rather than in each host is what keeps two hosts over one
 rule set agreeing about whose turn it is.
+
+### `projections`
+
+An expression per name, taking no arguments, evaluated against a position and nothing else.
+`RuleContext.Projections` lists the names a rule set declares and `RuleContext.Project`
+returns one answer as JSON. A rule set that declares none reports an empty list rather than
+leaving a caller to find out by asking.
+
+Three questions are answerable without this — what is legal, where a move leads, whether it
+is over — and they are the ones the runtime needs. Everything else a caller wanted about a
+position had to be worked out by reading the state document, which is a second account of
+the rules living outside them. A projection is the rule set answering for itself.
+
+**No parameters and no draw.** A draw needs no check here: it is refused everywhere outside
+an input's `effects` already, and the reason applies twice over to something a caller is
+invited to memoize against a position. What is left is a pure function of the position, so
+asking twice gives one answer, and the answer can be cached against the state document,
+compared with the answer for another position, or handed to something that will only read
+it.
+
+**No envelope.** A state, an input and an outcome each go out and come back, and every rule
+about how they are written is a rule about being recognised again. A projection only goes
+out, so it is written as the plain JSON of the value model, with nothing naming the rule set
+it came from. An opaque value is written as its canonical text, and one that has no text
+form is a fault rather than a field that quietly went missing — a caller reading a field
+that vanished cannot tell it from a field the projection meant to leave out.
+
+A name may not contain `.`, on the terms an input's name may not: a rule set that holds
+another may come to offer its projections under a qualified name, and a name that could be
+either would make which one a caller meant depend on the document.
 
 ### `terminal`
 
@@ -420,15 +451,16 @@ alternatives and applying one is the same work, and asking twice would do it twi
 ### Where a draw may be written
 
 Inside an input's `effects`, at any depth. Refused in `when`, `actor`, `params[].domain`,
-`terminal`, and the body of a `definitions` entry — checked when the rule set is compiled,
-with a JSON pointer to the node. Each refusal is a position the runtime evaluates while it
-is sifting candidates or while it is memoizing a result:
+`terminal`, a `projections` entry, and the body of a `definitions` entry — checked when the
+rule set is compiled, with a JSON pointer to the node. Each refusal is a position the runtime
+evaluates while it is sifting candidates or while it is memoizing a result:
 
 | | |
 | --- | --- |
 | a guard | evaluated once per candidate in a domain, with no outcome to be drawing for |
 | a domain | enumerated to form those candidates, and walked again to resolve an argument — a domain that drew would refuse the move it had just offered |
 | `terminal` | asked about a state, and whether a game is over is not a coin toss |
+| a projection | a function of the position, which a caller is invited to remember against one |
 | a definition body | memoized against its arguments and the snapshot, so a body that drew would answer its first caller and repeat itself to every other one |
 
 A draw does not choose. It works out what could come out and how likely each of those is and
