@@ -52,9 +52,20 @@ namespace Rulealize
         };
 
         private readonly OperationTable _operations = new();
+        private readonly List<SkippedPlugin> _skipped = [];
 
         /// <summary>Gets what each loaded plugin declares about itself, in load order.</summary>
         public ImmutableArray<PluginManifest> Plugins => _operations.Manifests;
+
+        /// <summary>Gets what a folder sweep took for a plugin and could not use, in the order met.</summary>
+        /// <remarks>
+        /// Empty in the ordinary case. An entry means the folder holds an assembly built
+        /// against this abstraction whose types would not load, which is very nearly always a
+        /// plugin built against a different version of it. Without this the symptom is a rule
+        /// set failing on a <c>requires</c> that names a plugin whose file is sitting in the
+        /// folder, which sends a reader looking in the wrong place.
+        /// </remarks>
+        public ImmutableArray<SkippedPlugin> Skipped => [.. _skipped];
 
         /// <summary>Gets every operation the loaded plugins provide, in registration order.</summary>
         /// <remarks>
@@ -160,8 +171,10 @@ namespace Rulealize
         /// to do with this — so anything unreadable there is passed over.
         /// </para>
         /// <para>
-        /// A plugin missed that way is not lost silently for long: the first rule set that
-        /// wants it fails on its <c>requires</c>, naming it.
+        /// One that was built to be a plugin is passed over but not in silence: it is recorded
+        /// in <see cref="Skipped"/>, with the reason. Without that the folder holds a plugin
+        /// nobody can see, and what surfaces is a rule set complaining that it is missing while
+        /// the file sits in the folder.
         /// </para>
         /// </remarks>
         public RuleRuntime LoadPluginsFrom(string path)
@@ -185,7 +198,13 @@ namespace Rulealize
                     continue;
                 }
 
-                foreach (IRulealizePlugin plugin in PluginProbe.Discover(assembly, sweeping: true))
+                string named = file;
+                IEnumerable<IRulealizePlugin> found = PluginProbe.Discover(
+                    assembly,
+                    sweeping: true,
+                    passedOver: reason => _skipped.Add(new SkippedPlugin(named, reason)));
+
+                foreach (IRulealizePlugin plugin in found)
                 {
                     AddPlugin(plugin);
                 }

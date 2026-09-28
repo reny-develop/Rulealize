@@ -25,8 +25,15 @@ namespace Rulealize.Internal.Plugin
     /// meant to be a plugin, so failing to read it is an error. A folder is swept
     /// speculatively — an application's own output folder is a reasonable thing to point at,
     /// and it is full of assemblies that have nothing to do with this — so anything
-    /// unreadable there is passed over. A plugin missed that way still surfaces, as the
-    /// <c>requires</c> of the first rule set that wanted it.
+    /// unreadable there is passed over.
+    /// </para>
+    /// <para>
+    /// Passed over, but not always in silence. An assembly that references
+    /// <c>Rulealize.Abstraction</c> and whose types will not load was built to be a plugin, and
+    /// saying nothing about it leaves a folder holding one nobody can see — what surfaces
+    /// instead is a rule set complaining that a plugin is missing while the file sits there.
+    /// Such a one is reported to the sweep; anything else is somebody
+    /// else's DLL and gets the silence that is right for it.
     /// </para>
     /// </remarks>
     internal static class PluginProbe
@@ -34,12 +41,16 @@ namespace Rulealize.Internal.Plugin
         /// <summary>Instantiates every plugin an assembly contains.</summary>
         /// <param name="assembly">The assembly to search.</param>
         /// <param name="sweeping">Whether this assembly turned up in a folder sweep.</param>
+        /// <param name="passedOver">Receives the reason where a sweep gives up on a plugin.</param>
         /// <returns>One instance per implementation found, in a stable order.</returns>
         /// <exception cref="PluginLoadException">
         /// The assembly's types could not be read, or a plugin type could not be
         /// instantiated. Unreadable types are passed over while sweeping.
         /// </exception>
-        public static IEnumerable<IRulealizePlugin> Discover(Assembly assembly, bool sweeping = false)
+        public static IEnumerable<IRulealizePlugin> Discover(
+            Assembly assembly,
+            bool sweeping = false,
+            Action<string>? passedOver = null)
         {
             ArgumentNullException.ThrowIfNull(assembly);
 
@@ -56,6 +67,13 @@ namespace Rulealize.Internal.Plugin
                         $"The types of '{assembly.GetName().Name}' could not be read. It was most likely built against "
                         + "a different version of Rulealize.Abstraction.",
                         exception);
+                }
+
+                if (Wanted(assembly) is AssemblyName abstraction)
+                {
+                    passedOver?.Invoke(
+                        $"its types could not be read. It is built against {Abstraction} "
+                        + $"{abstraction.Version?.ToString(3)}, and this host carries {Carried()}.");
                 }
 
                 // Some types failed to load; whatever did load may still hold a plugin.
@@ -111,6 +129,18 @@ namespace Rulealize.Internal.Plugin
         public static IEnumerable<string> Assemblies(string directory) =>
             Directory.EnumerateFiles(directory, "*.dll", SearchOption.TopDirectoryOnly)
                 .OrderBy(static path => path, StringComparer.Ordinal);
+
+        /// <summary>The name of the abstraction, which is what tells a plugin from a bystander.</summary>
+        private const string Abstraction = "Rulealize.Abstraction";
+
+        /// <summary>The abstraction an assembly was built against, where it names one.</summary>
+        private static AssemblyName? Wanted(Assembly assembly) =>
+            assembly.GetReferencedAssemblies()
+                .FirstOrDefault(name => string.Equals(name.Name, Abstraction, StringComparison.Ordinal));
+
+        /// <summary>The abstraction this host has in memory, which is the one a plugin will get.</summary>
+        private static string Carried() =>
+            typeof(IRulealizePlugin).Assembly.GetName().Version?.ToString(3) ?? "an unknown version";
 
         private static bool IsPlugin(Type type) =>
             type is { IsAbstract: false, IsInterface: false, IsPublic: true }

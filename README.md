@@ -105,9 +105,11 @@ that comes back is one the document runs on, and it is the folder [Run it](#run-
 
 A plugin can also arrive as an ordinary package reference: `dotnet add package
 Rulealize.Plugin.Grid` puts the assembly in the application's own output folder, and
-`LoadPluginsFrom(AppContext.BaseDirectory)` passes over everything that is not a plugin. That
-is the simpler arrangement when the rules ship with the binary rather than travelling on
-their own schedule. [Vocabulary](doc/plugin.md) says where the published ones are indexed.
+`LoadPluginsFrom(AppContext.BaseDirectory)` passes over everything that is not a plugin —
+in silence, except for an assembly built against this abstraction whose types will not load,
+which is nearly always a plugin built against a different version of it and is named in
+`RuleRuntime.Skipped`. That is the simpler arrangement when the rules ship with the binary
+rather than travelling on their own schedule. [Vocabulary](doc/plugin.md) says where the published ones are indexed.
 
 The samples are described in [`sample/README.md`](sample/README.md). Read Reversi
 first — it is the shortest complete host there is.
@@ -360,6 +362,7 @@ the version's.
 | `InputRejectedException.Rejections` | which clauses refused the value supplied for one, each with its code and the parameter it is about |
 | `ValidInput.ToInputDocument` / `Outcome.ToOutcomeDocument` | write one back out, to be fed in again or recorded |
 | `ValidInputSet` / `OutcomeSet` / `TransitionResult` `.ToJson` | the same, for a whole answer, where a host is a boundary rather than a caller |
+| `RuleRuntime.Skipped` | what a folder sweep took for a plugin and could not use, with the reason |
 | `PluginRequirement.ReadFrom` | read a document's `requires` — no runtime, no plugin loaded |
 | `PluginResolution.Resolve` | which versions those constraints call for, given what is published |
 | `RuleSetRequirement.ReadFrom` | read a document's `uses` — no runtime, and none of the documents it names |
