@@ -179,15 +179,17 @@ how a composite has one:
   "grant": {
     "fires": [
       { "held": "req", "input": "grant" },
-      { "held": "roster", "input": "assign", "args": { "slot": "#reqShift", "who": "#reqWho" } }
+      { "held": "roster", "input": "assign", "args": { "slot": "#reqShift" } }
     ]
   }
 }
 ```
 
-Measured against the document it replaces, that reaches **the same fifteen states and the
-same twenty-eight transitions**, element for element, where narrowing alone reaches
-thirty-nine.
+Measured against the document it replaces, that reaches **the same states and the same
+transitions**, element for element — five and four for the pair the test suite carries, where
+narrowing alone leaves seven and six reachable. The three are walked in `CompositionTests`,
+which is what holds the comparison: a claim of this shape is worth nothing unless something
+re-measures it.
 
 **A static list, not an effect.** It may not sit inside a branch, so which component inputs
 an input drives can be read off the document without running it — the property a literal

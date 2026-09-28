@@ -430,7 +430,7 @@ two states:
 "grant": {
   "fires": [
     { "held": "req", "input": "grant" },
-    { "held": "roster", "input": "assign", "args": { "slot": "#reqShift", "who": "#reqWho" } }
+    { "held": "roster", "input": "assign", "args": { "slot": "#reqShift" } }
   ]
 }
 ```
@@ -438,7 +438,9 @@ two states:
 `fires` is a list and not an effect, so which component inputs an input drives is readable
 without running it, and `GetValidInputs` offers one only where every input it drives is
 allowed by the rule set that declared it. Composed that way, the worked example reaches the
-same fifteen states and twenty-eight transitions as the merged document it replaces.
+same states and the same transitions as the merged document it replaces — five and four,
+element for element, where narrowing alone leaves seven and six reachable.
+`CompositionTests` walks all three and holds the comparison.
 
 `CreateContext(document, held)` takes the documents a rule set holds; running is otherwise
 unchanged. Working out which documents those are is `RuleSetRequirement.ReadFrom`, which

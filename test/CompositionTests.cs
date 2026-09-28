@@ -479,6 +479,60 @@ namespace Rulealize.Tests
         // has to mean the same thing at every depth: the inputs are offered, the seal holds,
         // a driven input drives what it drives, and a holder's guard is the holder's.
 
+        /// <summary>What `atomic` replaces: the same two rule sets, written out as one.</summary>
+        /// <remarks>
+        /// The claim `fires` is argued on is that composing reaches the same positions as this
+        /// does, so this has to be here for the claim to be checkable at all. Written to be the
+        /// document somebody would write without composition — one state, one `grant` that does
+        /// both writes — and not to be a transcription of the composed one.
+        /// </remarks>
+        private const string Merged = $$"""
+            {
+              "id": "merged", "version": "1.0.0",
+            {{Requires}}
+              "state": {
+                "schema": {
+                  "stage": { "op": "type.enum", "values": ["draft", "review", "granted", "denied"] },
+                  "shift": { "op": "type.enum", "values": ["mon", "tue"], "nullable": true },
+                  "mon": { "op": "type.enum", "values": ["ann"], "nullable": true },
+                  "tue": { "op": "type.enum", "values": ["ann"], "nullable": true }
+                },
+                "initial": { "stage": "draft", "shift": null, "mon": null, "tue": null }
+              },
+              "inputs": {
+                "raise": {
+                  "params": { "shift": { "domain": { "op": "seq.of", "of": ["mon", "tue"] } } },
+                  "when": { "op": "cmp.eq", "left": "$stage", "right": "draft" },
+                  "effects": [
+                    { "op": "state.set", "path": "shift", "value": "@shift" },
+                    { "op": "state.set", "path": "stage", "value": "review" } ]
+                },
+                "grant": {
+                  "when": {
+                    "op": "logic.and",
+                    "all": [
+                      { "op": "cmp.eq", "left": "$stage", "right": "review" },
+                      { "op": "logic.or", "any": [
+                        { "op": "logic.and", "all": [
+                          { "op": "cmp.eq", "left": "$shift", "right": "mon" },
+                          { "op": "cmp.isNull", "value": "$mon" } ] },
+                        { "op": "logic.and", "all": [
+                          { "op": "cmp.eq", "left": "$shift", "right": "tue" },
+                          { "op": "cmp.isNull", "value": "$tue" } ] } ] } ]
+                  },
+                  "effects": [
+                    { "op": "state.set", "path": "stage", "value": "granted" },
+                    { "op": "state.set", "path": "mon", "value": { "op": "branch.if",
+                      "cond": { "op": "cmp.eq", "left": "$shift", "right": "mon" },
+                      "then": "ann", "else": "$mon" } },
+                    { "op": "state.set", "path": "tue", "value": { "op": "branch.if",
+                      "cond": { "op": "cmp.eq", "left": "$shift", "right": "tue" },
+                      "then": "ann", "else": "$tue" } } ]
+                }
+              }
+            }
+            """;
+
         /// <summary>A rule set holding `shift`, which the outer one then holds in turn.</summary>
         private const string Middle = $$"""
             {
@@ -596,14 +650,19 @@ namespace Rulealize.Tests
             // documents and measured by nobody, which is the shape of claim that rots quietly.
             (int states, int transitions) = Explore(standard.Runtime.CreateContext(Atomic, Halves));
 
+            (int mergedStates, int mergedTransitions) =
+                Explore(standard.Runtime.CreateContext(Merged));
             (int narrowStates, int narrowTransitions) = Explore(Composite());
 
-            // The counts the two documents print — fifteen, twenty-eight, thirty-nine — belong
-            // to a larger example that is not in this repository, so what is held here is the
-            // relation they were quoted for: driving a component input leaves strictly fewer
-            // positions reachable than narrowing one does.
+            // The claim, element for element: composing reaches what writing it out reaches.
+            Assert.Equal(mergedStates, states);
+            Assert.Equal(mergedTransitions, transitions);
+
+            // And what it buys: narrowing alone leaves more of them reachable, because nothing
+            // makes the two writes one move.
             Assert.True(states < narrowStates, $"{states} is not fewer than {narrowStates}");
             Assert.True(transitions < narrowTransitions, $"{transitions} is not fewer than {narrowTransitions}");
+
         }
 
         /// <summary>Walks every position reachable from the opening one, breadth first.</summary>
