@@ -4,13 +4,27 @@
 namespace Rulealize
 {
     /// <summary>
-    /// Thrown while plugins are being loaded, when the set of them cannot be used together.
+    /// Thrown while plugins are being loaded: one that cannot be used, or a set that cannot be
+    /// used together.
     /// </summary>
     /// <remarks>
-    /// Two plugins claiming one operation namespace, or one shorthand character, are the
-    /// cases this exists for. Both are caught when the plugins are added rather than when a
-    /// rule set first happens to use the contested name, because the fault is in the
-    /// configuration and has nothing to do with any particular document.
+    /// <para>
+    /// Two plugins claiming one identifier, or one operation namespace, are the cases about a
+    /// set. Both are caught when the plugins are added rather than when a rule set first
+    /// happens to use the contested name, because the fault is in the configuration and has
+    /// nothing to do with any particular document.
+    /// </para>
+    /// <para>
+    /// <b>A shorthand character is not one of them.</b> It is recorded rather than owned, so
+    /// two plugins reserving one load together, and a rule set that would otherwise be
+    /// ambiguous says which vocabulary it meant by naming it — <c>"$state:board"</c>. Nothing
+    /// refuses the second claimant.
+    /// </para>
+    /// <para>
+    /// The rest are about one plugin rather than a set: a folder or file that is not there, an
+    /// assembly whose types cannot be read, a type that cannot be constructed, a manifest that
+    /// is missing, and a registration that threw.
+    /// </para>
     /// </remarks>
     public class PluginLoadException : Exception
     {
