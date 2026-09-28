@@ -132,7 +132,7 @@ A position is a string. Store it in a column, resume it on another machine.
 
 ---
 
-## The ten keys
+## The eleven keys
 
 These are the only keys the core knows at the top level. Misspell one and the document is
 refused — it will not be quietly ignored.
@@ -145,6 +145,7 @@ refused — it will not be quietly ignored.
 | `inputs` | the named things that may be done | required |
 | `terminal` | when it is over, and what to call the ending | optional |
 | `definitions` | expressions given a name, so a rule is written once | optional |
+| `projections` | what the rule set will say about a position, beyond what may be done to it | optional |
 | `uses`, `held` | rule sets this one holds, and what it may say about them | optional |
 | `$schema` | a label, never read | optional |
 
@@ -154,7 +155,7 @@ Long version: [§1](ruleset-guide.md#1-the-shape-of-the-whole-document).
 
 ## Reading a node
 
-Everything below those ten keys is a **node**: an object with an `op` in it.
+Everything below those eleven keys is a **node**: an object with an `op` in it.
 
 ```jsonc
 { "op": "cmp.eq", "left": "$stage", "right": "draft" }
@@ -182,12 +183,12 @@ And every operation is one of three kinds, which decides where it may be written
 
 | kind | | goes in |
 | --- | --- | --- |
-| **expression** | computes a value | `when`, `domain`, effect arguments, `terminal` |
+| **expression** | computes a value | `when`, `domain`, effect arguments, `terminal`, `projections` |
 | **effect** | writes to the state | only inside `effects` |
 | **schema** | declares a field's type | `state.schema`, and a parameter's `open` |
 
 Long version: [§3](ruleset-guide.md#3-nodes). What an `op` you have never seen means:
-[§14](ruleset-guide.md#14-reading-a-vocabulary-you-have-not-met).
+[§15](ruleset-guide.md#15-reading-a-vocabulary-you-have-not-met).
 
 ---
 
@@ -207,7 +208,7 @@ Long version: [§3](ruleset-guide.md#3-nodes). What an `op` you have never seen 
 
 Then `rulealize restore x.json` and `rulealize moves x.json`, and read what comes back.
 
-Long version: [§13](ruleset-guide.md#13-shaping-a-rule-set) is the same list with the mistakes
+Long version: [§14](ruleset-guide.md#14-shaping-a-rule-set) is the same list with the mistakes
 that produced it.
 
 ---
@@ -228,7 +229,7 @@ evaluated. The message carries the path of the offending node.
 Reading past the end of a list, or off the side of a board, is on **neither** list: it gives
 null, and rules are written to rely on that.
 
-Long version: [§12](ruleset-guide.md#12-reading-an-error).
+Long version: [§13](ruleset-guide.md#13-reading-an-error).
 
 ---
 

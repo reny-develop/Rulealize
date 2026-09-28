@@ -44,6 +44,12 @@
     -->
     <Content Include="..\doc\ruleset-quickguide.md" Link="Doc\ruleset-quickguide.md"
              CopyToOutputDirectory="PreserveNewest" />
+
+    <!--
+      And the README, which prints approval.json the same way. That copy is the one that
+      drifted, and until now nothing compared it; ApprovalTests does.
+    -->
+    <Content Include="..\README.md" Link="Doc\README.md" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <!-- Builds the standard plugins and drops their DLLs into a plugin folder. -->

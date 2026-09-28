@@ -76,6 +76,23 @@ input with an open parameter may be validated, and a clause that reads no open p
 belongs in `when`. Between them, a complete move `GetValidInputs` offers is still a move that
 will apply.
 
+### What the Rule Set Says About a Position
+
+Three questions are answerable without asking the document anything further — what is legal,
+where a move leads, whether it is over — and they are the ones the runtime needs. Everything
+else a caller wanted had to be worked out by reading the state document, which puts a second
+account of the rules outside them.
+
+`projections` is the rule set answering for itself. `RuleContext.Projections` names what it
+will answer and `RuleContext.Project(name, state)` returns one answer as JSON. A projection
+takes no arguments and cannot draw, so it is a function of the position: ask twice about one
+position and the answer is the same one, and it may be cached against the state document.
+
+An object in the document with no `op` in it is not a node, and the value model has exactly
+one thing it can be — so a projection assembles a record out of computed parts in the
+notation the record would be written in, and no vocabulary is reached for that. Nothing
+interprets the answer on the way out; what the keys mean is the rule set's business.
+
 ### Retrieving Valid Inputs for a Given State
 
 Use `RuleContext.GetValidInputs`.

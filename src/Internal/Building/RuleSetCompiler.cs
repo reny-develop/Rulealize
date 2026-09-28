@@ -16,11 +16,11 @@ namespace Rulealize.Internal.Building
     /// <summary>Reads a rule set document and turns it into nodes.</summary>
     /// <remarks>
     /// <para>
-    /// The core reserves ten keys — <c>$schema</c>, <c>id</c>, <c>version</c>,
+    /// The core reserves eleven keys — <c>$schema</c>, <c>id</c>, <c>version</c>,
     /// <c>requires</c>, <c>uses</c>, <c>state</c>, <c>definitions</c>, <c>held</c>,
-    /// <c>inputs</c>, <c>terminal</c> — plus <c>op</c> for telling a node from anything else.
-    /// Everything inside a node is vocabulary, and this class hands it straight to whichever
-    /// plugin claimed the name.
+    /// <c>inputs</c>, <c>projections</c>, <c>terminal</c> — plus <c>op</c> for telling a node
+    /// from anything else. Everything inside a node is vocabulary, and this class hands it
+    /// straight to whichever plugin claimed the name.
     /// </para>
     /// <para>
     /// Order matters. What <c>uses</c> names is compiled first, because a held rule set's
@@ -50,7 +50,8 @@ namespace Rulealize.Internal.Building
                 document,
                 Root,
                 "a rule set",
-                "$schema", "id", "version", "requires", "uses", "state", "definitions", "held", "inputs", "terminal");
+                "$schema", "id", "version", "requires", "uses", "state", "definitions", "held", "inputs",
+                "projections", "terminal");
 
             RuleSetIdentity identity = ReadIdentity(document);
             string id = identity.Id;
@@ -72,6 +73,7 @@ namespace Rulealize.Internal.Building
 
             CompiledDefinitions compiledDefinitions = CompileDefinitions(builder, definitions, document);
             ImmutableArray<CompiledInput> inputs = CompileInputs(builder, document, held);
+            ImmutableArray<CompiledProjection> projections = CompileProjections(builder, document);
             CompiledTerminal? terminal = CompileTerminal(builder, document);
             held = CompileHeldConstraints(builder, document, held);
 
@@ -83,6 +85,7 @@ namespace Rulealize.Internal.Building
                 InitialState = initial,
                 Definitions = compiledDefinitions,
                 Inputs = inputs,
+                Projections = projections,
                 Terminal = terminal,
                 Held = held
             };
@@ -1245,6 +1248,76 @@ namespace Rulealize.Internal.Building
                     }
                     : one)
             ];
+        }
+
+        /// <summary>Compiles <c>projections</c>: what a rule set will say about a position.</summary>
+        /// <remarks>
+        /// <para>
+        /// A rule set answers three questions about a position without this — what is legal,
+        /// where a move leads, whether it is over — and everything else a caller wanted had to
+        /// be worked out from the state document by hand, which means a second account of the
+        /// rules living outside them. A projection is the rule set answering for itself.
+        /// </para>
+        /// <para>
+        /// An expression and no more: no parameters, so it is a function of the position
+        /// alone. That is what makes it cacheable and comparable, and it is the reason the
+        /// answer can be handed to anything — a screen, a report, a schema generator — without
+        /// any of them being able to change what it says.
+        /// </para>
+        /// <para>
+        /// A draw cannot appear in one, which needs no check here: a draw is refused
+        /// everywhere outside an input's effects, and for the reason that applies twice over
+        /// to something memoized against a position.
+        /// </para>
+        /// </remarks>
+        private static ImmutableArray<CompiledProjection> CompileProjections(
+            NodeBuilder builder,
+            JsonElement document)
+        {
+            if (!document.TryGetProperty("projections", out JsonElement section))
+            {
+                return [];
+            }
+
+            SourcePath path = Root.Append("projections");
+            if (section.ValueKind != JsonValueKind.Object)
+            {
+                throw new RuleSetBuildException(path, "must be an object mapping names to expressions.");
+            }
+
+            ImmutableArray<CompiledProjection>.Builder projections =
+                ImmutableArray.CreateBuilder<CompiledProjection>();
+            HashSet<string> seen = new(StringComparer.Ordinal);
+
+            foreach (JsonProperty entry in section.EnumerateObject())
+            {
+                SourcePath entryPath = path.Append(entry.Name);
+
+                if (!seen.Add(entry.Name))
+                {
+                    throw new RuleSetBuildException(entryPath, $"'{entry.Name}' is declared more than once.");
+                }
+
+                // Reserved on the terms an input's name is: a rule set that holds another may
+                // come to offer its projections under a qualified name, and a name that could
+                // be either would make which one a caller meant depend on the document.
+                if (entry.Name.Contains('.', StringComparison.Ordinal))
+                {
+                    throw new RuleSetBuildException(
+                        entryPath,
+                        "a projection's name may not contain '.', which separates a held rule set from what it offers.");
+                }
+
+                builder.Scope.BeginFrame();
+                projections.Add(new CompiledProjection
+                {
+                    Name = entry.Name,
+                    Body = builder.BuildExpression(entry.Value, entryPath),
+                    FrameSize = builder.Scope.FrameSize
+                });
+            }
+
+            return projections.ToImmutable();
         }
 
         private static CompiledTerminal? CompileTerminal(NodeBuilder builder, JsonElement document)

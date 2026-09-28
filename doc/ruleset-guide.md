@@ -13,8 +13,8 @@ specification. Both are linked at every point where the difference could matter.
 **One idea decides how the rest of this reads.** The core provides no operations at all —
 not arithmetic, not comparison, not booleans. Everything that computes anything comes from a
 plugin the document named. So there are two things to learn and they are not the same size:
-the **frame**, which is ten keys and never changes, and the **vocabulary**, which is whatever
-you loaded and is documented where it lives. This guide teaches the frame completely, and
+the **frame**, which is eleven keys and never changes, and the **vocabulary**, which is
+whatever you loaded and is documented where it lives. This guide teaches the frame completely, and
 teaches how to read a vocabulary, so that the second half needs no catalogue here.
 
 The worked documents are in [`ruleset/`](../ruleset/); every one of them is compiled by the
@@ -50,13 +50,14 @@ If you would rather meet the parts before the whole, read §2 and §3 first and 
 5. [`state` — what a position is](#5-state--what-a-position-is)
 6. [`inputs` — what may be done](#6-inputs--what-may-be-done)
 7. [`definitions` — naming an expression](#7-definitions--naming-an-expression)
-8. [`terminal` — when it is over](#8-terminal--when-it-is-over)
-9. [Chance](#9-chance)
-10. [`uses` and `held` — a rule set made of rule sets](#10-uses-and-held--a-rule-set-made-of-rule-sets)
-11. [The three documents that travel](#11-the-three-documents-that-travel)
-12. [Reading an error](#12-reading-an-error)
-13. [Shaping a rule set](#13-shaping-a-rule-set)
-14. [Reading a vocabulary you have not met](#14-reading-a-vocabulary-you-have-not-met)
+8. [`projections` — what a rule set says about a position](#8-projections--what-a-rule-set-says-about-a-position)
+9. [`terminal` — when it is over](#9-terminal--when-it-is-over)
+10. [Chance](#10-chance)
+11. [`uses` and `held` — a rule set made of rule sets](#11-uses-and-held--a-rule-set-made-of-rule-sets)
+12. [The three documents that travel](#12-the-three-documents-that-travel)
+13. [Reading an error](#13-reading-an-error)
+14. [Shaping a rule set](#14-shaping-a-rule-set)
+15. [Reading a vocabulary you have not met](#15-reading-a-vocabulary-you-have-not-met)
 
 ---
 
@@ -64,7 +65,7 @@ If you would rather meet the parts before the whole, read §2 and §3 first and 
 
 Here is every key the core reads, in one document. Nothing else at this level is allowed: a
 key the core does not know is refused when the document is compiled, with a path to the
-offending node (§12).
+offending node (§13).
 
 ```jsonc
 {
@@ -84,6 +85,9 @@ offending node (§12).
 
   "held":     { /* … */ },   // what this document says about the rule sets it holds
   "inputs":   { /* … */ },   // required, unless `uses` declares something
+
+  "projections": { /* … */ },  // what it will say about a position, when asked
+
   "terminal": { /* … */ }    // optional
 }
 ```
@@ -115,15 +119,15 @@ caught:
 
 | Where you are | Who owns the keys | A key nobody knows |
 | --- | --- | --- |
-| the ten reserved keys, and the objects the core opens inside them | the core | refused, with the path to it |
+| the eleven reserved keys, and the objects the core opens inside them | the core | refused, with the path to it |
 | anywhere inside a node | the plugin that provides that `op` | that plugin's business |
 
 **`$schema` is a label, and the runtime never reads it.** It is not fetched, not validated
 against, and not required to say anything in particular — you may leave it out. It is there
 so that an editor has something to key off. What actually identifies the document is `id` and
 `version`: those are what a state document names when it says which rule set it belongs to
-([§11](#11-the-three-documents-that-travel)), and what a `uses` entry names when one rule set
-holds another ([§10](#10-uses-and-held--a-rule-set-made-of-rule-sets)).
+([§12](#12-the-three-documents-that-travel)), and what a `uses` entry names when one rule set
+holds another ([§11](#11-uses-and-held--a-rule-set-made-of-rule-sets)).
 
 ### The smallest complete document
 
@@ -194,7 +198,7 @@ evaluating a node, which is why `{ "op": "seq.of", "of": [1, 2, 3] }` exists and
 An `Opaque` value belongs to one plugin and means nothing to the core. It carries a type tag
 such as `grid/coord`, and two opaque values with different tags are never equal. Some of them
 have a **canonical text form** — `"d3"` for a coordinate — and that form is how they travel
-in and out of documents. §11 is where that matters.
+in and out of documents. §12 is where that matters.
 
 **Equality.** Values of different kinds are never equal, so `1` and `"1"` are not. `Null`
 equals `Null`. Numbers compare numerically, so `1` equals `1.0`. Sequences compare element by
@@ -224,7 +228,7 @@ it. Each operation states its own null behaviour, in its own specification.
 
 ## 3. Nodes
 
-Once you are below the ten reserved keys, the document is made of one thing repeated: a
+Once you are below the eleven reserved keys, the document is made of one thing repeated: a
 **node**. A node is a JSON object with an `op` in it.
 
 ```jsonc
@@ -246,7 +250,7 @@ cmp . eq
 
 `cmp` is the namespace claimed by `Rulealize.Plugin.Comparison`, and that is the connection
 between an `op` and the `requires` list — the namespace tells you which entry of `requires`
-had to be there for this node to be legal. [§14](#14-reading-a-vocabulary-you-have-not-met)
+had to be there for this node to be legal. [§15](#15-reading-a-vocabulary-you-have-not-met)
 turns that into a procedure for an `op` you have never seen.
 
 Nodes nest. Wherever an operation takes a value, you may write another node instead of a
@@ -272,7 +276,7 @@ later; the section is given for each so you can look ahead if one is unfamiliar.
 
 | Kind | Produces | May appear in |
 | --- | --- | --- |
-| **expression** | a value | an input's `when` and `actor`, the arguments of an effect, a parameter's `domain` ([§6](#6-inputs--what-may-be-done)), a definition body ([§7](#7-definitions--naming-an-expression)), `terminal` ([§8](#8-terminal--when-it-is-over)) |
+| **expression** | a value | an input's `when` and `actor`, the arguments of an effect, a parameter's `domain` ([§6](#6-inputs--what-may-be-done)), a definition body ([§7](#7-definitions--naming-an-expression)), a projection ([§8](#8-projections--what-a-rule-set-says-about-a-position)), `terminal` ([§9](#9-terminal--when-it-is-over)) |
 | **effect** | a write to the state | only the elements of an input's `effects` ([§6](#6-inputs--what-may-be-done)) |
 | **schema** | the type of one state field | `state.schema` ([§5](#5-state--what-a-position-is)), and a parameter's `open` ([§6](#6-inputs--what-may-be-done)) |
 
@@ -290,7 +294,7 @@ at run time:
 
 Three kinds of node, **four** kinds of operation. A plugin may also register a **draw**, which
 builds an expression node like anything else that produces a value; what its kind settles is
-where it may be written. §9 is the rest of it.
+where it may be written. §10 is the rest of it.
 
 ### A literal is an expression
 
@@ -419,7 +423,7 @@ Both messages name what you would have to add. Neither depends on what happens t
 
 **It is also the dependency list.** `rulealize restore light.json` reads exactly this, fetches
 what it names into a `plugin` folder, and compiles the document against what it just wrote —
-along with whatever `uses` names (§10), which it fetches the same way. Nothing is written out a
+along with whatever `uses` names (§11), which it fetches the same way. Nothing is written out a
 second time, because the runtime already had to read this in order to refuse a document it
 cannot run.
 
@@ -466,7 +470,7 @@ whole field and is written out literally rather than computed, and three things 
 
 The inside of a field holding a board, a record or a list is reached with the vocabulary of
 the plugin that declared it — `grid.at` and `grid.set` for a board, `rec.at` and `rec.with`
-for a record, the `seq.*` family for a list. §14 is how to find which.
+for a record, the `seq.*` family for a list. §15 is how to find which.
 
 Nesting happens *inside* a field, and it is as deep as you like:
 
@@ -542,13 +546,13 @@ An input is a named thing somebody may do. It takes six keys and all but one are
     "when":     /* whether it is allowed */,
     "validate": [ /* what an argument from outside is held to */ ],
     "effects":  [ /* what it does */ ],
-    "fires":    [ /* component inputs it drives — §10 */ ]
+    "fires":    [ /* component inputs it drives — §11 */ ]
   }
 }
 ```
 
 `effects` is required unless `fires` is written. An input's name may not contain `.`; the
-character is reserved for the qualified names a composite offers (§10).
+character is reserved for the qualified names a composite offers (§11).
 
 ### `params` — a domain, and what comes of it
 
@@ -581,7 +585,7 @@ does not owe a second copy of that rule in `when`.
 
 A domain may read the state — roster's `who` domain is the names in `$staff`, so a different
 week is a different state document and the same rule set — and it is walked once per call
-rather than once per candidate. It may not contain a draw (§9).
+rather than once per candidate. It may not contain a draw (§10).
 
 The value bound to `@reason` is **the value the domain produced**, whichever route the move
 arrived by. That matters when a domain produces opaque values: `GetValidInputs` writes a
@@ -609,7 +613,7 @@ A schema node is there because admitting a value is what one already does. It sa
 value is allowed (`Validate`), and it reads the JSON an argument arrives as (`ReadJson`) —
 which it owns, so an open parameter accepts exactly what a field of that schema accepts, read
 the same way. A list parameter therefore takes a list, which no domain argument could
-([§11](#11-the-three-documents-that-travel)).
+([§12](#12-the-three-documents-that-travel)).
 
 Exactly one of `domain` and `open`, and a parameter with both or neither is refused.
 
@@ -673,13 +677,13 @@ for it then. Refused when the document is compiled, with the node named:
 | --- | --- |
 | `when` | evaluated once per candidate, with no argument yet to guard |
 | `actor` | evaluated beside the guard |
-| `fires[].args` | resolved during the candidate search ([§10](#10-uses-and-held--a-rule-set-made-of-rule-sets)) |
+| `fires[].args` | resolved during the candidate search ([§11](#11-uses-and-held--a-rule-set-made-of-rule-sets)) |
 | another parameter's `domain` | domains are built with no parameter in scope at all |
 | a holder's `held.<input>.when` | evaluated per candidate exactly as the guard is |
 
 It may be read in `effects`, which run once the argument has arrived.
 
-This is the same rule §9 applies to a draw, for the same reason: a domain that drew would
+This is the same rule §10 applies to a draw, for the same reason: a domain that drew would
 refuse the move it had just offered, and a guard reading an argument that does not exist yet
 could only guess, then publish the guess as a legal move. **Whether a parameter is open is
 part of what an input is**, which is why the last row crosses the `uses` boundary — opening a
@@ -770,7 +774,7 @@ Both are raised when the document is compiled, and between them they are the who
 guarantee: **a complete move `GetValidInputs` offers is a move that will apply.** Without the
 first, an input whose arguments are all enumerated could be offered and then refused. Without
 the second, `validate` becomes somewhere to put guards, and every answer gets a little less
-true. §9 keeps a draw out of a domain for exactly this reason, and this is the same rule
+true. §10 keeps a draw out of a domain for exactly this reason, and this is the same rule
 arriving from the other direction.
 
 What a clause can say is bounded by the vocabularies loaded, as everything is. There is no
@@ -896,7 +900,86 @@ Scope, in one table:
 
 ---
 
-## 8. `terminal` — when it is over
+## 8. `projections` — what a rule set says about a position
+
+A rule set answers three questions without being asked anything further: what is legal, where
+a move leads, and whether it is over. Those are the three a runtime needs to move a position
+along, and they are `inputs` ([§6](#6-inputs--what-may-be-done)) and `terminal`
+([§9](#9-terminal--when-it-is-over)) between them.
+
+Everything else a caller wanted — what to put on a screen, what to log, what a report counts
+— had to be worked out by reading the state document. That reading is a second account of
+the rules, written somewhere the rule set cannot see, and the two drift. A `projections`
+entry moves that reading back into the document, written in the vocabulary already there.
+
+```jsonc
+"projections": {
+  "summary": {
+    "stage":   "$stage",
+    "reason":  "$reason",
+    "waiting": { "op": "cmp.eq", "left": "$stage", "right": "review" }
+  }
+}
+```
+
+A name, and an expression. There is no `body` and no `params` — the value **is** the
+expression, always — and asking for one is `RuleContext.Project(name, state)`, which hands
+back JSON. `RuleContext.Projections` is the list of names, so a caller can find out what a
+document offers without being told.
+
+```
+summary = {
+  "stage": "review",
+  "reason": null,
+  "waiting": true
+}
+```
+
+`waiting` is the part worth looking at. Nothing outside the document works out that a case in
+`review` is waiting; the document says so, once, and every host reading it agrees by
+construction.
+
+### The answer may be any shape
+
+That block has no `op` in it at any level — and an object with no `op` is not a node
+([§3](#3-nodes)). The value model has exactly one thing such an object can be, so it is read
+as a record, and its field values are built as expressions. A shape assembled out of computed
+parts is written in the notation the shape would be written in, and no vocabulary is reached
+for it.
+
+A projection may equally return a scalar, a sequence, or a record of records. What comes back
+is the value model as JSON and nothing interprets it on the way out: what the keys mean is
+the document's business.
+
+### No arguments, and no draw
+
+A projection takes nothing. It is a function of the position, which is what makes it safe to
+hand anywhere — a screen, a report, a cache — with no way for the reader to change what it
+says. Ask twice about one position and the answer is the same one.
+
+A draw ([§10](#10-chance)) may not appear in one, which needs no rule of its own: a draw is
+refused everywhere outside an input's `effects`, and the reason applies twice over to
+something a caller is invited to remember against a position.
+
+### Projections versus definitions
+
+Both name an expression, and the difference is who the name is for.
+
+| | For | Referred to as | Evaluated |
+| --- | --- | --- | --- |
+| a definition (§7) | the document itself | `#name`, anywhere in it | wherever it is referred to, and cached |
+| a projection | the caller | nowhere in the document | when the caller asks |
+
+A definition is reuse inside the rules; a projection is an answer out of them. A document
+that wants both writes the rule once as a definition and returns `#name` from the projection.
+
+A name may not contain `.`, on the terms an input's name may not
+([§11](#11-uses-and-held--a-rule-set-made-of-rule-sets)): a rule set that holds another may come
+to offer its projections under a qualified name.
+
+---
+
+## 9. `terminal` — when it is over
 
 ```jsonc
 "terminal": {
@@ -927,7 +1010,7 @@ the stage it settled in.
 
 ---
 
-## 9. Chance
+## 10. Chance
 
 Not every rule set settles its next state from the input alone. A card comes off a deck, a die
 lands: something happens that nobody chose. A rule set says so with a **draw**.
@@ -1008,7 +1091,7 @@ rather than evaluations — is
 
 ---
 
-## 10. `uses` and `held` — a rule set made of rule sets
+## 11. `uses` and `held` — a rule set made of rule sets
 
 Take *to put somebody on a shift, a request has to be raised and granted*. Anyone would write
 that as two documents, and then discover that the rule they actually care about fits in
@@ -1106,7 +1189,7 @@ stored composite state carries, and what a composite deliberately does not get �
 
 ---
 
-## 11. The three documents that travel
+## 12. The three documents that travel
 
 Four documents in all: `rulealize/ruleset/v1`, which is everything above, and three that
 travel per call. The core fixes only the frame.
@@ -1170,7 +1253,7 @@ A drawn value makes the same trip on the same terms.
 
 ---
 
-## 12. Reading an error
+## 13. Reading an error
 
 **Everything the document can settle on its own is settled when it is compiled**, and the
 message carries the path of the offending node:
@@ -1227,7 +1310,7 @@ together.
 
 ---
 
-## 13. Shaping a rule set
+## 14. Shaping a rule set
 
 The frame is small and the judgement is not. These are the decisions the worked documents came
 out of, each one written down where it was learned.
@@ -1263,7 +1346,7 @@ ever runs.
 makes that safe. Reach for reading the draft back only when an effect genuinely has to build on
 an earlier one.
 
-**One effect per draw.** §9. If a rule set seems to need the drawn value twice, look for the
+**One effect per draw.** §10. If a rule set seems to need the drawn value twice, look for the
 redundant field first.
 
 **Let null do the boundary checks.** Three stopping conditions — an empty square, one of mine,
@@ -1283,7 +1366,7 @@ deliberately does not model.
 
 ---
 
-## 14. Reading a vocabulary you have not met
+## 15. Reading a vocabulary you have not met
 
 This guide contains no list of operations, and that is not an omission. What a rule set may say
 is decided entirely by which plugins are loaded; a list here would be a second account of

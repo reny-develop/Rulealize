@@ -31,6 +31,15 @@ namespace Rulealize.Internal.RuleSet
 
         public required ImmutableArray<CompiledInput> Inputs { get; init; }
 
+        /// <summary>Gets what this rule set will say about a position, in the order written.</summary>
+        public ImmutableArray<CompiledProjection> Projections { get; init; } = [];
+
+        /// <summary>Finds a projection by name.</summary>
+        /// <param name="name">The name.</param>
+        /// <returns>The projection, or null when this rule set declares none of that name.</returns>
+        public CompiledProjection? FindProjection(string name) =>
+            Projections.FirstOrDefault(projection => string.Equals(projection.Name, name, StringComparison.Ordinal));
+
         public required CompiledTerminal? Terminal { get; init; }
 
         /// <summary>Gets the rule sets this one holds, in the order <c>uses</c> declares them.</summary>
@@ -233,6 +242,21 @@ namespace Rulealize.Internal.RuleSet
         /// refusal against the field it is about without the document saying so twice.
         /// </remarks>
         public required string? Parameter { get; init; }
+    }
+
+    /// <summary>One entry of <c>projections</c>: a question a rule set answers about a state.</summary>
+    /// <remarks>
+    /// An expression and nothing else. It takes no arguments, so a projection is a function of
+    /// the position alone — which is what makes it worth caching, worth comparing between two
+    /// positions, and safe to ask for as often as a caller likes.
+    /// </remarks>
+    internal sealed class CompiledProjection
+    {
+        public required string Name { get; init; }
+
+        public required ExpressionNode Body { get; init; }
+
+        public required int FrameSize { get; init; }
     }
 
     /// <summary>The <c>terminal</c> section.</summary>

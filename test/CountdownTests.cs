@@ -76,51 +76,12 @@ namespace Rulealize.Tests
         [Fact]
         public void TheDocumentPrintedInTheQuickGuideIsThisDocument()
         {
-            string printed = FirstRuleSetBlock(
+            string printed = StandardRuntime.PrintedDocument(
                 File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Doc", "ruleset-quickguide.md")));
 
             Assert.Equal(
-                Canonical(StandardRuntime.ReadRuleSet("countdown.json")),
-                Canonical(printed));
-        }
-
-        /// <summary>Reads the first fenced rule set document out of a Markdown file.</summary>
-        /// <remarks>
-        /// The guide opens with the whole document and prints fragments afterwards, so the
-        /// first block is the one to compare. A block that stopped being a rule set would fail
-        /// at <see cref="Canonical"/> rather than pass by matching nothing.
-        /// </remarks>
-        /// <param name="markdown">The file's text.</param>
-        /// <returns>The document.</returns>
-        private static string FirstRuleSetBlock(string markdown)
-        {
-            string[] lines = markdown.ReplaceLineEndings("\n").Split('\n');
-            int open = Array.FindIndex(lines, static line => line.StartsWith("```json", StringComparison.Ordinal));
-            Assert.True(open >= 0, "the quick guide no longer prints a rule set document.");
-
-            int close = Array.FindIndex(lines, open + 1, static line => line.StartsWith("```", StringComparison.Ordinal));
-            Assert.True(close > open, "the block the quick guide opens is never closed.");
-
-            return string.Join('\n', lines[(open + 1)..close]);
-        }
-
-        /// <summary>Writes a document back out with its comments and its formatting gone.</summary>
-        /// <remarks>
-        /// Comments are what the two copies are entitled to differ in — the document in
-        /// <c>ruleset/</c> explains itself to somebody reading the repository, and the printed
-        /// one explains itself to somebody who has never seen a rule set. Everything else has
-        /// to be the same, down to the order of the keys, because a reordering is a diff
-        /// somebody should have to look at.
-        /// </remarks>
-        /// <param name="document">The document.</param>
-        /// <returns>Its canonical text.</returns>
-        private static string Canonical(string document)
-        {
-            using JsonDocument parsed = JsonDocument.Parse(
-                document,
-                new JsonDocumentOptions { CommentHandling = JsonCommentHandling.Skip, AllowTrailingCommas = true });
-
-            return JsonSerializer.Serialize(parsed, new JsonSerializerOptions { WriteIndented = true });
+                StandardRuntime.Canonical(StandardRuntime.ReadRuleSet("countdown.json")),
+                StandardRuntime.Canonical(printed));
         }
 
         /// <summary>A position part-way to ten.</summary>

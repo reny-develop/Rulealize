@@ -170,6 +170,17 @@ rejected for a reason from a fixed list.
     }
   },
 
+  // What this rule set will say about a position, beyond what may be done to it. A screen
+  // binds to `summary`; nothing on the screen works out for itself what `waiting` means,
+  // which is the whole point — that reading would be a second account of the rules.
+  "projections": {
+    "summary": {
+      "stage":   "$stage",
+      "reason":  "$reason",
+      "waiting": { "op": "cmp.eq", "left": "$stage", "right": "review" }
+    }
+  },
+
   "terminal": {
     "when": {
       "op": "logic.or",
@@ -258,6 +269,41 @@ times.
 Picking one of the outcomes for real is the host's, and it is where the randomness lives —
 five lines in [`sample/Blackjack/`](sample/Blackjack/), and the only place in the whole
 arrangement that rolls anything.
+
+### What else it will tell you
+
+A rule set answers three questions without being asked anything further — what is legal,
+where a move leads, whether it is over — and those are the three the runtime needs to move a
+position along. Everything else a caller wanted about a position used to be worked out by
+reading the state document, which puts a second account of the rules outside the rule set and
+lets the two disagree.
+
+`projections` is the rule set answering instead, in the vocabulary it is already written in:
+
+```csharp
+foreach (string name in approval.Projections)
+{
+    Console.WriteLine($"{name} = {approval.Project(name, state)}");
+}
+```
+
+```
+summary = {
+  "stage": "review",
+  "reason": null,
+  "waiting": true
+}
+```
+
+An object in the document with no `op` in it is not a node, and the value model has exactly
+one thing it can be — so a projection assembles a shape out of computed parts in the notation
+it would be written down in, and no vocabulary is reached for that. What the keys mean is the
+rule set's business; nothing interprets the answer on the way out.
+
+A projection takes no arguments and cannot draw, so it is a function of the position and
+nothing else. Ask twice about one position and the answer is the same one, which is what lets
+it be cached against the position, compared with the answer for another, or handed to
+something that will only ever read it.
 
 ## What is checked, and when
 
@@ -355,6 +401,7 @@ the version's.
 | `RuleContext.GetValidInputs` | what is legal from here |
 | `RuleContext.GetOutcomes` | what could happen when one of them is applied, and how likely each of those is |
 | `RuleContext.GetTerminalStatus` | whether a state is final, and its outcome |
+| `RuleContext.Projections` / `Project` | what else the rule set will say about a position, and its answer for one |
 | `ValidInput.Input` / `Arguments` / `Actor` | one legal move: what it is, what it was called with — by name or in declared parameter order — and whose it is where a rule set says |
 | `ValidInput.Open` / `IsComplete` / `ValidInputSet.HasOpenParameters` | what a move is still waiting for, where a rule set leaves a parameter `open`, and whether anything in the answer is |
 | `OpenParameter.Description` / `Field` / `Op` | the bounds the admitting schema declares, the state field it is edited into, and the operation to read both against |
@@ -455,13 +502,13 @@ including why a composite must never be the thing that gets walked.
 
 ## What the core knows
 
-Ten reserved keys, and one more for telling a node from anything else:
+Eleven reserved keys, and one more for telling a node from anything else:
 
 ```
-$schema  id  version  requires  uses  state  definitions  held  inputs  terminal        op
+$schema  id  version  requires  uses  state  definitions  held  inputs  projections  terminal        op
 ```
 
-Inside those ten the core reads a little further — `state` has a `schema` and an `initial`,
+Inside those eleven the core reads a little further — `state` has a `schema` and an `initial`,
 an input has `params`, `actor`, `when`, `validate`, `effects` and `fires` — and where it does, it fixes
 the key set and refuses anything else.
 [The keys the core reads](doc/runtime.md#the-keys-the-core-reads) is all of it, on one page.
