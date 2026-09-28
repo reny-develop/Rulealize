@@ -366,6 +366,11 @@ been written when it is raised, because evaluation is pure until a transition co
 driven by a composite is held to its own clauses too — its arguments are expressions, so there
 is no hole and they can be asked while candidates are still being formed.
 
+A move that came back incomplete is written out by supplying what it was waiting for —
+`ToInputDocument(ruleSet, open)` — and the arguments it already had are written from the values
+their domains produced rather than from their text, which is the one thing a caller assembling
+that document itself could not get right.
+
 **A parameter declared `open` has no domain and contributes one candidate**, because the
 value is not the rule set's to enumerate. The move comes back incomplete —
 `ValidInput.IsComplete` is false and `ValidInput.Open` names what is missing — and the guard

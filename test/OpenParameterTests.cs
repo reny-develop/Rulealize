@@ -2,7 +2,9 @@
 // Licensed under the Apache License, Version 2.0.
 
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Rulealize.Abstraction;
+using Rulealize.Abstraction.Value;
 
 namespace Rulealize.Tests
 {
@@ -264,6 +266,102 @@ namespace Rulealize.Tests
                 { {{Preamble}} "inputs": { "go": { "params": { "x": {
                   "open": { "field": "n", "op": "type.int" } } }, "effects": [] } } }
                 """), StringComparison.Ordinal);
+
+        [Fact]
+        public void AMoveWithAHoleIsWrittenOutByFillingTheHole()
+        {
+            ValidInput adjust = Move("adjust");
+
+            string document = adjust.ToInputDocument(
+                "forms@1.0.0",
+                new Dictionary<string, JsonNode?>(StringComparer.Ordinal) { ["why"] = JsonValue.Create("hi") });
+
+            // The argument it already had is written as the value its domain produced, so it
+            // stays a number. A caller rebuilding this by hand has only the text "1" to go on
+            // and no way to know whether the domain produced 1 or "1".
+            Assert.Contains("\"by\": 1", document, StringComparison.Ordinal);
+            Assert.Contains("\"why\": \"hi\"", document, StringComparison.Ordinal);
+
+            RuleContext context = Context();
+            Assert.Contains(
+                "\"n\": 1",
+                context.ApplyToState(document, context.InitialState).State,
+                StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void OnlyAnOpenParameterMayBeGivenAValue() =>
+            // The other one came out of a domain and is settled; replacing it would describe a
+            // different move than the one being written out.
+            Assert.Throws<ArgumentException>(() => Move("adjust").ToInputDocument(
+                "forms@1.0.0",
+                new Dictionary<string, JsonNode?>(StringComparer.Ordinal)
+                {
+                    ["why"] = JsonValue.Create("hi"),
+                    ["by"] = JsonValue.Create(3),
+                }));
+
+        [Fact]
+        public void EveryHoleHasToBeFilled() =>
+            Assert.Throws<ArgumentException>(() => Move("adjust").ToInputDocument(
+                "forms@1.0.0",
+                new Dictionary<string, JsonNode?>(StringComparer.Ordinal)));
+
+        [Fact]
+        public void AHoleTakesWhateverShapeItsSchemaReads()
+        {
+            // An open parameter is read by its own schema node, so a list parameter is filled
+            // with a list — a shape no domain argument could have been.
+            string document = Move("retag").ToInputDocument(
+                "forms@1.0.0",
+                new Dictionary<string, JsonNode?>(StringComparer.Ordinal)
+                {
+                    ["tags"] = new JsonArray(JsonValue.Create("a"), JsonValue.Create("bb")),
+                });
+
+            using JsonDocument written = JsonDocument.Parse(document);
+            JsonElement tags = written.RootElement.GetProperty("args").GetProperty("tags");
+
+            Assert.Equal(JsonValueKind.Array, tags.ValueKind);
+            Assert.Equal(["a", "bb"], tags.EnumerateArray().Select(item => item.GetString()));
+
+            RuleContext context = Context();
+            Assert.Contains(
+                "bb",
+                context.ApplyToState(document, context.InitialState).State,
+                StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void TheBoundsComeOutAsDataForWhoeverHasToAskForTheValue()
+        {
+            OpenParameter to = Assert.Single(Move("rename").Open);
+
+            // The schema's own declaration, under the keys the document writes it as. Nothing
+            // in the runtime interpreted it: a caller reads it against Op, which is the name it
+            // already knows that vocabulary by.
+            Assert.Equal(3, Number(to.Description["minLength"]));
+            Assert.Equal(20, Number(to.Description["maxLength"]));
+        }
+
+        [Fact]
+        public void AParameterTakenFromAFieldDescribesThatFieldsBounds()
+        {
+            OpenParameter text = Assert.Single(Move("label").Open);
+
+            // 'name' is type.string maxLength 20, and this is that node — so the bound an editor
+            // is built from and the bound the state is checked against are one declaration.
+            Assert.Equal(20, Number(text.Description["maxLength"]));
+            Assert.Equal(RuleValueKind.Null, text.Description["minLength"].Kind);
+        }
+
+        [Fact]
+        public void ABoundNobodyDeclaredIsAbsentRatherThanNull() =>
+            // Absent reads as unbounded. A null would be a third thing to have an opinion about.
+            Assert.DoesNotContain("minLength", Assert.Single(Move("label").Open).Description.Fields.Keys);
+
+        private static int? Number(RuleValue value) =>
+            value is NumberValue number ? (int)number.Value : null;
 
         /// <summary>A rule set that leaves a parameter open, to be held by another.</summary>
         private const string Note = $$"""

@@ -354,6 +354,8 @@ the version's.
 | `RuleContext.GetTerminalStatus` | whether a state is final, and its outcome |
 | `ValidInput.Input` / `Arguments` / `Actor` | one legal move: what it is, what it was called with — by name or in declared parameter order — and whose it is where a rule set says |
 | `ValidInput.Open` / `IsComplete` / `ValidInputSet.HasOpenParameters` | what a move is still waiting for, where a rule set leaves a parameter `open`, and whether anything in the answer is |
+| `OpenParameter.Description` / `Field` / `Op` | the bounds the admitting schema declares, the state field it is edited into, and the operation to read both against |
+| `ValidInput.ToInputDocument(ruleSet, open)` | write out a move that was waiting, supplying what it waited for |
 | `InputRejectedException.Rejections` | which clauses refused the value supplied for one, each with its code and the parameter it is about |
 | `ValidInput.ToInputDocument` / `Outcome.ToOutcomeDocument` | write one back out, to be fed in again or recorded |
 | `ValidInputSet` / `OutcomeSet` / `TransitionResult` `.ToJson` | the same, for a whole answer, where a host is a boundary rather than a caller |

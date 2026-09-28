@@ -647,6 +647,18 @@ a complete move and a document with the argument left out would name a different
 set that leaves nothing open has no incomplete moves, so none of this changes what any
 existing document does.
 
+Supplying the missing values writes it: `ToInputDocument(ruleSet, open)` takes one per open
+parameter and writes the rest from the values their domains produced. That overload is there
+because the alternative is a caller assembling the document itself, and it cannot — an
+argument's JSON form is part of what it means, `Arguments` renders everything as text, and a
+move with one argument chosen and one still open would leave the caller guessing whether `"2"`
+meant `2`.
+
+Each `OpenParameter` also carries `Description`, the bounds its schema declares, as a record
+under the keys the document writes them as. That is what lets something asking for the value
+say how long it may be without the rule being written down twice — and it is the half of a
+refusal that can be settled before asking. The other half is `validate`, below.
+
 The trade runs the other way too, and not only for typed text. Forty-seven prefectures in a
 domain are forty-seven candidates per call; open, they are one, and a host builds the list
 from the schema instead. Which you want depends on whether the guard has anything to say about

@@ -67,7 +67,9 @@ admissible.
 
 The move then comes back **incomplete** — `ValidInput.Open` names what is missing,
 `IsComplete` is false, and `ToInputDocument` refuses it rather than writing a document that
-would mean a different move. Whether this particular value is allowed is asked when it arrives,
+would mean a different move. `ToInputDocument(ruleSet, open)` writes it once the missing values
+are supplied, and each `OpenParameter` carries the bounds its schema declares (`Description`)
+so that whatever asks for the value can say how long it may be without restating the rule. Whether this particular value is allowed is asked when it arrives,
 by the input's `validate` clauses, each carrying a code rather than a sentence because wording
 belongs to a label document. Two refusals at compile time keep the division honest: only an
 input with an open parameter may be validated, and a clause that reads no open parameter

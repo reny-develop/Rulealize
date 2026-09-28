@@ -5,6 +5,7 @@ using System.Collections;
 using System.Collections.Immutable;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Rulealize.Abstraction.Value;
 
 namespace Rulealize
@@ -29,13 +30,13 @@ namespace Rulealize
     /// <see cref="Arguments"/> is the readable view, everything rendered as text and in the
     /// order the parameters were declared, so that <see cref="ToString"/> writes the same move
     /// the same way in every process. What travels in a document is
-    /// <see cref="ToInputDocument"/>.
+    /// <see cref="ToInputDocument(string)"/>.
     /// </para>
     /// <para>
     /// A move whose input leaves a parameter <c>open</c> comes back <b>incomplete</b>: the
     /// value is somebody's to supply, so <see cref="Open"/> names what is missing and
     /// <see cref="IsComplete"/> is false. The round trip above is a promise about a complete
-    /// move, which is why <see cref="ToInputDocument"/> refuses an incomplete one rather than
+    /// move, which is why <see cref="ToInputDocument(string)"/> refuses an incomplete one rather than
     /// writing a document that would mean something else. A rule set with no open parameter
     /// has no incomplete moves, so nothing that was true before has stopped being true.
     /// </para>
@@ -67,7 +68,7 @@ namespace Rulealize
         /// <summary>Gets the arguments rendered as text, one per declared parameter, in that order.</summary>
         /// <remarks>
         /// The readable view. A number appears here as its digits; what goes into an input
-        /// document is the number itself. See <see cref="ToInputDocument"/>.
+        /// document is the number itself. See <see cref="ToInputDocument(string)"/>.
         /// </remarks>
         public ArgumentList Arguments { get; }
 
@@ -142,6 +143,95 @@ namespace Rulealize
                 ? $"'{open[0].Name}'"
                 : string.Join(", ", open.Take(open.Count - 1).Select(static p => $"'{p.Name}'"))
                   + $" and '{open[^1].Name}'";
+
+        /// <summary>Writes this as an input document, supplying what it is still waiting for.</summary>
+        /// <returns>A <c>rulealize/input/v1</c> document.</returns>
+        /// <param name="ruleSet">The rule set identity to stamp on it, as <c>id@version</c>.</param>
+        /// <param name="open">A value for every parameter in <see cref="Open"/>, by name.</param>
+        /// <remarks>
+        /// <para>
+        /// The arguments this move already has are written from the values their domains
+        /// produced, each in its own JSON form. That is the whole reason this overload exists
+        /// rather than leaving a caller to assemble the document: <see cref="Arguments"/> is
+        /// text, an argument's JSON form is part of what it means — <c>"2"</c> is not <c>2</c>
+        /// — and a caller rebuilding a move by hand has to guess a type nothing told it. A move
+        /// with one argument chosen and one still open is the case that makes the guess
+        /// unavoidable, and this is the answer to it.
+        /// </para>
+        /// <para>
+        /// Only an open parameter may be given a value here. One that came out of a domain is
+        /// already settled, and replacing it would describe a different move than the one this
+        /// is.
+        /// </para>
+        /// <para>
+        /// Nothing is checked against the schema here. Whether the value is one the rules admit
+        /// is <c>ApplyToState</c>'s answer, and it is the same answer wherever the document came
+        /// from; what a caller can settle before asking is the shape, out of
+        /// <see cref="OpenParameter"/>.
+        /// </para>
+        /// </remarks>
+        public string ToInputDocument(string ruleSet, IReadOnlyDictionary<string, JsonNode?> open)
+        {
+            ArgumentNullException.ThrowIfNull(open);
+
+            foreach (string name in open.Keys)
+            {
+                if (!Open.ContainsKey(name))
+                {
+                    throw new ArgumentException(
+                        $"'{Input}' does not leave '{name}' open, so there is no value to supply for it.",
+                        nameof(open));
+                }
+            }
+
+            foreach (OpenParameter parameter in Open)
+            {
+                if (!open.ContainsKey(parameter.Name))
+                {
+                    throw new ArgumentException(
+                        $"'{Input}' leaves '{parameter.Name}' open and no value was given for it.",
+                        nameof(open));
+                }
+            }
+
+            using MemoryStream buffer = new();
+            using (Utf8JsonWriter writer = new(buffer, new JsonWriterOptions { Indented = true }))
+            {
+                writer.WriteStartObject();
+                writer.WriteString("$schema", Internal.Document.InputDocument.SchemaId);
+                writer.WriteString("ruleSet", ruleSet);
+                writer.WriteString("input", Input);
+                writer.WritePropertyName("args");
+                writer.WriteStartObject();
+
+                // Declared order, the same order every other rendering of this move uses.
+                foreach (string name in _parameters)
+                {
+                    writer.WritePropertyName(name);
+
+                    if (open.TryGetValue(name, out JsonNode? supplied))
+                    {
+                        if (supplied is null)
+                        {
+                            writer.WriteNullValue();
+                        }
+                        else
+                        {
+                            supplied.WriteTo(writer);
+                        }
+
+                        continue;
+                    }
+
+                    Write(writer, _values.First(value => string.Equals(value.Key, name, StringComparison.Ordinal)).Value);
+                }
+
+                writer.WriteEndObject();
+                writer.WriteEndObject();
+            }
+
+            return Encoding.UTF8.GetString(buffer.ToArray());
+        }
 
         internal void WriteTo(Utf8JsonWriter writer)
         {

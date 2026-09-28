@@ -12,7 +12,7 @@ namespace Rulealize
     /// <para>
     /// Addressable both ways, because both get asked. A host writing a move down walks it in
     /// order — the order the rule set declared the parameters in, and the order
-    /// <see cref="ValidInput.ToInputDocument"/> writes them back out — and a host asking what
+    /// <see cref="ValidInput.ToInputDocument(string)"/> writes them back out — and a host asking what
     /// one named parameter came out as looks it up by name.
     /// </para>
     /// <para>

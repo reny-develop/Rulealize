@@ -988,7 +988,11 @@ namespace Rulealize
 
                 if (parameter.IsOpen)
                 {
-                    open.Add(new OpenParameter(parameter.Name, parameter.OpenOp, parameter.OpenField));
+                    open.Add(new OpenParameter(
+                        parameter.Name,
+                        parameter.OpenOp,
+                        parameter.OpenField,
+                        parameter.Open!.Describe()));
                     continue;
                 }
 

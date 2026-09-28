@@ -4,6 +4,7 @@
 using System.Collections;
 using System.Collections.Immutable;
 using System.Diagnostics.CodeAnalysis;
+using Rulealize.Abstraction.Value;
 
 namespace Rulealize
 {
@@ -24,11 +25,12 @@ namespace Rulealize
     /// </remarks>
     public sealed class OpenParameter
     {
-        internal OpenParameter(string name, string? op, string? field)
+        internal OpenParameter(string name, string? op, string? field, RecordValue description)
         {
             Name = name;
             Op = op;
             Field = field;
+            Description = description;
         }
 
         /// <summary>Gets the parameter name, as the rule set declared it.</summary>
@@ -36,6 +38,27 @@ namespace Rulealize
 
         /// <summary>Gets the <c>op</c> of the schema admitting its value.</summary>
         public string? Op { get; }
+
+        /// <summary>Gets the bounds the admitting schema declares, as a record.</summary>
+        /// <remarks>
+        /// <para>
+        /// What a caller needs to ask somebody for a value without restating the rules: a
+        /// length, a range, the values an enumeration allows. Empty where the schema declares
+        /// nothing, and the keys are the schema's own — read them against <see cref="Op"/>,
+        /// which is the name the rule set knows that vocabulary by. Nothing interpreted it on
+        /// the way out.
+        /// </para>
+        /// <para>
+        /// This is the half of a refusal that can be settled before asking. Whether the value
+        /// is one the rules admit is still <c>ApplyToState</c>'s answer, and a bound checked
+        /// here is checked again there — the point is not to skip it but to know it in time to
+        /// say so.
+        /// </para>
+        /// <para>
+        /// Bounds only. What the field is called and how it is drawn are the caller's own.
+        /// </para>
+        /// </remarks>
+        public RecordValue Description { get; }
 
         /// <summary>Gets the state field this parameter is edited into, where it names one.</summary>
         /// <remarks>
