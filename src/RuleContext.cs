@@ -61,6 +61,15 @@ namespace Rulealize
                 .Select(input => prefix + input.Name)
                 .Concat(rules.Held.SelectMany(held => Names(held.Rules, $"{prefix}{held.Alias}.")));
 
+        /// <summary>Gets the names of what this rule set will say about a position, in the order written.</summary>
+        /// <remarks>
+        /// Empty unless the document declares <c>projections</c>. A caller asks this rather
+        /// than assuming a name is there, for the reason it asks <see cref="Inputs"/> rather
+        /// than assuming an input is.
+        /// </remarks>
+        public ImmutableArray<string> Projections =>
+            [.. _ruleSet.Projections.Select(projection => projection.Name)];
+
         /// <summary>Gets the opening position, as a state document.</summary>
         public string InitialState => StateDocument.Write(_ruleSet, _ruleSet.InitialState);
 
@@ -317,6 +326,64 @@ namespace Rulealize
             Offered(root, null, null, string.Empty, search, cancellationToken);
 
             return new ValidInputSet(search.Found.ToImmutable(), search.Evaluated, search.Exhausted);
+        }
+
+        /// <summary>Asks the rule set what it says about a position.</summary>
+        /// <param name="projection">The name, out of <see cref="Projections"/>.</param>
+        /// <param name="stateDocument">The position.</param>
+        /// <param name="cancellationToken">Cancels a long evaluation.</param>
+        /// <returns>The answer, as JSON.</returns>
+        /// <exception cref="ArgumentException">
+        /// This rule set declares no projection of that name. A misspelling rather than a
+        /// document fault, which is why it is the caller who is told.
+        /// </exception>
+        /// <exception cref="RuleDocumentException">The state document is not one this rule set accepts.</exception>
+        /// <exception cref="RuleEvaluationException">An operation received values that make it meaningless.</exception>
+        /// <remarks>
+        /// <para>
+        /// The three questions a rule set answers without this — what is legal, where a move
+        /// leads, whether it is over — are the ones the runtime needs to move a position along.
+        /// Everything else a caller wanted about a position had to be worked out from the state
+        /// document by reading it, which puts a second account of the rules outside the rule
+        /// set and lets the two disagree. A projection is the rule set answering instead, in
+        /// the vocabulary it is already written in.
+        /// </para>
+        /// <para>
+        /// A function of the position and nothing else. It takes no arguments and cannot draw,
+        /// so asking twice about one position gives one answer, and what comes back can be
+        /// cached against the position, compared with the answer for another, or handed to
+        /// something that will only read it.
+        /// </para>
+        /// <para>
+        /// What comes back is the value model as JSON, and nothing interprets it on the way
+        /// out: what the keys mean is the rule set's business. An opaque value is written as
+        /// its canonical text, and one that has none is a fault rather than a field that
+        /// quietly went missing.
+        /// </para>
+        /// </remarks>
+        public string Project(
+            string projection,
+            string stateDocument,
+            CancellationToken cancellationToken = default)
+        {
+            ArgumentException.ThrowIfNullOrEmpty(projection);
+            ArgumentNullException.ThrowIfNull(stateDocument);
+
+            CompiledProjection declared = _ruleSet.FindProjection(projection)
+                ?? throw new ArgumentException(
+                    $"'{projection}' is not a projection of '{_ruleSet.Qualified}'."
+                    + (_ruleSet.Projections.IsEmpty
+                        ? " It declares none."
+                        : $" It declares {string.Join(", ", _ruleSet.Projections.Select(each => $"'{each.Name}'"))}."),
+                    nameof(projection));
+
+            using JsonDocument state = Parse(stateDocument, "state");
+            ImmutableArray<RuleValue> fields = StateDocument.Read(_ruleSet, state.RootElement);
+
+            EvaluationSession session = new(_ruleSet.Definitions, new StateSnapshot(fields), cancellationToken);
+            EvaluationContext context = session.CreateContext(declared.FrameSize);
+
+            return ProjectionDocument.Write(declared.Name, declared.Body.Evaluate(context));
         }
 
         /// <summary>Asks whether a state is final, and what its outcome is.</summary>

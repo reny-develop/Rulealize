@@ -102,8 +102,8 @@ namespace Rulealize.Internal.Building
                             throw new RuleSetBuildException(
                                 path,
                                 $"'{op}' is a draw, and a draw may only appear inside an input's 'effects'. "
-                                + "A guard, a parameter domain, an actor, 'terminal' and a definition body are all "
-                                + "evaluated where there is no outcome to draw for.");
+                                + "A guard, a parameter domain, an actor, 'terminal', a projection and a "
+                                + "definition body are all evaluated where there is no outcome to draw for.");
                         }
 
                         NodeBuildContext drawContext = new(this, path, op!, element);
