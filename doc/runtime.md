@@ -12,7 +12,7 @@ Normative, like the specification.
 | --- | --- | --- |
 | expression | a value | guards, effect arguments, definition bodies, parameter domains, the actor an input names, `terminal` |
 | effect | a write to the state | elements of an input's `effects` |
-| schema | the type of a state field | `state.schema` |
+| schema | the type of a state field | `state.schema`, a parameter's `open` |
 
 **Three kinds of node, four kinds of operation.** A plugin may also register a **draw**, and
 a draw builds an expression node like anything else that produces a value — so the table
@@ -66,9 +66,11 @@ what it takes from each.
 | `state.initial` | one value per declared field | every field, and no field the schema did not declare |
 | `definitions.<name>` | `body` `params` | only where `body` is written. Otherwise the value **is** the body, so a definition can be a node, a record, or a plain named constant |
 | `held.<alias>.<input>` | `when` | required. The alias has to be one `uses` declares and the input one that rule set has |
-| `inputs.<name>` | `params` `actor` `when` `effects` `fires` | `effects` is required unless `fires` is written; the rest are not. A name may not contain `.` |
+| `inputs.<name>` | `params` `actor` `when` `validate` `effects` `fires` | `effects` is required unless `fires` is written; the rest are not. `validate` only where a parameter is `open`. A name may not contain `.` |
 | `inputs.<name>.fires[]` | `held` `input` `args` | `held` and `input` are required; `args` gives one value per parameter of the input named, and no other |
-| `inputs.<name>.params.<name>` | `domain` | required |
+| `inputs.<name>.params.<name>` | `domain` `open` | exactly one of the two |
+| `inputs.<name>.params.<name>.open` | a schema node, or `field` | `field` names a state field and is the whole of that form |
+| `inputs.<name>.validate[]` | `require` `code` | both required; `code` is unique within the input |
 | `terminal` | `when` `result` | the section is optional; `when` is required once it is written and `result` is not |
 
 Everything below one of those — a schema node, a domain, a guard, an effect — is a node,
@@ -356,6 +358,22 @@ A domain is not a search hint. It is where a rule set says what a parameter may 
 `ApplyToState` resolves every argument against it too, and the two methods answer the same
 question by construction. A rule set is free to put a rule in a domain or in a guard,
 whichever keeps the candidate count down.
+
+`validate` is asked on the applying side only, after the guard and before anything a holder
+says, and every clause is evaluated rather than stopping at the first failure. A refusal is an
+`InputRejectedException` carrying each clause's code and the parameter it is about; nothing has
+been written when it is raised, because evaluation is pure until a transition commits. An input
+driven by a composite is held to its own clauses too — its arguments are expressions, so there
+is no hole and they can be asked while candidates are still being formed.
+
+**A parameter declared `open` has no domain and contributes one candidate**, because the
+value is not the rule set's to enumerate. The move comes back incomplete —
+`ValidInput.IsComplete` is false and `ValidInput.Open` names what is missing — and the guard
+never sees the argument, which is why nothing in a guard may read one. So an input with an
+open parameter costs one guard evaluation whatever it is eventually given, and what would
+have been a per-value answer is asked when the value arrives instead. `HasOpenParameters` on
+the set is how a traversal establishes in one question that every move it is about to walk
+can be applied as it stands; it is false for every rule set that opens nothing.
 
 Whether a state is terminal is a separate question, asked with `GetTerminalStatus`. This
 method does not consult it, so a rule set whose guards stay satisfiable after the game ends

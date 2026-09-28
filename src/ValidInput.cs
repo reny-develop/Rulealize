@@ -31,20 +31,33 @@ namespace Rulealize
     /// the same way in every process. What travels in a document is
     /// <see cref="ToInputDocument"/>.
     /// </para>
+    /// <para>
+    /// A move whose input leaves a parameter <c>open</c> comes back <b>incomplete</b>: the
+    /// value is somebody's to supply, so <see cref="Open"/> names what is missing and
+    /// <see cref="IsComplete"/> is false. The round trip above is a promise about a complete
+    /// move, which is why <see cref="ToInputDocument"/> refuses an incomplete one rather than
+    /// writing a document that would mean something else. A rule set with no open parameter
+    /// has no incomplete moves, so nothing that was true before has stopped being true.
+    /// </para>
     /// </remarks>
     public sealed class ValidInput
     {
         private readonly ImmutableArray<KeyValuePair<string, RuleValue>> _values;
+        private readonly ImmutableArray<string> _parameters;
 
         internal ValidInput(
             string input,
             ImmutableArray<KeyValuePair<string, RuleValue>> values,
             ArgumentList arguments,
+            OpenParameterList open,
+            ImmutableArray<string> parameters,
             string? actor)
         {
             Input = input;
             _values = values;
+            _parameters = parameters;
             Arguments = arguments;
+            Open = open;
             Actor = actor;
         }
 
@@ -58,14 +71,37 @@ namespace Rulealize
         /// </remarks>
         public ArgumentList Arguments { get; }
 
+        /// <summary>Gets the parameters still waiting for a value, in declared order.</summary>
+        public OpenParameterList Open { get; }
+
+        /// <summary>Gets a value indicating whether every parameter of this move has a value.</summary>
+        /// <remarks>
+        /// Only a move of an input that leaves a parameter <c>open</c> is ever incomplete. A
+        /// caller that walks moves and applies them — a solver, a perft count — can ask this
+        /// once of the set it was handed rather than of each move.
+        /// </remarks>
+        public bool IsComplete => Open.IsEmpty;
+
         /// <summary>Gets whose move this is, or <see langword="null"/> when the rule set does not say.</summary>
         public string? Actor { get; }
 
         /// <summary>Writes this as an input document, ready to apply.</summary>
         /// <returns>A <c>rulealize/input/v1</c> document.</returns>
         /// <param name="ruleSet">The rule set identity to stamp on it, as <c>id@version</c>.</param>
+        /// <exception cref="InvalidOperationException">
+        /// This move is incomplete: an open parameter has no value yet. Refused rather than
+        /// written with the argument left out, because that document would name a different
+        /// move — and a caller walking moves is better stopped here than handed one.
+        /// </exception>
         public string ToInputDocument(string ruleSet)
         {
+            if (!IsComplete)
+            {
+                throw new InvalidOperationException(
+                    $"'{Input}' leaves {Listed(Open)} open, and a move is not a document until every "
+                    + "argument has a value. The value comes from whoever is being asked for it.");
+            }
+
             using MemoryStream buffer = new();
             using (Utf8JsonWriter writer = new(buffer, new JsonWriterOptions { Indented = true }))
             {
@@ -82,10 +118,30 @@ namespace Rulealize
         }
 
         /// <inheritdoc />
-        public override string ToString() =>
-            Arguments.IsEmpty
-                ? Input
-                : $"{Input}({string.Join(", ", Arguments.Select(static argument => $"{argument.Key}: {argument.Value}"))})";
+        /// <remarks>
+        /// Parameters in the order the rule set declared them, whether each has a value or is
+        /// still open, so that one move reads the same way everywhere it is written down.
+        /// </remarks>
+        public override string ToString()
+        {
+            if (_parameters.IsEmpty)
+            {
+                return Input;
+            }
+
+            IEnumerable<string> rendered = _parameters.Select(name =>
+                Arguments.TryGetValue(name, out string? argument)
+                    ? $"{name}: {argument}"
+                    : Open[name].ToString());
+
+            return $"{Input}({string.Join(", ", rendered)})";
+        }
+
+        private static string Listed(OpenParameterList open) =>
+            open.Count is 1
+                ? $"'{open[0].Name}'"
+                : string.Join(", ", open.Take(open.Count - 1).Select(static p => $"'{p.Name}'"))
+                  + $" and '{open[^1].Name}'";
 
         internal void WriteTo(Utf8JsonWriter writer)
         {
@@ -93,6 +149,26 @@ namespace Rulealize
             writer.WriteString("input", Input);
             writer.WritePropertyName("args");
             WriteArguments(writer);
+
+            if (!IsComplete)
+            {
+                writer.WritePropertyName("open");
+                writer.WriteStartObject();
+                foreach (OpenParameter parameter in Open)
+                {
+                    writer.WritePropertyName(parameter.Name);
+                    writer.WriteStartObject();
+                    if (parameter.Op is string op)
+                    {
+                        writer.WriteString("op", op);
+                    }
+
+                    writer.WriteEndObject();
+                }
+
+                writer.WriteEndObject();
+            }
+
             if (Actor is not null)
             {
                 writer.WriteString("actor", Actor);
@@ -163,6 +239,14 @@ namespace Rulealize
 
         /// <summary>Gets how many candidates had their guard evaluated.</summary>
         public int Evaluated => evaluated;
+
+        /// <summary>Gets a value indicating whether any move here is waiting for an argument.</summary>
+        /// <remarks>
+        /// False for every rule set that leaves no parameter <c>open</c>, which is what lets a
+        /// traversal — a solver, a perft count — establish in one question that every move it
+        /// is about to walk can be applied as it stands.
+        /// </remarks>
+        public bool HasOpenParameters => inputs.Any(static input => !input.IsComplete);
 
         /// <inheritdoc />
         public ValidInput this[int index] => inputs[index];

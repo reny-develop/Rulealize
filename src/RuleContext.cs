@@ -9,6 +9,7 @@ using Rulealize.Abstraction;
 using Rulealize.Abstraction.Evaluation;
 using Rulealize.Abstraction.Node;
 using Rulealize.Abstraction.Value;
+using Rulealize.Internal.Building;
 using Rulealize.Internal.Document;
 using Rulealize.Internal.Evaluation;
 using Rulealize.Internal.RuleSet;
@@ -392,6 +393,15 @@ namespace Rulealize
                     $"'{request.Input}' is not allowed in this state.");
             }
 
+            // The guard said the input was on offer; this says whether what came back for an
+            // open parameter is a value the rules take. Only an input with an open parameter
+            // has any of these, so nothing that was complete when it was offered can be
+            // refused here.
+            if (Rejections(request.Input, declared, context) is { IsEmpty: false } rejected)
+            {
+                throw new InputRejectedException(request.Input, rejected);
+            }
+
             ImmutableArray<RuleValue> arguments =
                 [.. declared.Parameters.Select(parameter => context.GetLocal(parameter.Slot))];
 
@@ -683,13 +693,22 @@ namespace Rulealize
 
             foreach (CompiledParameter parameter in declared.Parameters)
             {
-                if (!request.Arguments.TryGetValue(parameter.Name, out RuleValue? value))
+                if (!request.Arguments.TryGetValue(parameter.Name, out JsonElement supplied))
                 {
                     throw new RuleDocumentException(
                         $"'{name}' takes a '{parameter.Name}', and the input document does not give one.");
                 }
 
-                context.Seed(parameter.Slot, Resolve(name, declared, parameter, value, domainContext, cancellationToken));
+                context.Seed(
+                    parameter.Slot,
+                    parameter.Open is SchemaNode open
+                        ? Admit(name, parameter.Name, open, supplied)
+                        : Resolve(
+                            name,
+                            parameter,
+                            InputDocument.ReadValue(supplied, parameter.Name),
+                            domainContext,
+                            cancellationToken));
             }
 
             foreach (string supplied in request.Arguments.Keys)
@@ -709,7 +728,6 @@ namespace Rulealize
         /// </remarks>
         private static RuleValue Resolve(
             string name,
-            CompiledInput declared,
             CompiledParameter parameter,
             RuleValue supplied,
             EvaluationContext domainContext,
@@ -717,7 +735,7 @@ namespace Rulealize
         {
             string origin = $"inputs.{name}.params.{parameter.Name}.domain";
 
-            foreach (RuleValue candidate in parameter.Domain.Evaluate(domainContext).AsSequence(origin))
+            foreach (RuleValue candidate in parameter.Domain!.Evaluate(domainContext).AsSequence(origin))
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
@@ -731,6 +749,70 @@ namespace Rulealize
                 name,
                 $"{RuleValue.Describe(supplied)} is not among the values '{parameter.Name}' "
                 + $"may take in this state.");
+        }
+
+        /// <summary>Reads and admits the argument of a parameter the input leaves open.</summary>
+        /// <remarks>
+        /// <para>
+        /// There is no domain to walk, so the schema standing in for one does both halves of
+        /// what a domain does. It reads the JSON, because a schema node owns the form its
+        /// values are written in — which is what lets an open parameter hand the rules a value
+        /// of its own kind rather than the text somebody typed. Then it says whether that value
+        /// is one it admits.
+        /// </para>
+        /// <para>
+        /// Malformed JSON is reported and a best-effort value returned rather than thrown, so
+        /// checking it a second time would only name the same mistake twice.
+        /// </para>
+        /// </remarks>
+        private static RuleValue Admit(string input, string parameter, SchemaNode open, JsonElement supplied)
+        {
+            SchemaViolations violations = new();
+            RuleValue value = open.ReadJson(supplied, violations.For(parameter));
+
+            if (!violations.Any)
+            {
+                open.Validate(value, violations.For(parameter));
+            }
+
+            if (violations.Any)
+            {
+                throw new IllegalInputException(input, string.Join(" ", violations.Messages));
+            }
+
+            return value;
+        }
+
+        /// <summary>Asks every clause of an input's <c>validate</c>, and collects what refuses.</summary>
+        /// <remarks>
+        /// Every clause is evaluated rather than stopping at the first failure, because a form
+        /// wrong in three places should take one round trip to learn that and not three. The
+        /// cost is that a clause relying on an earlier one having passed is evaluated anyway,
+        /// which is why they are written independent of each other.
+        /// </remarks>
+        private static ImmutableArray<InputRejection> Rejections(
+            string name,
+            CompiledInput declared,
+            EvaluationContext context)
+        {
+            if (declared.Validations.IsEmpty)
+            {
+                return [];
+            }
+
+            ImmutableArray<InputRejection>.Builder refused =
+                ImmutableArray.CreateBuilder<InputRejection>();
+
+            for (int i = 0; i < declared.Validations.Length; i++)
+            {
+                CompiledValidation clause = declared.Validations[i];
+                if (!clause.Require.Evaluate(context).AsBoolean($"inputs.{name}.validate[{i}].require"))
+                {
+                    refused.Add(new InputRejection(clause.Code, clause.Parameter));
+                }
+            }
+
+            return refused.ToImmutable();
         }
 
         /// <summary>Sifts everything one rule set offers, and then everything it holds.</summary>
@@ -799,11 +881,15 @@ namespace Rulealize
             // Domains are evaluated once per input, with no argument bound: a candidate is
             // the product of the domains, so none of them may depend on another's choice.
             EvaluationContext domainContext = offer.Part.Session.CreateContext(input.FrameSize);
-            SequenceValue[] domains = new SequenceValue[input.Parameters.Length];
+
+            // An open parameter has no domain, and contributes one candidate rather than a
+            // domain's worth of them: the move is offered with a hole where its argument goes.
+            // So a form is one candidate however many values it could eventually be given.
+            SequenceValue?[] domains = new SequenceValue?[input.Parameters.Length];
             for (int i = 0; i < domains.Length; i++)
             {
                 domains[i] = input.Parameters[i].Domain
-                    .Evaluate(domainContext)
+                    ?.Evaluate(domainContext)
                     .AsSequence($"inputs.{offer.Name}.params.{input.Parameters[i].Name}.domain");
             }
 
@@ -813,7 +899,7 @@ namespace Rulealize
 
         private static void Walk(
             Offer offer,
-            SequenceValue[] domains,
+            SequenceValue?[] domains,
             RuleValue[] chosen,
             int depth,
             Search search,
@@ -830,7 +916,16 @@ namespace Rulealize
                 return;
             }
 
-            foreach (RuleValue value in domains[depth])
+            if (domains[depth] is not SequenceValue domain)
+            {
+                // Open: nothing to choose from, and nothing reads the slot while candidates
+                // are being formed — which the compiler has already made certain of.
+                chosen[depth] = RuleValue.Null;
+                Walk(offer, domains, chosen, depth + 1, search, cancellationToken);
+                return;
+            }
+
+            foreach (RuleValue value in domain)
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
@@ -859,7 +954,10 @@ namespace Rulealize
             EvaluationContext context = offer.Part.Session.CreateContext(input.FrameSize);
             for (int i = 0; i < chosen.Length; i++)
             {
-                context.Seed(input.Parameters[i].Slot, chosen[i]);
+                if (!input.Parameters[i].IsOpen)
+                {
+                    context.Seed(input.Parameters[i].Slot, chosen[i]);
+                }
             }
 
             if (input.Guard is not null && !input.Guard.Evaluate(context).AsBoolean($"inputs.{offer.Name}.when"))
@@ -876,28 +974,43 @@ namespace Rulealize
             // move reads back in and the order it is written out in. Nothing downstream
             // sorts them, so this loop is where that order is decided.
             ImmutableArray<KeyValuePair<string, string>>.Builder arguments =
-                ImmutableArray.CreateBuilder<KeyValuePair<string, string>>(chosen.Length);
+                ImmutableArray.CreateBuilder<KeyValuePair<string, string>>();
             ImmutableArray<KeyValuePair<string, RuleValue>>.Builder values =
-                ImmutableArray.CreateBuilder<KeyValuePair<string, RuleValue>>(chosen.Length);
+                ImmutableArray.CreateBuilder<KeyValuePair<string, RuleValue>>();
+            ImmutableArray<OpenParameter>.Builder open = ImmutableArray.CreateBuilder<OpenParameter>();
+            ImmutableArray<string>.Builder parameters =
+                ImmutableArray.CreateBuilder<string>(chosen.Length);
 
             for (int i = 0; i < chosen.Length; i++)
             {
-                string name = input.Parameters[i].Name;
+                CompiledParameter parameter = input.Parameters[i];
+                parameters.Add(parameter.Name);
+
+                if (parameter.IsOpen)
+                {
+                    open.Add(new OpenParameter(parameter.Name, parameter.OpenOp, parameter.OpenField));
+                    continue;
+                }
 
                 // Refused here rather than when the document is written, so that a rule set
                 // whose domain yields something unwritable says so with the parameter named.
                 string text = chosen[i].GetCanonicalText()
                     ?? throw new RuleEvaluationException(
-                        $"inputs.{offer.Name}.params.{name}",
+                        $"inputs.{offer.Name}.params.{parameter.Name}",
                         $"{RuleValue.Describe(chosen[i])} has no text form, so it cannot be an input argument.");
 
-                arguments.Add(new KeyValuePair<string, string>(name, text));
-                values.Add(new KeyValuePair<string, RuleValue>(name, chosen[i]));
+                arguments.Add(new KeyValuePair<string, string>(parameter.Name, text));
+                values.Add(new KeyValuePair<string, RuleValue>(parameter.Name, chosen[i]));
             }
 
             string? actor = input.Actor?.Evaluate(context).GetCanonicalText();
             search.Found.Add(new ValidInput(
-                offer.Name, values.MoveToImmutable(), new ArgumentList(arguments.MoveToImmutable()), actor));
+                offer.Name,
+                values.ToImmutable(),
+                new ArgumentList(arguments.ToImmutable()),
+                new OpenParameterList(open.ToImmutable()),
+                parameters.MoveToImmutable(),
+                actor));
         }
 
         /// <summary>One rule set's part of a composite state, and what is happening to it.</summary>
@@ -1099,7 +1212,10 @@ namespace Rulealize
                     EvaluationContext outer = Holder.Session.CreateContext(constraint.FrameSize);
                     for (int i = 0; i < chosen.Length && i < constraint.ParameterSlots.Length; i++)
                     {
-                        outer.Seed(constraint.ParameterSlots[i], chosen[i]);
+                        if (!Declared.Parameters[i].IsOpen)
+                        {
+                            outer.Seed(constraint.ParameterSlots[i], chosen[i]);
+                        }
                     }
 
                     if (!constraint.When.Evaluate(outer).AsBoolean($"held.{Name}.when"))
@@ -1169,15 +1285,32 @@ namespace Rulealize
                 RuleValue supplied = fire.Arguments[i].Evaluate(outer);
                 RuleValue? matched = null;
 
-                foreach (RuleValue candidate in parameter.Domain
-                    .Evaluate(domains)
-                    .AsSequence($"inputs.{fire.Name}.params.{parameter.Name}.domain"))
+                // A fired argument is an expression, so it has a value even where the
+                // component leaves the parameter open: nothing is waiting to be typed, and
+                // what stands in for the domain says whether this value is admissible.
+                if (parameter.Open is SchemaNode open)
                 {
-                    cancellationToken.ThrowIfCancellationRequested();
-                    if (ValueMatch.Matches(supplied, candidate))
+                    SchemaViolations violations = new();
+                    open.Validate(supplied, violations.For(parameter.Name));
+                    if (violations.Any)
                     {
-                        matched = candidate;
-                        break;
+                        return new Fired(false, [], string.Join(" ", violations.Messages));
+                    }
+
+                    matched = supplied;
+                }
+                else
+                {
+                    foreach (RuleValue candidate in parameter.Domain!
+                        .Evaluate(domains)
+                        .AsSequence($"inputs.{fire.Name}.params.{parameter.Name}.domain"))
+                    {
+                        cancellationToken.ThrowIfCancellationRequested();
+                        if (ValueMatch.Matches(supplied, candidate))
+                        {
+                            matched = candidate;
+                            break;
+                        }
                     }
                 }
 
@@ -1198,6 +1331,18 @@ namespace Rulealize
                 && !declared.Guard.Evaluate(bound).AsBoolean($"inputs.{fire.Name}.when"))
             {
                 return new Fired(false, [], $"'{inner.Rules.Qualified}' does not allow it in this state.");
+            }
+
+            // After the guard, as on the applying path: whether the input was available at all
+            // is a different question from whether this argument is one it takes, and asking
+            // them in one order everywhere is what makes the two paths give one answer.
+            if (Rejections(fire.Name, declared, bound) is { IsEmpty: false } rejected)
+            {
+                return new Fired(
+                    false,
+                    [],
+                    $"'{inner.Rules.Qualified}' does not accept that: "
+                    + string.Join(", ", rejected.Select(static rejection => rejection.Code)) + ".");
             }
 
             foreach (CompiledFire onwards in declared.Fires)

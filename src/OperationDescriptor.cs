@@ -27,7 +27,7 @@ namespace Rulealize
         /// <summary>Changes the state. An entry in an input's <c>effects</c>.</summary>
         Effect,
 
-        /// <summary>Declares the shape of a state field. An entry in <c>state.schema</c>.</summary>
+        /// <summary>Declares the shape of a value. An entry in <c>state.schema</c>, or a parameter's <c>open</c>.</summary>
         Schema,
 
         /// <summary>Resolves something nobody chose. Only inside an input's <c>effects</c>.</summary>

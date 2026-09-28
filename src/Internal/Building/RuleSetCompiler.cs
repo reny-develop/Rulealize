@@ -459,7 +459,12 @@ namespace Rulealize.Internal.Building
             foreach (JsonProperty field in fields.EnumerateObject())
             {
                 SchemaNode node = builder.BuildSchema(field.Value, schemaPath.Append(field.Name));
-                if (schema.Declare(field.Name, node) is null)
+                string? op = field.Value.ValueKind == JsonValueKind.Object
+                    && field.Value.TryGetProperty("op", out JsonElement fieldOp)
+                        ? fieldOp.GetString()
+                        : null;
+
+                if (schema.Declare(field.Name, node, op) is null)
                 {
                     throw new RuleSetBuildException(schemaPath, $"'{field.Name}' is declared more than once.");
                 }
@@ -683,14 +688,16 @@ namespace Rulealize.Internal.Building
             SourcePath path,
             ImmutableArray<HeldRuleSet> held)
         {
-            OnlyTheseKeys(element, path, "an input", "params", "actor", "when", "effects", "fires");
+            OnlyTheseKeys(element, path, "an input", "params", "actor", "when", "validate", "effects", "fires");
 
             builder.Scope.BeginFrame();
             int drawsBefore = builder.Draws;
 
             // Domains are built outside the parameter scope: a candidate is the product of
-            // the domains, so no domain may depend on another parameter's value.
-            List<(string Name, ExpressionNode Domain)> domains = [];
+            // the domains, so no domain may depend on another parameter's value. An open
+            // parameter's schema node is built here for a blunter reason — a schema node is
+            // never evaluated, so there is nothing for it to depend on.
+            List<DeclaredParameter> declared = [];
             if (element.TryGetProperty("params", out JsonElement parameters))
             {
                 SourcePath parametersPath = path.Append("params");
@@ -704,13 +711,36 @@ namespace Rulealize.Internal.Building
                     SourcePath parameterPath = parametersPath.Append(parameter.Name);
                     if (parameter.Value.ValueKind != JsonValueKind.Object)
                     {
-                        throw new RuleSetBuildException(parameterPath, "must be an object with a 'domain'.");
+                        throw new RuleSetBuildException(
+                            parameterPath,
+                            "must be an object with a 'domain' or an 'open'.");
                     }
 
-                    OnlyTheseKeys(parameter.Value, parameterPath, "a parameter", "domain");
+                    OnlyTheseKeys(parameter.Value, parameterPath, "a parameter", "domain", "open");
 
-                    JsonElement domain = RequireProperty(parameter.Value, "domain", parameterPath);
-                    domains.Add((parameter.Name, builder.BuildExpression(domain, parameterPath.Append("domain"))));
+                    bool hasDomain = parameter.Value.TryGetProperty("domain", out JsonElement domain);
+                    bool hasOpen = parameter.Value.TryGetProperty("open", out JsonElement open);
+
+                    if (hasDomain == hasOpen)
+                    {
+                        throw new RuleSetBuildException(
+                            parameterPath,
+                            hasDomain
+                                ? "has both a 'domain' and an 'open', and a parameter is one or the other: "
+                                  + "either its values are enumerated, or they come from outside and are "
+                                  + "admitted by a schema."
+                                : "needs a 'domain', whose values are enumerated to form candidates, or an "
+                                  + "'open', a schema admitting a value that comes from outside.");
+                    }
+
+                    declared.Add(hasDomain
+                        ? new DeclaredParameter(
+                            parameter.Name,
+                            builder.BuildExpression(domain, parameterPath.Append("domain")),
+                            null,
+                            null,
+                            null)
+                        : CompileOpen(builder, parameter.Name, open, parameterPath.Append("open")));
                 }
             }
 
@@ -718,30 +748,48 @@ namespace Rulealize.Internal.Building
             ExpressionNode? guard;
             ImmutableArray<EffectNode> effects;
             ImmutableArray<CompiledFire> fires;
+            ImmutableArray<CompiledValidation> validations;
             ImmutableArray<CompiledParameter>.Builder compiled =
-                ImmutableArray.CreateBuilder<CompiledParameter>(domains.Count);
+                ImmutableArray.CreateBuilder<CompiledParameter>(declared.Count);
 
             using (builder.Scope.BeginScope())
             {
-                foreach ((string parameterName, ExpressionNode domain) in domains)
+                foreach (DeclaredParameter parameter in declared)
                 {
                     compiled.Add(new CompiledParameter
                     {
-                        Name = parameterName,
-                        Slot = builder.Scope.Declare(parameterName),
-                        Domain = domain
+                        Name = parameter.Name,
+                        Slot = parameter.Open is null
+                            ? builder.Scope.Declare(parameter.Name)
+                            : builder.Scope.DeclareOpen(parameter.Name),
+                        Domain = parameter.Domain,
+                        Open = parameter.Open,
+                        OpenOp = parameter.OpenOp,
+                        OpenField = parameter.OpenField
                     });
                 }
 
-                actor = element.TryGetProperty("actor", out JsonElement actorElement)
-                    ? builder.BuildExpression(actorElement, path.Append("actor"))
-                    : null;
+                // Everything a candidate is sifted by is built with the open parameters
+                // unreadable, because a candidate is formed before their arguments exist.
+                using (builder.Scope.BarOpen())
+                {
+                    actor = element.TryGetProperty("actor", out JsonElement actorElement)
+                        ? builder.BuildExpression(actorElement, path.Append("actor"))
+                        : null;
 
-                guard = element.TryGetProperty("when", out JsonElement whenElement)
-                    ? builder.BuildExpression(whenElement, path.Append("when"))
-                    : null;
+                    guard = element.TryGetProperty("when", out JsonElement whenElement)
+                        ? builder.BuildExpression(whenElement, path.Append("when"))
+                        : null;
 
-                fires = CompileFires(builder, element, path, held);
+                    fires = CompileFires(builder, element, path, held);
+                }
+
+                validations = CompileValidations(
+                    builder,
+                    element,
+                    path,
+                    declared.Any(static parameter => parameter.Open is not null));
+
                 effects = CompileEffects(builder, element, path, fires.Length > 0);
             }
 
@@ -751,6 +799,7 @@ namespace Rulealize.Internal.Building
                 Parameters = compiled.MoveToImmutable(),
                 Actor = actor,
                 Guard = guard,
+                Validations = validations,
                 Effects = effects,
                 Fires = fires,
 
@@ -759,6 +808,171 @@ namespace Rulealize.Internal.Building
                 HasDraw = builder.Draws > drawsBefore || fires.Any(static fire => fire.Declared.HasDraw),
                 FrameSize = builder.Scope.FrameSize
             };
+        }
+
+        /// <summary>Compiles a parameter's <c>open</c>, in either of the two forms it takes.</summary>
+        /// <remarks>
+        /// <para>
+        /// <c>{ "field": "name" }</c> takes the schema node of that state field — the node
+        /// itself, not a copy of its bounds. So a parameter edited into a field admits exactly
+        /// what the field holds, and a parameter admitting what its field forbids is not
+        /// something the document can say. That is the whole of the guarantee: there are never
+        /// two declarations to keep in agreement, so there is nothing to check and nothing to
+        /// drift.
+        /// </para>
+        /// <para>
+        /// A schema node written out instead is for a parameter that is not simply a field's
+        /// editor — one narrower than the field, or one whose value is computed into the state
+        /// rather than stored. It claims no field, so nothing is checked against one, and a
+        /// value that overflows where it ends up is caught when the transition commits. That
+        /// is the position every computed effect value is already in.
+        /// </para>
+        /// </remarks>
+        private static DeclaredParameter CompileOpen(
+            NodeBuilder builder,
+            string name,
+            JsonElement open,
+            SourcePath path)
+        {
+            if (open.ValueKind != JsonValueKind.Object)
+            {
+                throw new RuleSetBuildException(
+                    path,
+                    "must be a schema node, or a 'field' naming the state field this parameter is edited into.");
+            }
+
+            if (!open.TryGetProperty("field", out JsonElement field))
+            {
+                return new DeclaredParameter(
+                    name,
+                    null,
+                    builder.BuildSchema(open, path),
+                    open.TryGetProperty("op", out JsonElement openOp) ? openOp.GetString() : null,
+                    null);
+            }
+
+            OnlyTheseKeys(open, path, "an open parameter taken from a field", "field");
+
+            if (field.ValueKind != JsonValueKind.String)
+            {
+                throw new RuleSetBuildException(path.Append("field"), "must be the name of a state field.");
+            }
+
+            string named = field.GetString()!;
+            if (!builder.State.TryResolve(named, out StatePath? resolved))
+            {
+                throw new RuleSetBuildException(
+                    path.Append("field"),
+                    $"'{named}' is not a field of this rule set's state.");
+            }
+
+            return new DeclaredParameter(name, null, resolved.Schema, builder.State.OpOf(named), named);
+        }
+
+        /// <summary>Compiles <c>validate</c>: what the arguments are held to once they arrive.</summary>
+        /// <remarks>
+        /// <para>
+        /// Only an input that leaves a parameter open may have one. A guard is evaluated per
+        /// candidate and decides whether the input is offered at all; a clause here is
+        /// evaluated when a value has been supplied and can only refuse what was already
+        /// offered. Allowing both on an input whose arguments are all enumerated would mean
+        /// offering a move and then refusing it — the fault a domain that drew would have, and
+        /// the reason draws are kept out of one.
+        /// </para>
+        /// <para>
+        /// A clause that reads no open parameter is refused for the same reason from the other
+        /// side: it could have been decided before the input was offered, so it belongs in
+        /// <c>when</c>, and leaving it here would make every answer from
+        /// <c>GetValidInputs</c> a little less true.
+        /// </para>
+        /// </remarks>
+        private static ImmutableArray<CompiledValidation> CompileValidations(
+            NodeBuilder builder,
+            JsonElement element,
+            SourcePath path,
+            bool anyOpen)
+        {
+            if (!element.TryGetProperty("validate", out JsonElement section))
+            {
+                return [];
+            }
+
+            SourcePath validatePath = path.Append("validate");
+            if (!anyOpen)
+            {
+                throw new RuleSetBuildException(
+                    validatePath,
+                    "only an input that leaves a parameter open may be validated, because only then is "
+                    + "there an argument the guard could not have seen. A rule about a value that is "
+                    + "known when the input is offered belongs in 'when'.");
+            }
+
+            if (section.ValueKind != JsonValueKind.Array)
+            {
+                throw new RuleSetBuildException(validatePath, "must be an array of clauses.");
+            }
+
+            ImmutableArray<CompiledValidation>.Builder clauses =
+                ImmutableArray.CreateBuilder<CompiledValidation>();
+            Dictionary<string, int> seen = new(StringComparer.Ordinal);
+            int index = 0;
+
+            foreach (JsonElement entry in section.EnumerateArray())
+            {
+                SourcePath entryPath = validatePath.Append(index);
+                if (entry.ValueKind != JsonValueKind.Object)
+                {
+                    throw new RuleSetBuildException(
+                        entryPath,
+                        "must be an object with a 'require' and a 'code'.");
+                }
+
+                OnlyTheseKeys(entry, entryPath, "a validate clause", "require", "code");
+
+                string code = RequireString(entry, "code", entryPath);
+                if (seen.TryGetValue(code, out int first))
+                {
+                    throw new RuleSetBuildException(
+                        entryPath.Append("code"),
+                        $"'{code}' is already used by validate[{first}]. A code names one refusal, "
+                        + "because it is what a host shows a message for.");
+                }
+
+                seen[code] = index;
+
+                ImmutableArray<string> read;
+                ExpressionNode require;
+                using (ScopeBuilder.OpenTrace trace = builder.Scope.TraceOpen())
+                {
+                    require = builder.BuildExpression(
+                        RequireProperty(entry, "require", entryPath),
+                        entryPath.Append("require"));
+                    read = trace.Names;
+                }
+
+                if (read.IsEmpty)
+                {
+                    throw new RuleSetBuildException(
+                        entryPath.Append("require"),
+                        "reads no open parameter, so it can be decided before the input is offered "
+                        + "and belongs in 'when'. A clause here is for what only the argument can "
+                        + "settle.");
+                }
+
+                clauses.Add(new CompiledValidation
+                {
+                    Require = require,
+                    Code = code,
+
+                    // One parameter means the refusal belongs against that field; several mean
+                    // it belongs to the form.
+                    Parameter = read.Length is 1 ? read[0] : null
+                });
+
+                index++;
+            }
+
+            return clauses.ToImmutable();
         }
 
         /// <summary>Compiles <c>fires</c>: the held inputs one of the composite's own drives.</summary>
@@ -989,12 +1203,22 @@ namespace Rulealize.Internal.Building
                         ImmutableArray.CreateBuilder<LocalSlot>(declared.Parameters.Length);
                     foreach (CompiledParameter parameter in declared.Parameters)
                     {
-                        slots.Add(builder.Scope.Declare(parameter.Name));
+                        slots.Add(parameter.IsOpen
+                            ? builder.Scope.DeclareOpen(parameter.Name)
+                            : builder.Scope.Declare(parameter.Name));
                     }
 
-                    ExpressionNode when = builder.BuildExpression(
-                        RequireProperty(input.Value, "when", inputPath),
-                        inputPath.Append("when"));
+                    // Evaluated per candidate, exactly as the component's own guard is, so an
+                    // open parameter is no more readable here than there. Whether a parameter
+                    // is open is part of what an input is, and it crosses the `uses` boundary
+                    // with the rest of its shape.
+                    ExpressionNode when;
+                    using (builder.Scope.BarOpen())
+                    {
+                        when = builder.BuildExpression(
+                            RequireProperty(input.Value, "when", inputPath),
+                            inputPath.Append("when"));
+                    }
 
                     constraints.Add(new HeldConstraint
                     {
@@ -1136,5 +1360,22 @@ namespace Rulealize.Internal.Building
             names.Length is 1
                 ? $"'{names[0]}'"
                 : string.Join(", ", names[..^1].Select(static name => $"'{name}'")) + $" and '{names[^1]}'";
+
+        /// <summary>A parameter as the document declared it, before its name is in scope.</summary>
+        /// <remarks>
+        /// Exactly one of <paramref name="Domain"/> and <paramref name="Open"/> is set. Both
+        /// are built before the parameter scope opens, so neither can read another parameter.
+        /// </remarks>
+        /// <param name="Name">The parameter name.</param>
+        /// <param name="Domain">The expression its candidates are enumerated from, where it has one.</param>
+        /// <param name="Open">The schema admitting a value from outside, where it is open.</param>
+        /// <param name="OpenOp">The <c>op</c> that schema node was written as.</param>
+        /// <param name="OpenField">The state field the schema was taken from, where it was.</param>
+        private readonly record struct DeclaredParameter(
+            string Name,
+            ExpressionNode? Domain,
+            SchemaNode? Open,
+            string? OpenOp,
+            string? OpenField);
     }
 }

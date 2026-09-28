@@ -54,6 +54,26 @@ Not every rule set settles its next state from the input alone. Where an operati
 
 An input that draws nothing has exactly one outcome, of probability one, so a traversal is `GetValidInputs` then `GetOutcomes` whether a rule set has chance in it or not.
 
+### A Value the Rule Set Does Not Choose
+
+A parameter usually has a `domain`, and `GetValidInputs` forms a candidate per value in it and
+puts each to the guard — so a move it hands back is one the rules have already allowed. Where
+a value comes from outside instead, typed by somebody or arriving from another system, there is
+nothing to enumerate. Such a parameter is declared `open`, and what stands where the domain
+would be is a schema node: the same vocabulary `state.schema` is written in, because admitting
+a value is what one already does. `{ "open": { "field": "name" } }` takes that field's own
+schema node, so a parameter edited into a field cannot disagree with it about what is
+admissible.
+
+The move then comes back **incomplete** — `ValidInput.Open` names what is missing,
+`IsComplete` is false, and `ToInputDocument` refuses it rather than writing a document that
+would mean a different move. Whether this particular value is allowed is asked when it arrives,
+by the input's `validate` clauses, each carrying a code rather than a sentence because wording
+belongs to a label document. Two refusals at compile time keep the division honest: only an
+input with an open parameter may be validated, and a clause that reads no open parameter
+belongs in `when`. Between them, a complete move `GetValidInputs` offers is still a move that
+will apply.
+
 ### Retrieving Valid Inputs for a Given State
 
 Use `RuleContext.GetValidInputs`.

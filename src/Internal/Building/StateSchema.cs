@@ -23,6 +23,7 @@ namespace Rulealize.Internal.Building
     internal sealed class StateSchema : IStateSchemaResolver
     {
         private readonly Dictionary<string, StatePath> _byName = new(StringComparer.Ordinal);
+        private readonly Dictionary<string, string> _ops = new(StringComparer.Ordinal);
         private readonly List<StatePath> _fields = [];
 
         /// <summary>Gets the fields, in declaration order.</summary>
@@ -34,8 +35,9 @@ namespace Rulealize.Internal.Building
         /// <summary>Declares a field.</summary>
         /// <param name="name">The field name.</param>
         /// <param name="schema">Its schema node.</param>
+        /// <param name="op">The operation the schema was written as, where a document wrote one.</param>
         /// <returns>The resolved path, or <see langword="null"/> when the name is already taken.</returns>
-        public StatePath? Declare(string name, SchemaNode schema)
+        public StatePath? Declare(string name, SchemaNode schema, string? op = null)
         {
             if (_byName.ContainsKey(name))
             {
@@ -44,9 +46,25 @@ namespace Rulealize.Internal.Building
 
             StatePath path = new(name, _fields.Count, schema);
             _byName.Add(name, path);
+            if (op is not null)
+            {
+                _ops.Add(name, op);
+            }
+
             _fields.Add(path);
             return path;
         }
+
+        /// <summary>Gets what a field's schema was written as, where a document wrote it.</summary>
+        /// <param name="name">The field name.</param>
+        /// <returns>The <c>op</c>, or <see langword="null"/> — a held rule set's field has none.</returns>
+        /// <remarks>
+        /// Kept because a parameter may take its schema from a field, and a host offering an
+        /// editor for one reads <c>SchemaNode.Describe</c> against the operation the schema
+        /// was written as. The node itself does not carry the name it was built from, and
+        /// nothing else in the runtime needs it.
+        /// </remarks>
+        public string? OpOf(string name) => _ops.GetValueOrDefault(name);
 
         /// <inheritdoc />
         public bool TryResolve(string path, [NotNullWhen(true)] out StatePath? resolved) =>
