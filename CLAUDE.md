@@ -74,7 +74,9 @@ by the input's `validate` clauses, each carrying a code rather than a sentence b
 belongs to a label document. Two refusals at compile time keep the division honest: only an
 input with an open parameter may be validated, and a clause that reads no open parameter
 belongs in `when`. Between them, a complete move `GetValidInputs` offers is still a move that
-will apply.
+will apply. A value the schema itself refuses — which a form built from `Description` never
+sends, but another system can — is the rule set's to name too: a parameter's `invalid` gives
+that refusal a code, and one with none comes back as the schema's English sentence.
 
 ### What the Rule Set Says About a Position
 

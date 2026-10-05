@@ -43,6 +43,14 @@ namespace Rulealize
     /// passed is evaluated anyway, and faults if the state it assumed does not hold.
     /// </para>
     /// <para>
+    /// A value an open parameter's schema refuses is among <see cref="Rejections"/> under the
+    /// code the parameter's <c>invalid</c> gives it, ahead of what the clauses refuse. Where
+    /// the parameter gives none, the rule set has not said what that refusal is called, and it
+    /// is in <see cref="Unexplained"/> as the schema's own sentence instead. A refusal that is
+    /// nothing but those sentences is thrown as a plain <see cref="IllegalInputException"/>,
+    /// which is what it was before a rule set could name one.
+    /// </para>
+    /// <para>
     /// Nothing has been written when this is thrown. Evaluation is pure until a transition
     /// commits, so a host may apply an input to find out whether it is acceptable and lose
     /// nothing by the answer being no.
@@ -54,14 +62,57 @@ namespace Rulealize
         /// <param name="input">The input that was refused.</param>
         /// <param name="rejections">Every clause that refused it, in the order written.</param>
         public InputRejectedException(string input, ImmutableArray<InputRejection> rejections)
-            : base(input, Describe(input, rejections)) => Rejections = rejections;
+            : this(input, rejections, [])
+        {
+        }
 
-        /// <summary>Gets what refused it, in the order the clauses are written.</summary>
+        /// <summary>Initializes a new instance of the <see cref="InputRejectedException"/> class.</summary>
+        /// <param name="input">The input that was refused.</param>
+        /// <param name="rejections">Every refusal the rule set gave a code, in the order written.</param>
+        /// <param name="unexplained">Every refusal it gave none, as the schema worded it.</param>
+        public InputRejectedException(
+            string input,
+            ImmutableArray<InputRejection> rejections,
+            ImmutableArray<string> unexplained)
+            : base(input, Describe(input, rejections, unexplained))
+        {
+            Rejections = rejections;
+            Unexplained = unexplained;
+        }
+
+        /// <summary>Gets what refused it, in the order the parameters and then the clauses are written.</summary>
         public ImmutableArray<InputRejection> Rejections { get; }
 
-        private static string Describe(string input, ImmutableArray<InputRejection> rejections) =>
-            $"'{input}' does not accept that: "
-            + string.Join(", ", rejections.Select(static rejection => rejection.Code))
-            + ". The wording for a code belongs to a label document rather than to the rule set.";
+        /// <summary>Gets what an open parameter's schema refused where the rule set gave that refusal no code.</summary>
+        /// <remarks>
+        /// One sentence per refusal, in English, each starting with the parameter it is about.
+        /// Empty unless a parameter without an <c>invalid</c> was given a value its schema does
+        /// not admit.
+        /// </remarks>
+        public ImmutableArray<string> Unexplained { get; }
+
+        private static string Describe(
+            string input,
+            ImmutableArray<InputRejection> rejections,
+            ImmutableArray<string> unexplained)
+        {
+            List<string> parts = [];
+            if (!rejections.IsDefaultOrEmpty)
+            {
+                parts.Add(string.Join(", ", rejections.Select(static rejection => rejection.Code)) + ".");
+            }
+
+            if (!unexplained.IsDefaultOrEmpty)
+            {
+                parts.AddRange(unexplained);
+            }
+
+            if (!rejections.IsDefaultOrEmpty)
+            {
+                parts.Add("The wording for a code belongs to a label document rather than to the rule set.");
+            }
+
+            return $"'{input}' does not accept that: " + string.Join(" ", parts);
+        }
     }
 }

@@ -450,8 +450,12 @@ namespace Rulealize
             Part? holder = path.IsEmpty ? null : root.Descend(path.RemoveAt(path.Length - 1));
 
             EvaluationContext context = part.Session.CreateContext(declared.FrameSize);
-            BindArguments(part.Session, request.Input, declared, request, context, cancellationToken);
+            ImmutableArray<Inadmissible> inadmissible =
+                BindArguments(part.Session, request.Input, declared, request, context, cancellationToken);
 
+            // The guard reads no open parameter, so it can be asked even where a schema refused
+            // one — and is asked first, because whether the move was on offer at all is a
+            // different answer from whether the value that came back is one it takes.
             if (declared.Guard is not null
                 && !declared.Guard.Evaluate(context).AsBoolean($"inputs.{request.Input}.when"))
             {
@@ -464,9 +468,9 @@ namespace Rulealize
             // open parameter is a value the rules take. Only an input with an open parameter
             // has any of these, so nothing that was complete when it was offered can be
             // refused here.
-            if (Rejections(request.Input, declared, context) is { IsEmpty: false } rejected)
+            if (Refusal(request.Input, declared, context, inadmissible) is IllegalInputException refused)
             {
-                throw new InputRejectedException(request.Input, rejected);
+                throw refused;
             }
 
             ImmutableArray<RuleValue> arguments =
@@ -743,8 +747,15 @@ namespace Rulealize
         /// opaque value arrives as the text it was written as; substituting the value it
         /// matched leaves every expression downstream seeing exactly what the search saw.
         /// </para>
+        /// <para>
+        /// An open parameter has no domain, and what its schema refuses is handed back rather
+        /// than thrown: that is a refusal of the value, which is answered beside what
+        /// <c>validate</c> refuses and after the guard has said whether the move was on offer.
+        /// A parameter refused that way is left unbound, and nothing reads it — the guard
+        /// cannot, and a clause that would is not asked.
+        /// </para>
         /// </remarks>
-        private static void BindArguments(
+        private static ImmutableArray<Inadmissible> BindArguments(
             EvaluationSession session,
             string name,
             CompiledInput declared,
@@ -758,6 +769,8 @@ namespace Rulealize
                 ? context
                 : session.CreateContext(declared.FrameSize);
 
+            ImmutableArray<Inadmissible>.Builder inadmissible = ImmutableArray.CreateBuilder<Inadmissible>();
+
             foreach (CompiledParameter parameter in declared.Parameters)
             {
                 if (!request.Arguments.TryGetValue(parameter.Name, out JsonElement supplied))
@@ -766,16 +779,26 @@ namespace Rulealize
                         $"'{name}' takes a '{parameter.Name}', and the input document does not give one.");
                 }
 
+                if (parameter.Open is SchemaNode open)
+                {
+                    if (Admit(parameter.Name, open, supplied, out RuleValue value) is { IsEmpty: false } violations)
+                    {
+                        inadmissible.Add(new Inadmissible(parameter.Name, parameter.Invalid, violations));
+                        continue;
+                    }
+
+                    context.Seed(parameter.Slot, value);
+                    continue;
+                }
+
                 context.Seed(
                     parameter.Slot,
-                    parameter.Open is SchemaNode open
-                        ? Admit(name, parameter.Name, open, supplied)
-                        : Resolve(
-                            name,
-                            parameter,
-                            InputDocument.ReadValue(supplied, parameter.Name),
-                            domainContext,
-                            cancellationToken));
+                    Resolve(
+                        name,
+                        parameter,
+                        InputDocument.ReadValue(supplied, parameter.Name),
+                        domainContext,
+                        cancellationToken));
             }
 
             foreach (string supplied in request.Arguments.Keys)
@@ -785,7 +808,15 @@ namespace Rulealize
                     throw new RuleDocumentException($"'{name}' has no parameter named '{supplied}'.");
                 }
             }
+
+            return inadmissible.ToImmutable();
         }
+
+        /// <summary>A value an open parameter's schema refused, and what the rule set calls that.</summary>
+        /// <param name="Parameter">The parameter.</param>
+        /// <param name="Code">The parameter's <c>invalid</c>, or null where it has none.</param>
+        /// <param name="Violations">What the schema said is wrong, each starting with the parameter.</param>
+        private readonly record struct Inadmissible(string Parameter, string? Code, ImmutableArray<string> Violations);
 
         /// <summary>Finds the value in a parameter's domain that an argument names.</summary>
         /// <remarks>
@@ -832,22 +863,69 @@ namespace Rulealize
         /// checking it a second time would only name the same mistake twice.
         /// </para>
         /// </remarks>
-        private static RuleValue Admit(string input, string parameter, SchemaNode open, JsonElement supplied)
+        /// <returns>What the schema refused, each starting with the parameter; empty when it admits the value.</returns>
+        private static ImmutableArray<string> Admit(
+            string parameter,
+            SchemaNode open,
+            JsonElement supplied,
+            out RuleValue value)
         {
             SchemaViolations violations = new();
-            RuleValue value = open.ReadJson(supplied, violations.For(parameter));
+            value = open.ReadJson(supplied, violations.For(parameter));
 
             if (!violations.Any)
             {
                 open.Validate(value, violations.For(parameter));
             }
 
-            if (violations.Any)
+            return violations.Messages;
+        }
+
+        /// <summary>Says why the arguments that came back are refused, or <see langword="null"/> when they are not.</summary>
+        /// <remarks>
+        /// <para>
+        /// What the schemas refused comes first, in parameter order, and then what the clauses
+        /// refuse, in the order they are written — every one of them, so a form wrong in three
+        /// places takes one round trip to learn that. A refusal the rule set gave a code is a
+        /// rejection under that code; one it gave none is the schema's sentence.
+        /// </para>
+        /// <para>
+        /// Where nothing but those sentences refuses, the answer is a plain
+        /// <see cref="IllegalInputException"/> carrying them, as it was before a rule set could
+        /// name the refusal: a rule set that named none has said nothing a host could key on.
+        /// </para>
+        /// </remarks>
+        private static IllegalInputException? Refusal(
+            string name,
+            CompiledInput declared,
+            EvaluationContext context,
+            ImmutableArray<Inadmissible> inadmissible)
+        {
+            ImmutableArray<InputRejection>.Builder rejected = ImmutableArray.CreateBuilder<InputRejection>();
+            ImmutableArray<string>.Builder unexplained = ImmutableArray.CreateBuilder<string>();
+
+            foreach (Inadmissible refused in inadmissible)
             {
-                throw new IllegalInputException(input, string.Join(" ", violations.Messages));
+                if (refused.Code is string code)
+                {
+                    rejected.Add(new InputRejection(code, refused.Parameter));
+                }
+                else
+                {
+                    unexplained.AddRange(refused.Violations);
+                }
             }
 
-            return value;
+            rejected.AddRange(Rejections(name, declared, context, [.. inadmissible.Select(static refused => refused.Parameter)]));
+
+            if (rejected.Count > 0)
+            {
+                return new InputRejectedException(name, rejected.ToImmutable(), unexplained.ToImmutable());
+            }
+
+            return unexplained.Count > 0
+                ? new IllegalInputException(name, string.Join(" ", unexplained))
+                : null;
         }
 
         /// <summary>Asks every clause of an input's <c>validate</c>, and collects what refuses.</summary>
@@ -855,12 +933,15 @@ namespace Rulealize
         /// Every clause is evaluated rather than stopping at the first failure, because a form
         /// wrong in three places should take one round trip to learn that and not three. The
         /// cost is that a clause relying on an earlier one having passed is evaluated anyway,
-        /// which is why they are written independent of each other.
+        /// which is why they are written independent of each other. The exception is a clause
+        /// reading a parameter whose schema refused its value: there is no value of the kind it
+        /// was written against, and that parameter has already been refused.
         /// </remarks>
         private static ImmutableArray<InputRejection> Rejections(
             string name,
             CompiledInput declared,
-            EvaluationContext context)
+            EvaluationContext context,
+            ImmutableArray<string> unbound)
         {
             if (declared.Validations.IsEmpty)
             {
@@ -873,6 +954,11 @@ namespace Rulealize
             for (int i = 0; i < declared.Validations.Length; i++)
             {
                 CompiledValidation clause = declared.Validations[i];
+                if (clause.Reads.Any(unbound.Contains))
+                {
+                    continue;
+                }
+
                 if (!clause.Require.Evaluate(context).AsBoolean($"inputs.{name}.validate[{i}].require"))
                 {
                     refused.Add(new InputRejection(clause.Code, clause.Parameter));
@@ -1407,7 +1493,7 @@ namespace Rulealize
             // After the guard, as on the applying path: whether the input was available at all
             // is a different question from whether this argument is one it takes, and asking
             // them in one order everywhere is what makes the two paths give one answer.
-            if (Rejections(fire.Name, declared, bound) is { IsEmpty: false } rejected)
+            if (Rejections(fire.Name, declared, bound, []) is { IsEmpty: false } rejected)
             {
                 return new Fired(
                     false,

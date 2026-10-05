@@ -68,9 +68,9 @@ opens itself, and what it takes from each.
 | `held.<alias>.<input>` | `when` | required. The alias has to be one `uses` declares and the input one that rule set has |
 | `inputs.<name>` | `params` `actor` `when` `validate` `effects` `fires` | `effects` is required unless `fires` is written; the rest are not. `validate` only where a parameter is `open`. A name may not contain `.` |
 | `inputs.<name>.fires[]` | `held` `input` `args` | `held` and `input` are required; `args` gives one value per parameter of the input named, and no other |
-| `inputs.<name>.params.<name>` | `domain` `open` | exactly one of the two |
+| `inputs.<name>.params.<name>` | `domain` `open` `invalid` | exactly one of `domain` and `open`; `invalid` only beside `open` |
 | `inputs.<name>.params.<name>.open` | a schema node, or `field` | `field` names a state field and is the whole of that form |
-| `inputs.<name>.validate[]` | `require` `code` | both required; `code` is unique within the input |
+| `inputs.<name>.validate[]` | `require` `code` | both required; `code` is unique within the input, across every `invalid` as well |
 | `projections.<name>` | the value **is** the expression | the section is optional. A name may not contain `.` |
 | `terminal` | `when` `result` | the section is optional; `when` is required once it is written and `result` is not |
 
@@ -395,7 +395,11 @@ whichever keeps the candidate count down.
 `validate` is asked on the applying side only, after the guard and before anything a holder
 says, and every clause is evaluated rather than stopping at the first failure. A refusal is an
 `InputRejectedException` carrying each clause's code and the parameter it is about; nothing has
-been written when it is raised, because evaluation is pure until a transition commits. An input
+been written when it is raised, because evaluation is pure until a transition commits. A value
+an open parameter's schema refuses is answered at the same point, after the guard: under the
+parameter's `invalid` code ahead of the clauses where it has one, and otherwise as the schema's
+sentence in `Unexplained` — or, where nothing else refused, as the plain `IllegalInputException`
+it always was. A clause reading a refused parameter is not asked. An input
 driven by a composite is held to its own clauses too — its arguments are expressions, so there
 is no hole and they can be asked while candidates are still being formed.
 
