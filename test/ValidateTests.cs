@@ -183,6 +183,130 @@ namespace Rulealize.Tests
             Assert.Contains("note.reserved", refused.Message, StringComparison.Ordinal);
         }
 
+        [Fact]
+        public void AValueItsSchemaRefusesComesBackAsTheCodeTheParameterGivesIt()
+        {
+            InputRejectedException refused = Assert.Throws<InputRejectedException>(
+                () => Registered(""" "to": "much-too-long-for-twenty", "size": 2 """));
+
+            InputRejection rejection = Assert.Single(refused.Rejections);
+            Assert.Equal("name.malformed", rejection.Code);
+            Assert.Equal("to", rejection.Parameter);
+            Assert.Empty(refused.Unexplained);
+        }
+
+        [Fact]
+        public void AValueOfTheWrongKindIsTheSameRefusal() =>
+            Assert.Equal(
+                "name.malformed",
+                Assert.Single(Assert.Throws<InputRejectedException>(
+                    () => Registered(""" "to": 3, "size": 2 """)).Rejections).Code);
+
+        [Fact]
+        public void WhatTheRuleSetGaveNoCodeComesBackAsTheSchemasSentenceBesideWhatItDid()
+        {
+            // 'to' has a code and 'size' has none. What the rule set named is not lost because
+            // something else it did not name is wrong as well.
+            InputRejectedException refused = Assert.Throws<InputRejectedException>(
+                () => Registered(""" "to": "much-too-long-for-twenty", "size": 12 """));
+
+            Assert.Equal(["name.malformed"], refused.Rejections.Select(r => r.Code));
+
+            // Worded by the schema, as doc/ruleset-guide.md quotes it.
+            Assert.Equal("size: Expected at most 8 but got 12.", Assert.Single(refused.Unexplained));
+        }
+
+        [Fact]
+        public void WhereNothingWasGivenACodeTheRefusalIsWhatItAlwaysWas()
+        {
+            // Every parameter is asked rather than stopping at the first, but a rule set that
+            // named none of these has said nothing a host could key on.
+            IllegalInputException refused = Assert.Throws<IllegalInputException>(
+                () => Context().ApplyToState(
+                    """{ "input": "span", "args": { "from": 100, "to": -1 } }""",
+                    Context().InitialState));
+
+            Assert.Contains("from: ", refused.Message, StringComparison.Ordinal);
+            Assert.Contains("to: ", refused.Message, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void AClauseAboutARefusedValueIsNotAskedAndTheOthersAre()
+        {
+            // "admin" is reserved, but 'to' is refused already and is not a value the clause
+            // was written against. The clause about 'size' is about a value that was admitted.
+            InputRejectedException refused = Assert.Throws<InputRejectedException>(
+                () => Registered(""" "to": 3, "size": 7 """));
+
+            Assert.Equal(["name.malformed", "size.large"], refused.Rejections.Select(r => r.Code));
+        }
+
+        [Fact]
+        public void WhetherTheMoveWasOnOfferIsAnsweredBeforeWhatCameBackForIt()
+        {
+            RuleContext context = standard.Runtime.CreateContext(Register.Replace(
+                "\"when\": true", "\"when\": false", StringComparison.Ordinal));
+
+            IllegalInputException refused = Assert.Throws<IllegalInputException>(
+                () => context.ApplyToState(
+                    """{ "input": "register", "args": { "to": 3, "size": 2 } }""",
+                    context.InitialState));
+
+            Assert.Contains("is not allowed in this state", refused.Message, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void OnlyAnOpenParameterNamesTheRefusalOfAValueFromOutside() =>
+            Assert.Contains("is never given one", Rejects($$"""
+                { {{Preamble}} "inputs": { "go": {
+                  "params": { "x": { "domain": { "op": "seq.of", "of": [1, 2] }, "invalid": "x.bad" } },
+                  "effects": [] } } }
+                """), StringComparison.Ordinal);
+
+        [Fact]
+        public void AParametersCodeAndAClausesCodeNameDifferentRefusals() =>
+            Assert.Contains("already used by params.x.invalid", Rejects($$"""
+                { {{Preamble}} "inputs": { "go": {
+                  "params": { "x": { "open": { "op": "type.int" }, "invalid": "x.bad" } },
+                  "validate": [ { "require": { "op": "cmp.lt", "left": "@x", "right": 5 }, "code": "x.bad" } ],
+                  "effects": [] } } }
+                """), StringComparison.Ordinal);
+
+        [Fact]
+        public void ACodeIsALiteralString() =>
+            Assert.Contains("must be a literal string", Rejects($$"""
+                { {{Preamble}} "inputs": { "go": {
+                  "params": { "x": { "open": { "op": "type.int" }, "invalid": 3 } },
+                  "effects": [] } } }
+                """), StringComparison.Ordinal);
+
+        /// <summary>One parameter whose refusal the rule set names, and one whose it does not.</summary>
+        private const string Register = $$"""
+            {
+              "id": "register", "version": "1.0.0",
+            {{Requires}}
+              "state": { "schema": { "name": { "op": "type.string", "maxLength": 20 } },
+                         "initial": { "name": "" } },
+              "inputs": {
+                "register": {
+                  "params": {
+                    "to": { "open": { "op": "type.string", "maxLength": 20 }, "invalid": "name.malformed" },
+                    "size": { "open": { "op": "type.int", "min": 1, "max": 8 } }
+                  },
+                  "when": true,
+                  "validate": [
+                    { "require": { "op": "logic.not", "value":
+                        { "op": "cmp.eq", "left": "@to", "right": "admin" } },
+                      "code": "name.reserved" },
+                    { "require": { "op": "cmp.lt", "left": "@size", "right": 7 },
+                      "code": "size.large" }
+                  ],
+                  "effects": [ { "op": "state.set", "path": "name", "value": "@to" } ]
+                }
+              }
+            }
+            """;
+
         /// <summary>A component that refuses one particular value.</summary>
         private const string Note = $$"""
             {
@@ -232,6 +356,12 @@ namespace Rulealize.Tests
 
             using System.Text.Json.JsonDocument document = System.Text.Json.JsonDocument.Parse(state);
             return document.RootElement.GetProperty("data").GetProperty("name").GetString()!;
+        }
+
+        private void Registered(string args)
+        {
+            RuleContext context = standard.Runtime.CreateContext(Register);
+            context.ApplyToState($$"""{ "input": "register", "args": { {{args}} } }""", context.InitialState);
         }
 
         private string Rejects(string ruleSet) =>

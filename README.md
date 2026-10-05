@@ -406,7 +406,7 @@ the version's.
 | `ValidInput.Open` / `IsComplete` / `ValidInputSet.HasOpenParameters` | what a move is still waiting for, where a rule set leaves a parameter `open`, and whether anything in the answer is |
 | `OpenParameter.Description` / `Field` / `Op` | the bounds the admitting schema declares, the state field it is edited into, and the operation to read both against |
 | `ValidInput.ToInputDocument(ruleSet, open)` | write out a move that was waiting, supplying what it waited for |
-| `InputRejectedException.Rejections` | which clauses refused the value supplied for one, each with its code and the parameter it is about |
+| `InputRejectedException.Rejections` / `Unexplained` | what refused the values supplied for them, each with its code and the parameter it is about — and what a schema refused where the rule set gave it no code |
 | `ValidInput.ToInputDocument` / `Outcome.ToOutcomeDocument` | write one back out, to be fed in again or recorded |
 | `ValidInputSet` / `OutcomeSet` / `TransitionResult` `.ToJson` | the same, for a whole answer, where a host is a boundary rather than a caller |
 | `RuleRuntime.Skipped` | what a folder sweep took for a plugin and could not use, with the reason |
@@ -427,7 +427,7 @@ Exceptions: `RuleSetBuildException` for a document that is not a valid rule set,
 `RuleDocumentException` for a state, input or outcome document this rule set cannot accept,
 `IllegalInputException` for a move the rules do not allow — `InputRejectedException` is the
 kind of that one meaning the move *was* on offer and the value supplied for an open parameter
-is what is wrong, and it carries a code per clause that refused — `RuleEvaluationException` for
+is what is wrong, and it carries a code per refusal the rule set named — `RuleEvaluationException` for
 values that make an operation meaningless, and `PluginLoadException` for a plugin that cannot
 be used or a set of them that cannot be used together — two claiming one identifier or one
 namespace, but never two reserving one shorthand character, which is recorded rather than

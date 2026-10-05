@@ -701,6 +701,12 @@ namespace Rulealize.Internal.Building
             // parameter's schema node is built here for a blunter reason — a schema node is
             // never evaluated, so there is nothing for it to depend on.
             List<DeclaredParameter> declared = [];
+
+            // Every code a refusal of this input can come back as, and where it was written:
+            // an open parameter's 'invalid' and a validate clause's 'code' are read off the same
+            // refusal by the same host, so one name may not stand for two of them.
+            Dictionary<string, string> codes = new(StringComparer.Ordinal);
+
             if (element.TryGetProperty("params", out JsonElement parameters))
             {
                 SourcePath parametersPath = path.Append("params");
@@ -719,7 +725,7 @@ namespace Rulealize.Internal.Building
                             "must be an object with a 'domain' or an 'open'.");
                     }
 
-                    OnlyTheseKeys(parameter.Value, parameterPath, "a parameter", "domain", "open");
+                    OnlyTheseKeys(parameter.Value, parameterPath, "a parameter", "domain", "open", "invalid");
 
                     bool hasDomain = parameter.Value.TryGetProperty("domain", out JsonElement domain);
                     bool hasOpen = parameter.Value.TryGetProperty("open", out JsonElement open);
@@ -736,6 +742,22 @@ namespace Rulealize.Internal.Building
                                   + "'open', a schema admitting a value that comes from outside.");
                     }
 
+                    string? invalid = null;
+                    if (parameter.Value.TryGetProperty("invalid", out _))
+                    {
+                        if (hasDomain)
+                        {
+                            throw new RuleSetBuildException(
+                                parameterPath.Append("invalid"),
+                                "names the refusal of a value from outside, and a parameter with a "
+                                + "'domain' is never given one: an argument outside its domain is a "
+                                + "move the rules did not offer.");
+                        }
+
+                        invalid = RequireString(parameter.Value, "invalid", parameterPath);
+                        Claim(codes, invalid, $"params.{parameter.Name}.invalid", parameterPath.Append("invalid"));
+                    }
+
                     declared.Add(hasDomain
                         ? new DeclaredParameter(
                             parameter.Name,
@@ -743,7 +765,10 @@ namespace Rulealize.Internal.Building
                             null,
                             null,
                             null)
-                        : CompileOpen(builder, parameter.Name, open, parameterPath.Append("open")));
+                        : CompileOpen(builder, parameter.Name, open, parameterPath.Append("open")) with
+                        {
+                            Invalid = invalid
+                        });
                 }
             }
 
@@ -768,7 +793,8 @@ namespace Rulealize.Internal.Building
                         Domain = parameter.Domain,
                         Open = parameter.Open,
                         OpenOp = parameter.OpenOp,
-                        OpenField = parameter.OpenField
+                        OpenField = parameter.OpenField,
+                        Invalid = parameter.Invalid
                     });
                 }
 
@@ -791,7 +817,8 @@ namespace Rulealize.Internal.Building
                     builder,
                     element,
                     path,
-                    declared.Any(static parameter => parameter.Open is not null));
+                    declared.Any(static parameter => parameter.Open is not null),
+                    codes);
 
                 effects = CompileEffects(builder, element, path, fires.Length > 0);
             }
@@ -893,7 +920,8 @@ namespace Rulealize.Internal.Building
             NodeBuilder builder,
             JsonElement element,
             SourcePath path,
-            bool anyOpen)
+            bool anyOpen,
+            Dictionary<string, string> codes)
         {
             if (!element.TryGetProperty("validate", out JsonElement section))
             {
@@ -917,7 +945,6 @@ namespace Rulealize.Internal.Building
 
             ImmutableArray<CompiledValidation>.Builder clauses =
                 ImmutableArray.CreateBuilder<CompiledValidation>();
-            Dictionary<string, int> seen = new(StringComparer.Ordinal);
             int index = 0;
 
             foreach (JsonElement entry in section.EnumerateArray())
@@ -933,15 +960,7 @@ namespace Rulealize.Internal.Building
                 OnlyTheseKeys(entry, entryPath, "a validate clause", "require", "code");
 
                 string code = RequireString(entry, "code", entryPath);
-                if (seen.TryGetValue(code, out int first))
-                {
-                    throw new RuleSetBuildException(
-                        entryPath.Append("code"),
-                        $"'{code}' is already used by validate[{first}]. A code names one refusal, "
-                        + "because it is what a host shows a message for.");
-                }
-
-                seen[code] = index;
+                Claim(codes, code, $"validate[{index}]", entryPath.Append("code"));
 
                 ImmutableArray<string> read;
                 ExpressionNode require;
@@ -966,16 +985,31 @@ namespace Rulealize.Internal.Building
                 {
                     Require = require,
                     Code = code,
-
-                    // One parameter means the refusal belongs against that field; several mean
-                    // it belongs to the form.
-                    Parameter = read.Length is 1 ? read[0] : null
+                    Reads = read
                 });
 
                 index++;
             }
 
             return clauses.ToImmutable();
+        }
+
+        /// <summary>Takes a refusal code for one place in an input, unless another place already has it.</summary>
+        /// <param name="codes">The codes taken so far, and where.</param>
+        /// <param name="code">The code.</param>
+        /// <param name="where">Where it is written, as the message names it.</param>
+        /// <param name="path">Where it is written, as the document addresses it.</param>
+        private static void Claim(Dictionary<string, string> codes, string code, string where, SourcePath path)
+        {
+            if (codes.TryGetValue(code, out string? first))
+            {
+                throw new RuleSetBuildException(
+                    path,
+                    $"'{code}' is already used by {first}. A code names one refusal, "
+                    + "because it is what a host shows a message for.");
+            }
+
+            codes[code] = where;
         }
 
         /// <summary>Compiles <c>fires</c>: the held inputs one of the composite's own drives.</summary>
@@ -1444,11 +1478,13 @@ namespace Rulealize.Internal.Building
         /// <param name="Open">The schema admitting a value from outside, where it is open.</param>
         /// <param name="OpenOp">The <c>op</c> that schema node was written as.</param>
         /// <param name="OpenField">The state field the schema was taken from, where it was.</param>
+        /// <param name="Invalid">The code a value that schema refuses comes back as, where the document gives one.</param>
         private readonly record struct DeclaredParameter(
             string Name,
             ExpressionNode? Domain,
             SchemaNode? Open,
             string? OpenOp,
-            string? OpenField);
+            string? OpenField,
+            string? Invalid = null);
     }
 }

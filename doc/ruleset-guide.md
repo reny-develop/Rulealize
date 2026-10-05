@@ -615,7 +615,9 @@ which it owns, so an open parameter accepts exactly what a field of that schema 
 the same way. A list parameter therefore takes a list, which no domain argument could
 ([§12](#12-the-three-documents-that-travel)).
 
-Exactly one of `domain` and `open`, and a parameter with both or neither is refused.
+Exactly one of `domain` and `open`, and a parameter with both or neither is refused. An open
+parameter may also name what refusing its value is called, with `invalid`
+([below](#a-value-the-schema-refuses)).
 
 **A parameter that is simply a field's editor names the field instead.**
 
@@ -749,7 +751,8 @@ the wording used would be false. A host with no label for a code shows the code,
 honest in a way an invented phrase is not.
 
 A refusal comes back as an `InputRejectedException`, which is a kind of `IllegalInputException`
-and carries every clause that refused, each with its code and the parameter it is about. The
+and carries every clause that refused, each with its code and the parameter it is about — after
+any value a schema refused, below. The
 parameter is **inferred** from what the clause read: one open parameter means the refusal
 belongs against that field, several mean it belongs to the form. So a document says which
 field a rule is about by writing the rule, not by writing it and then saying so.
@@ -782,6 +785,41 @@ string vocabulary at present, so a rule about the *shape* of text — a length, 
 class — goes in the schema the parameter is open to, and `validate` is left with what only the
 state can settle: whether the name is taken, whether it differs from the current one, whether
 this actor may use it.
+
+#### A value the schema refuses
+
+A host that builds its form from `Description` never sends a value the schema refuses. A value
+that arrives some other way — from another system, from a file — can be one, and that refusal
+is the rule set's to name as much as a clause's is. `invalid` names it:
+
+```jsonc
+"params": {
+  "to":   { "open": { "op": "type.string", "maxLength": 20 }, "invalid": "name.malformed" },
+  "size": { "open": { "op": "type.int", "min": 1, "max": 8 } }
+}
+```
+
+Given a 21-character `to` and a `size` of 12, `ApplyToState` throws:
+
+```
+InputRejectedException
+  Rejections  = [ ("name.malformed", "to") ]
+  Unexplained = [ "size: Expected at most 8 but got 12." ]
+```
+
+- **A parameter with `invalid`** is refused under that code, against itself, ahead of what the
+  clauses refuse. It is one code for whatever the schema refused — a length, a kind — and the
+  bounds a label needs to say which are in `Description`.
+- **A parameter without one** has not had that refusal named, so it comes back as the schema's
+  own English sentence in `Unexplained`. Where that is all that refuses, the answer is a plain
+  `IllegalInputException` carrying the sentences, as it was before `invalid` existed.
+- **A clause reading a refused parameter is not asked**: there is no value of the kind it was
+  written against. Clauses about the other parameters are.
+
+All of this is answered after `when`, so a move that was not on offer is refused as one whatever
+came back for it. A code is one refusal across `invalid` and `validate` alike, so the same code
+written in both places is refused, as is `invalid` on a parameter with a `domain` — an argument
+outside a domain is a move the rules did not offer, not a value they declined.
 
 ### `effects` — what it does
 

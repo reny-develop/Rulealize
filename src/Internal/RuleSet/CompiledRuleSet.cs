@@ -218,6 +218,14 @@ namespace Rulealize.Internal.RuleSet
         /// </remarks>
         public required string? OpenField { get; init; }
 
+        /// <summary>Gets the code the rule set gave a value its open schema does not admit, or null where it gave none.</summary>
+        /// <remarks>
+        /// Where there is one, a value the schema refuses comes back as a refusal with this
+        /// code, beside what <c>validate</c> refuses. Where there is none the rule set has not
+        /// said what that refusal is called, and it comes back as the schema's own sentence.
+        /// </remarks>
+        public string? Invalid { get; init; }
+
         /// <summary>Gets a value indicating whether this parameter takes a value from outside.</summary>
         public bool IsOpen => Open is not null;
     }
@@ -236,12 +244,19 @@ namespace Rulealize.Internal.RuleSet
         /// <summary>Gets the code naming this refusal, unique within the input.</summary>
         public required string Code { get; init; }
 
+        /// <summary>Gets the open parameters this clause reads, as it resolved them while it was built.</summary>
+        /// <remarks>
+        /// A clause reading a parameter whose value its schema refused is not asked: the value
+        /// is not one the clause was written against, and asking would fault rather than refuse.
+        /// </remarks>
+        public required ImmutableArray<string> Reads { get; init; }
+
         /// <summary>Gets the one open parameter this clause reads, or null where it reads several.</summary>
         /// <remarks>
-        /// Inferred from what the clause resolved while it was built, so a host can put the
-        /// refusal against the field it is about without the document saying so twice.
+        /// Inferred from <see cref="Reads"/>, so a host can put the refusal against the field it
+        /// is about without the document saying so twice.
         /// </remarks>
-        public required string? Parameter { get; init; }
+        public string? Parameter => Reads.Length is 1 ? Reads[0] : null;
     }
 
     /// <summary>One entry of <c>projections</c>: a question a rule set answers about a state.</summary>
