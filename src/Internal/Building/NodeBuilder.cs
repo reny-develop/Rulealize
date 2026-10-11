@@ -21,6 +21,11 @@ namespace Rulealize.Internal.Building
     /// knows what any operation means.
     /// </para>
     /// <para>
+    /// The exception is <c>literal</c>, the core's own, because the problem it answers is
+    /// the core's own: shorthands are read here, so text that only looks like one has to be
+    /// writable here too.
+    /// </para>
+    /// <para>
     /// Which table is consulted depends on where the JSON was found, so asking for an
     /// expression and finding <c>grid.set</c> fails now, with the document in hand, rather
     /// than on the forty-first candidate of a <c>GetValidInputs</c> call.
@@ -36,6 +41,13 @@ namespace Rulealize.Internal.Building
     /// </remarks>
     internal sealed class NodeBuilder
     {
+        /// <summary>The one operation the core reads itself: text written as nothing but text.</summary>
+        /// <remarks>
+        /// Unqualified, so no plugin can ever register it — registration puts every name a
+        /// plugin provides under that plugin's namespace.
+        /// </remarks>
+        private const string Literal = "literal";
+
         private readonly OperationTable _operations;
         private readonly ImmutableArray<string> _required;
         private SourcePath _path;
@@ -81,6 +93,11 @@ namespace Rulealize.Internal.Building
                     if (!TryReadOperation(element, path, out string? op))
                     {
                         return BuildRecord(element, path);
+                    }
+
+                    if (string.Equals(op, Literal, StringComparison.Ordinal))
+                    {
+                        return BuildLiteral(element, path);
                     }
 
                     Declared(op!, path);
@@ -209,7 +226,8 @@ namespace Rulealize.Internal.Building
         private ExpressionNode BuildString(string text, SourcePath path)
         {
             // A leading character some plugin reserved makes this a shorthand. The core
-            // never learns what any of them expand to — only which plugin was meant.
+            // never learns what any of them expand to — only which plugin was meant. Text
+            // that merely begins with one is written as a 'literal' node instead.
             if (text.Length == 0 || !_operations.IsReserved(text[0]))
             {
                 return new LiteralNode(RuleValue.Text(text));
@@ -338,6 +356,26 @@ namespace Rulealize.Internal.Building
                 $"'{op}' comes from {manifest!.Id}, which this rule set does not name in 'requires'.");
         }
 
+        /// <summary>Reads <c>{ "op": "literal", "value": "…" }</c> as the text it holds.</summary>
+        /// <remarks>
+        /// <para>
+        /// A string written where an expression belongs is a shorthand whenever its first
+        /// character is one a plugin reserved, so <c>"@"</c> on its own is a local with no
+        /// name rather than an at sign. This is how such text is written: the value is never
+        /// expanded, whatever it begins with.
+        /// </para>
+        /// <para>
+        /// Only text, because only text has the problem. Every other value already stands for
+        /// itself where it is written, and widening this later breaks no document that
+        /// narrowing it would.
+        /// </para>
+        /// </remarks>
+        private static LiteralNode BuildLiteral(JsonElement element, SourcePath path)
+        {
+            RuleSetCompiler.OnlyTheseKeys(element, path, $"'{Literal}'", "op", "value");
+            return new LiteralNode(RuleValue.Text(RuleSetCompiler.RequireString(element, "value", path)));
+        }
+
         private ExpressionNode BuildRecord(JsonElement element, SourcePath path)
         {
             List<KeyValuePair<string, ExpressionNode>> fields = [];
@@ -370,7 +408,9 @@ namespace Rulealize.Internal.Building
 
         private RuleSetBuildException WrongKind(string op, SourcePath path, string wanted)
         {
-            string? actual = _operations.DescribeKind(op);
+            string? actual = string.Equals(op, Literal, StringComparison.Ordinal)
+                ? "an expression"
+                : _operations.DescribeKind(op);
             return actual is null
                 ? new RuleSetBuildException(
                     path,

@@ -224,6 +224,84 @@ namespace Rulealize.Tests
                 Rejects(Contested, "$twin:anything"),
                 StringComparison.Ordinal);
 
+        [Theory]
+        [InlineData("@")]
+        [InlineData("$n")]
+        [InlineData("#def:seven")]
+        [InlineData("$state:n")]
+        public void ALiteralIsTheTextItHoldsWhateverItBeginsWith(string text) =>
+            Assert.Equal(text, Field(Text(text), "s").GetString());
+
+        [Fact]
+        public void ALiteralNeedsNoVocabularyInRequires() =>
+            // The core reads it, so a document requiring nothing that reserves '@' may still
+            // write an at sign.
+            Assert.Equal("@", Field(Go(Standard.CreateContext("""
+                {
+                  "id": "t", "version": "1.0.0",
+                  "requires": [ { "plugin": "Rulealize.Plugin.TypeSchema" },
+                                { "plugin": "Rulealize.Plugin.State" } ],
+                  "state": { "schema": { "s": { "op": "type.string" } }, "initial": { "s": "" } },
+                  "inputs": { "go": { "effects": [
+                    { "op": "state.set", "path": "s", "value": { "op": "literal", "value": "@" } } ] } }
+                }
+                """)), "s").GetString());
+
+        [Fact]
+        public void ALiteralHoldsOnlyText() =>
+            Assert.Contains(
+                "/value: must be a literal string.",
+                TextRejects("""{ "op": "literal", "value": 1 }"""),
+                StringComparison.Ordinal);
+
+        [Fact]
+        public void ALiteralNeedsAValue() =>
+            Assert.Contains("needs a 'value'.", TextRejects("""{ "op": "literal" }"""), StringComparison.Ordinal);
+
+        [Fact]
+        public void ALiteralTakesNoOtherKey() =>
+            Assert.Contains(
+                "/text: is not a key 'literal' takes; those are 'op' and 'value'.",
+                TextRejects("""{ "op": "literal", "text": "@" }"""),
+                StringComparison.Ordinal);
+
+        [Fact]
+        public void ALiteralIsAnExpressionAndNotAnEffect()
+        {
+            string message = Assert.Throws<RuleSetBuildException>(() => Standard.CreateContext("""
+                {
+                  "id": "t", "version": "1.0.0",
+                  "requires": [ { "plugin": "Rulealize.Plugin.TypeSchema" } ],
+                  "state": { "schema": { "s": { "op": "type.string" } }, "initial": { "s": "" } },
+                  "inputs": { "go": { "effects": [ { "op": "literal", "value": "@" } ] } }
+                }
+                """)).Message;
+
+            Assert.Contains("'literal' is an expression and cannot appear where an effect is expected.", message, StringComparison.Ordinal);
+        }
+
+        /// <summary>A rule set writing a string field from the node given, written out in full.</summary>
+        private const string TextTemplate = """
+            {
+              "id": "t", "version": "1.0.0",
+              "requires": [ { "plugin": "Rulealize.Plugin.TypeSchema" }, { "plugin": "Rulealize.Plugin.State" },
+                            { "plugin": "Rulealize.Plugin.Binding" },    { "plugin": "Rulealize.Plugin.Definition" } ],
+              "state": { "schema": { "s": { "op": "type.string" } }, "initial": { "s": "" } },
+              "definitions": { "seven": 7 },
+              "inputs": { "go": { "effects": [ { "op": "state.set", "path": "s", "value": {{node}} } ] } }
+            }
+            """;
+
+        private static string Text(string text) =>
+            Go(Standard.CreateContext(TextTemplate.Replace(
+                "{{node}}",
+                $$"""{ "op": "literal", "value": {{JsonSerializer.Serialize(text)}} }""",
+                StringComparison.Ordinal)));
+
+        private static string TextRejects(string node) =>
+            Assert.Throws<RuleSetBuildException>(
+                () => Standard.CreateContext(TextTemplate.Replace("{{node}}", node, StringComparison.Ordinal))).Message;
+
         private static string Document(string value, string more) =>
             Template
                 .Replace("{{value}}", value, StringComparison.Ordinal)

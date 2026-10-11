@@ -532,6 +532,10 @@ reserve `$`, and where a rule set requires both it says which it meant by naming
 never by what a plugin folder happens to hold, so what a document means does not change
 when a plugin is added beside it. What changes is whether the bare form still says enough.
 
+Text that begins with a reserved character and is meant as text is the one node the core
+reads itself, `{ "op": "literal", "value": "@" }`: its `value` is never expanded, and it needs
+nothing in `requires`.
+
 That is why `requires` is worth reading. It lists the vocabularies a rule set draws on, and
 it can only say something because the vocabularies are cut finely: a rule set that needs
 `Rulealize.Plugin.Arithmetic` is one that counts something.

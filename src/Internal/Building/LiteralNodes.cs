@@ -10,8 +10,8 @@ namespace Rulealize.Internal.Building
     /// <summary>A JSON scalar written where an expression was expected.</summary>
     /// <remarks>
     /// The kinds that have a JSON form — null, booleans, numbers and text — read as
-    /// themselves. Sequences and opaque values have no literal form and are only ever
-    /// produced by evaluating something.
+    /// themselves, and so does the text of a <c>literal</c> node. Sequences and opaque values
+    /// have no literal form and are only ever produced by evaluating something.
     /// </remarks>
     internal sealed class LiteralNode(RuleValue value) : ExpressionNode
     {
