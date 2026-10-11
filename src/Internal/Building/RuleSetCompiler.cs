@@ -1416,7 +1416,7 @@ namespace Rulealize.Internal.Building
                 ? value
                 : throw new RuleSetBuildException(path, $"needs a '{name}'.");
 
-        private static string RequireString(JsonElement element, string name, SourcePath path)
+        internal static string RequireString(JsonElement element, string name, SourcePath path)
         {
             JsonElement value = RequireProperty(element, name, path);
             return value.ValueKind == JsonValueKind.String
@@ -1444,7 +1444,7 @@ namespace Rulealize.Internal.Building
         /// it is decided here rather than found in production.
         /// </para>
         /// </remarks>
-        private static void OnlyTheseKeys(
+        internal static void OnlyTheseKeys(
             JsonElement element,
             SourcePath path,
             string what,

@@ -342,10 +342,23 @@ The qualifier is read by its own grammar — a namespace and a colon — and nev
 plugin folder happens to hold, so what a document means does not change when a plugin is
 installed beside it.
 
-There is no way to write a literal string that begins with a reserved character, and none is
-provided. The hole is narrower than it looks: only a literal *in the rule set document* is
-expanded, so text arriving in a state document, a key in `branch.match`'s `cases`, and
-anything computed at run time are all unaffected.
+### Text that begins with a reserved character
+
+A string that begins with `$`, `@` or `#` is a shorthand, so `"@"` on its own is a local with
+no name rather than an at sign. Text like that is written as a `literal` node, whose `value` is
+never expanded:
+
+```jsonc
+{ "op": "str.contains", "value": "@email", "part": { "op": "literal", "value": "@" } }
+```
+
+`literal` is the one operation the core reads itself, so it needs nothing in `requires`, and
+no plugin can provide one by the same name. Its `value` is a string and nothing else, because
+every other value already stands for itself where it is written.
+
+Only a literal *in the rule set document* is expanded in the first place, so text arriving in an
+input or a state document, a key in `branch.match`'s `cases`, and anything computed at run time
+need none of this.
 
 ### Reading a form
 

@@ -73,9 +73,11 @@ opens itself, and what it takes from each.
 | `inputs.<name>.validate[]` | `require` `code` | both required; `code` is unique within the input, across every `invalid` as well |
 | `projections.<name>` | the value **is** the expression | the section is optional. A name may not contain `.` |
 | `terminal` | `when` `result` | the section is optional; `when` is required once it is written and `result` is not |
+| `{ "op": "literal" }`, anywhere an expression goes | `op` `value` | `value` is required and is a string, which is never expanded as a shorthand. It needs nothing in `requires` |
 
 Everything below one of those — a schema node, a domain, a guard, an effect — is a node,
-and its keys are read by whichever plugin claimed the `op`.
+and its keys are read by whichever plugin claimed the `op`. `literal` is the one `op` the
+core claims, and being unqualified it is one no plugin can register.
 
 **A key the core does not know is refused**, at every position in that table, with a JSON
 pointer to it. That is worth stating on its own because most of the keys above are optional,

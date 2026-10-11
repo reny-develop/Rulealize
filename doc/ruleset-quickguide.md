@@ -179,6 +179,8 @@ Three string shorthands save the most common nodes:
 | `"@n"` | the argument or binding named `n` |
 | `"#opponent"` | the definition named `opponent` |
 
+Text that has to begin with one of those characters is written `{ "op": "literal", "value": "@" }`.
+
 And every operation is one of three kinds, which decides where it may be written:
 
 | kind | | goes in |
