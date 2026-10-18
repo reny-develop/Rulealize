@@ -40,6 +40,10 @@ namespace Rulealize.Tests
             }
             """;
 
+        /// <summary><see cref="Ledger"/> with LF line endings, for the tests that splice it at a line break.</summary>
+        /// <remarks>A raw string takes the source file's line endings, and a checkout gives this file CRLF.</remarks>
+        private static readonly string Spliced = Ledger.ReplaceLineEndings("\n");
+
         private const string October = "2026-10";
 
         private static readonly StateAddress OctoberAddress = StateAddress.Of("months", October);
@@ -247,7 +251,7 @@ namespace Rulealize.Tests
         [Fact]
         public async Task TheLedgerMayRefuseAMonthsInputByItsKey()
         {
-            RuleContext ledger = Context(new MemoryStore(), Ledger.Replace(
+            RuleContext ledger = Context(new MemoryStore(), Spliced.Replace(
                 "\n  ]\n}",
                 """
                   ],
@@ -318,7 +322,7 @@ namespace Rulealize.Tests
         [Fact]
         public void AKeyedCollectionCreatesNothing()
         {
-            RuleSetBuildException refused = Assert.Throws<RuleSetBuildException>(() => Context(new MemoryStore(), Ledger.Replace(
+            RuleSetBuildException refused = Assert.Throws<RuleSetBuildException>(() => Context(new MemoryStore(), Spliced.Replace(
                 "\n  ]\n}",
                 """
                   ],
@@ -333,7 +337,7 @@ namespace Rulealize.Tests
         [Fact]
         public void EveryMonthIsNotASequenceAProjectionCanRead()
         {
-            RuleSetBuildException refused = Assert.Throws<RuleSetBuildException>(() => Context(new MemoryStore(), Ledger.Replace(
+            RuleSetBuildException refused = Assert.Throws<RuleSetBuildException>(() => Context(new MemoryStore(), Spliced.Replace(
                 "\n  ]\n}",
                 """
                   ],
@@ -348,11 +352,11 @@ namespace Rulealize.Tests
         [Fact]
         public void ARuleSetThatKeepsInstancesIsHeldOnlyMany()
         {
-            int many = Ledger.IndexOf(",\n      \"many\"", StringComparison.Ordinal);
-            int end = Ledger.IndexOf(" }\n  ]", many, StringComparison.Ordinal);
+            int many = Spliced.IndexOf(",\n      \"many\"", StringComparison.Ordinal);
+            int end = Spliced.IndexOf(" }\n  ]", many, StringComparison.Ordinal);
 
             RuleSetBuildException refused = Assert.Throws<RuleSetBuildException>(
-                () => Context(new MemoryStore(), Ledger[..many] + Ledger[end..]));
+                () => Context(new MemoryStore(), Spliced[..many] + Spliced[end..]));
 
             Assert.Contains("held only 'many'", refused.Message, StringComparison.Ordinal);
         }
@@ -360,7 +364,7 @@ namespace Rulealize.Tests
         [Fact]
         public void ACollectionMayNotShareAnAliasWithOneItsInstancesKeep()
         {
-            RuleSetBuildException refused = Assert.Throws<RuleSetBuildException>(() => Context(new MemoryStore(), Ledger.Replace(
+            RuleSetBuildException refused = Assert.Throws<RuleSetBuildException>(() => Context(new MemoryStore(), Spliced.Replace(
                 "\"as\": \"months\"",
                 "\"as\": \"claims\"",
                 StringComparison.Ordinal)));
@@ -371,7 +375,7 @@ namespace Rulealize.Tests
         [Fact]
         public void DrivingAMonthsInputAboutAClaimIsNotSupportedYet()
         {
-            RuleSetBuildException refused = Assert.Throws<RuleSetBuildException>(() => Context(new MemoryStore(), Ledger.Replace(
+            RuleSetBuildException refused = Assert.Throws<RuleSetBuildException>(() => Context(new MemoryStore(), Spliced.Replace(
                 "\n  ]\n}",
                 """
                   ],
