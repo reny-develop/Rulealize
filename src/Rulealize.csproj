@@ -33,7 +33,14 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Rulealize.Abstraction" Version="0.5.0" />
+    <!-- A rule set that keeps instances is read and written through a store plugin. A host
+         reaches it through the store; the pure overloads that take documents by address sit
+         underneath, internal, and the tests ask them directly. -->
+    <InternalsVisibleTo Include="Rulealize.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Rulealize.Abstraction" Version="0.6.0" />
   </ItemGroup>
 
 </Project>

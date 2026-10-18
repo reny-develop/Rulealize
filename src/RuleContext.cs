@@ -6,12 +6,15 @@ using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using Rulealize.Abstraction;
+using Rulealize.Abstraction.Building;
 using Rulealize.Abstraction.Evaluation;
 using Rulealize.Abstraction.Node;
+using Rulealize.Abstraction.Store;
 using Rulealize.Abstraction.Value;
 using Rulealize.Internal.Building;
 using Rulealize.Internal.Document;
 using Rulealize.Internal.Evaluation;
+using Rulealize.Internal.Plugin;
 using Rulealize.Internal.RuleSet;
 
 namespace Rulealize
@@ -33,10 +36,12 @@ namespace Rulealize
     public sealed class RuleContext
     {
         private readonly CompiledRuleSet _ruleSet;
+        private readonly StoreBinding _stores;
 
-        internal RuleContext(CompiledRuleSet ruleSet)
+        internal RuleContext(CompiledRuleSet ruleSet, StoreBinding? stores = null)
         {
             _ruleSet = ruleSet;
+            _stores = stores ?? StoreBinding.None;
         }
 
         /// <summary>Gets the rule set's identifier.</summary>
@@ -83,7 +88,8 @@ namespace Rulealize
         /// <exception cref="RuleEvaluationException">An operation received values that make it meaningless.</exception>
         /// <exception cref="InvalidOperationException">
         /// The input resolves a draw, so it has more than one outcome and cannot be applied
-        /// without one being named.
+        /// without one being named; or the rule set keeps instances as documents of their own,
+        /// so a position is several documents and is passed by address.
         /// </exception>
         /// <remarks>
         /// <para>
@@ -116,6 +122,7 @@ namespace Rulealize
         {
             ArgumentNullException.ThrowIfNull(inputDocument);
             ArgumentNullException.ThrowIfNull(stateDocument);
+            RequireOneDocument();
 
             using JsonDocument input = Parse(inputDocument, "input");
             using JsonDocument state = Parse(stateDocument, "state");
@@ -130,11 +137,16 @@ namespace Rulealize
         /// <exception cref="RuleDocumentException">A document is malformed or does not match the schema.</exception>
         /// <exception cref="IllegalInputException">The rules do not allow this input in this state.</exception>
         /// <exception cref="RuleEvaluationException">An operation received values that make it meaningless.</exception>
+        /// <exception cref="InvalidOperationException">
+        /// The rule set keeps instances of what it holds as documents of their own, in the store
+        /// it names, and is applied through <see cref="ApplyAsync(string, CancellationToken)"/>.
+        /// </exception>
         public async Task<TransitionResult> ApplyToStateAsync(
             Stream inputDocument,
             Stream stateDocument,
             CancellationToken cancellationToken = default)
         {
+            RequireOneDocument();
             ArgumentNullException.ThrowIfNull(inputDocument);
             ArgumentNullException.ThrowIfNull(stateDocument);
 
@@ -152,6 +164,10 @@ namespace Rulealize
         /// <exception cref="RuleDocumentException">A document is malformed, or the outcome belongs elsewhere.</exception>
         /// <exception cref="IllegalInputException">The rules do not allow this input in this state.</exception>
         /// <exception cref="RuleEvaluationException">An operation received values that make it meaningless.</exception>
+        /// <exception cref="InvalidOperationException">
+        /// The rule set keeps instances of what it holds as documents of their own, in the store
+        /// it names, and is applied through <see cref="ApplyAsync(string, CancellationToken)"/>.
+        /// </exception>
         /// <remarks>
         /// <para>
         /// The replaying overload. An input says what somebody decided and an outcome says
@@ -179,6 +195,7 @@ namespace Rulealize
             ArgumentNullException.ThrowIfNull(inputDocument);
             ArgumentNullException.ThrowIfNull(stateDocument);
             ArgumentNullException.ThrowIfNull(outcomeDocument);
+            RequireOneDocument();
 
             using JsonDocument input = Parse(inputDocument, "input");
             using JsonDocument state = Parse(stateDocument, "state");
@@ -195,6 +212,10 @@ namespace Rulealize
         /// <exception cref="RuleDocumentException">A document is malformed, or the outcome belongs elsewhere.</exception>
         /// <exception cref="IllegalInputException">The rules do not allow this input in this state.</exception>
         /// <exception cref="RuleEvaluationException">An operation received values that make it meaningless.</exception>
+        /// <exception cref="InvalidOperationException">
+        /// The rule set keeps instances of what it holds as documents of their own, in the store
+        /// it names, and is applied through <see cref="ApplyAsync(string, CancellationToken)"/>.
+        /// </exception>
         public async Task<TransitionResult> ApplyToStateAsync(
             Stream inputDocument,
             Stream stateDocument,
@@ -204,6 +225,7 @@ namespace Rulealize
             ArgumentNullException.ThrowIfNull(inputDocument);
             ArgumentNullException.ThrowIfNull(stateDocument);
             ArgumentNullException.ThrowIfNull(outcomeDocument);
+            RequireOneDocument();
 
             using JsonDocument input = await ParseAsync(inputDocument, "input", cancellationToken).ConfigureAwait(false);
             using JsonDocument state = await ParseAsync(stateDocument, "state", cancellationToken).ConfigureAwait(false);
@@ -227,6 +249,10 @@ namespace Rulealize
         /// <exception cref="RuleDocumentException">A document is malformed or does not match the schema.</exception>
         /// <exception cref="IllegalInputException">The rules do not allow this input in this state.</exception>
         /// <exception cref="RuleEvaluationException">An operation received values that make it meaningless.</exception>
+        /// <exception cref="InvalidOperationException">
+        /// The rule set keeps instances of what it holds as documents of their own, in the store
+        /// it names, and a position of several documents cannot be asked what may happen yet.
+        /// </exception>
         /// <remarks>
         /// <para>
         /// The other half of a search.
@@ -267,6 +293,7 @@ namespace Rulealize
             ArgumentNullException.ThrowIfNull(inputDocument);
             ArgumentNullException.ThrowIfNull(stateDocument);
             ArgumentOutOfRangeException.ThrowIfNegativeOrZero(outcomeLimit);
+            RequireOneDocument();
 
             using JsonDocument input = Parse(inputDocument, "input");
             using JsonDocument state = Parse(stateDocument, "state");
@@ -288,6 +315,11 @@ namespace Rulealize
         /// The available inputs, and whether the limit cut the search short. A truncated
         /// result is a subset of what is legal, never a wrong entry.
         /// </returns>
+        /// <exception cref="RuleDocumentException">The state document is malformed or does not match the schema.</exception>
+        /// <exception cref="InvalidOperationException">
+        /// The rule set keeps instances of what it holds as documents of their own, in the store
+        /// it names, and is asked through <see cref="GetValidInputsAsync(StateAddress, int, CancellationToken)"/>.
+        /// </exception>
         /// <remarks>
         /// <para>
         /// The candidates are the product of the parameter domains and the survivors are what
@@ -317,6 +349,7 @@ namespace Rulealize
         {
             ArgumentNullException.ThrowIfNull(stateDocument);
             ArgumentOutOfRangeException.ThrowIfNegativeOrZero(validationLimit);
+            RequireOneDocument();
 
             using JsonDocument state = Parse(stateDocument, "state");
             ImmutableArray<RuleValue> fields = StateDocument.Read(_ruleSet, state.RootElement);
@@ -339,6 +372,10 @@ namespace Rulealize
         /// </exception>
         /// <exception cref="RuleDocumentException">The state document is not one this rule set accepts.</exception>
         /// <exception cref="RuleEvaluationException">An operation received values that make it meaningless.</exception>
+        /// <exception cref="InvalidOperationException">
+        /// The projection reads every instance of a collection. Those are in the store the rule
+        /// set names, and <see cref="ProjectAsync(string, CancellationToken)"/> reads them there.
+        /// </exception>
         /// <remarks>
         /// <para>
         /// The three questions a rule set answers without this — what is legal, where a move
@@ -369,21 +406,79 @@ namespace Rulealize
             ArgumentException.ThrowIfNullOrEmpty(projection);
             ArgumentNullException.ThrowIfNull(stateDocument);
 
-            CompiledProjection declared = _ruleSet.FindProjection(projection)
-                ?? throw new ArgumentException(
-                    $"'{projection}' is not a projection of '{_ruleSet.Qualified}'."
-                    + (_ruleSet.Projections.IsEmpty
-                        ? " It declares none."
-                        : $" It declares {string.Join(", ", _ruleSet.Projections.Select(each => $"'{each.Name}'"))}."),
-                    nameof(projection));
+            CompiledProjection declared = FindProjection(projection);
+            if (!declared.Collections.IsEmpty)
+            {
+                throw new InvalidOperationException(
+                    $"'{projection}' reads every instance of {string.Join(", ", declared.Collections.Select(static alias => $"'{alias}'"))}, "
+                    + "and those are in the store the rule set names. ProjectAsync reads them there.");
+            }
 
             using JsonDocument state = Parse(stateDocument, "state");
-            ImmutableArray<RuleValue> fields = StateDocument.Read(_ruleSet, state.RootElement);
+            return Answer(declared, StateDocument.Read(_ruleSet, state.RootElement), cancellationToken);
+        }
 
-            EvaluationSession session = new(_ruleSet.Definitions, new StateSnapshot(fields), cancellationToken);
-            EvaluationContext context = session.CreateContext(declared.FrameSize);
+        /// <summary>Asks the rule set what it says about a position of several documents.</summary>
+        /// <param name="projection">The name, out of <see cref="Projections"/>.</param>
+        /// <param name="rootState">The rule set's own state document.</param>
+        /// <param name="collections">
+        /// Every instance of each collection the projection reads, by alias: each instance's key
+        /// and document, in the order they were created.
+        /// </param>
+        /// <param name="cancellationToken">Cancels a long evaluation.</param>
+        /// <returns>The answer, as JSON.</returns>
+        /// <exception cref="ArgumentException">This rule set declares no projection of that name.</exception>
+        /// <exception cref="RuleDocumentException">
+        /// A document is malformed, does not match its schema, or was not supplied; or an
+        /// instance is under a temporary key.
+        /// </exception>
+        /// <exception cref="RuleEvaluationException">An operation received values that make it meaningless.</exception>
+        /// <remarks>
+        /// <c>$claims</c> reads as every instance of <c>claims</c>, a sequence in the order given,
+        /// each the record <c>@claims</c> is: <c>{ "key": …, "state": … }</c>. Which instances
+        /// exist and in what order they were created is the store's to say, so the answer is
+        /// about the ones supplied; a store that left one out asked about a different position.
+        /// </remarks>
+        internal string Project(
+            string projection,
+            string rootState,
+            IReadOnlyDictionary<string, IReadOnlyList<KeyValuePair<string, string>>> collections,
+            CancellationToken cancellationToken = default)
+        {
+            ArgumentException.ThrowIfNullOrEmpty(projection);
+            ArgumentNullException.ThrowIfNull(rootState);
+            ArgumentNullException.ThrowIfNull(collections);
 
-            return ProjectionDocument.Write(declared.Name, declared.Body.Evaluate(context));
+            CompiledProjection declared = FindProjection(projection);
+            ImmutableArray<RuleValue> root;
+            using (JsonDocument state = Parse(rootState, "state"))
+            {
+                root = StateDocument.Read(_ruleSet, state.RootElement);
+            }
+
+            // Every collection has a position past the fields, in declaration order. Only the
+            // ones this projection reads are filled: the compiler refused every other read.
+            ImmutableArray<string> aliases = _ruleSet.Schema.Collections;
+            ImmutableArray<RuleValue>.Builder fields = ImmutableArray.CreateBuilder<RuleValue>(root.Length + aliases.Length);
+            fields.AddRange(root);
+            foreach (string alias in aliases)
+            {
+                if (!declared.Collections.Contains(alias, StringComparer.Ordinal))
+                {
+                    fields.Add(RuleValue.EmptySequence);
+                    continue;
+                }
+
+                if (!collections.TryGetValue(alias, out IReadOnlyList<KeyValuePair<string, string>>? instances))
+                {
+                    throw new RuleDocumentException(
+                        $"'{projection}' reads every instance of '{alias}', and none were supplied.");
+                }
+
+                fields.Add(Every(_ruleSet.FindHeld(alias)!, instances));
+            }
+
+            return Answer(declared, fields.MoveToImmutable(), cancellationToken);
         }
 
         /// <summary>Asks whether a state is final, and what its outcome is.</summary>
@@ -396,6 +491,703 @@ namespace Rulealize
 
             using JsonDocument state = Parse(stateDocument, "state");
             return EvaluateTerminal(StateDocument.Read(_ruleSet, state.RootElement), cancellationToken);
+        }
+
+        /// <summary>Says which documents applying an input reads, before any of them is fetched.</summary>
+        /// <param name="inputDocument">A <c>rulealize/input/v1</c> document.</param>
+        /// <returns>
+        /// The addresses: <see cref="StateAddress.Root"/> first, then each instance the input
+        /// document's <c>at</c> names, outermost first.
+        /// </returns>
+        /// <exception cref="RuleDocumentException">
+        /// The document is malformed, names no input of this rule set, or its <c>at</c> does
+        /// not name exactly the instances the input is about.
+        /// </exception>
+        /// <remarks>
+        /// <para>
+        /// Read off the input document and the rule set alone. Nothing is read lazily while a
+        /// transition is evaluated: what a store fetches for
+        /// <see cref="ApplyToState(string, IReadOnlyDictionary{StateAddress, string}, CancellationToken)"/>
+        /// is this list, and it is the whole of what the transition reads.
+        /// </para>
+        /// <para>
+        /// The rule set's own document is always on it. A new instance is not, because there is
+        /// nothing to read: it starts where its collection's <c>start</c> says. An instance of a
+        /// keyed collection is on it whether or not it was ever written; one the store has no
+        /// document for is left out of what it supplies, and is read as its <c>start</c>.
+        /// </para>
+        /// </remarks>
+        internal ImmutableArray<StateAddress> GetReads(string inputDocument)
+        {
+            ArgumentNullException.ThrowIfNull(inputDocument);
+
+            using JsonDocument input = Parse(inputDocument, "input");
+            Located located = Locate(InputDocument.Read(_ruleSet, input.RootElement));
+            return [StateAddress.Root, .. located.Instances.Select(static step => step.Address)];
+        }
+
+        /// <summary>Applies an input to a position of several documents.</summary>
+        /// <param name="inputDocument">A <c>rulealize/input/v1</c> document.</param>
+        /// <param name="states">
+        /// The state documents, by address — every one <see cref="GetReads(string)"/> lists for
+        /// this input, except an instance of a keyed collection that was never written.
+        /// </param>
+        /// <param name="cancellationToken">Cancels a long evaluation.</param>
+        /// <returns>
+        /// Where the transition arrived. <see cref="TransitionResult.Writes"/> is what it wrote,
+        /// a new instance under a temporary key.
+        /// </returns>
+        /// <exception cref="RuleDocumentException">
+        /// A document is malformed, does not match its schema, or was not supplied.
+        /// </exception>
+        /// <exception cref="IllegalInputException">The rules do not allow this input in this position.</exception>
+        /// <exception cref="RuleEvaluationException">An operation received values that make it meaningless.</exception>
+        /// <exception cref="InvalidOperationException">
+        /// The input resolves a draw, which a position of several documents cannot be asked
+        /// about yet.
+        /// </exception>
+        /// <remarks>
+        /// <para>
+        /// Pure, as the one-document overload is. The runtime stores nothing and knows no
+        /// versions: it says which documents the transition wrote, and checking each against
+        /// the version it was read at is the store's. A guard reads only documents its
+        /// transition writes, so checking what is written is enough to catch two transitions
+        /// that raced.
+        /// </para>
+        /// <para>
+        /// A rule set that keeps no instances is a position of one document, at
+        /// <see cref="StateAddress.Root"/>, and this means what the one-document overload means.
+        /// </para>
+        /// </remarks>
+        internal TransitionResult ApplyToState(
+            string inputDocument,
+            IReadOnlyDictionary<StateAddress, string> states,
+            CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(inputDocument);
+            ArgumentNullException.ThrowIfNull(states);
+
+            using JsonDocument input = Parse(inputDocument, "input");
+            (InputRequest request, Located located, Position position) = ReadPosition(input.RootElement, states);
+
+            Prepared prepared = Begin(request, located, position, outcomeSupplied: false, null, cancellationToken);
+            return Run(prepared, new DrawTrail([]), cancellationToken);
+        }
+
+        /// <summary>Applies an input to a position of several documents, as a commit recorded it.</summary>
+        /// <param name="inputDocument">A <c>rulealize/input/v1</c> document.</param>
+        /// <param name="states">The state documents, by address.</param>
+        /// <param name="commitDocument">A <c>rulealize/commit/v1</c> document: the keys the store assigned.</param>
+        /// <param name="cancellationToken">Cancels a long evaluation.</param>
+        /// <returns>Where the transition arrived, with each new instance under the key it was assigned.</returns>
+        /// <exception cref="RuleDocumentException">
+        /// A document is malformed or missing, or the commit belongs to another transition.
+        /// </exception>
+        /// <exception cref="IllegalInputException">The rules do not allow this input in this position.</exception>
+        /// <exception cref="RuleEvaluationException">An operation received values that make it meaningless.</exception>
+        /// <exception cref="InvalidOperationException">
+        /// The input resolves a draw, which a position of several documents cannot be asked
+        /// about yet.
+        /// </exception>
+        /// <remarks>
+        /// The replaying overload. An input says what somebody decided and a commit says what
+        /// the store did about it, so the pair writes the same documents under the same keys
+        /// however long afterwards — which is how a recorded history of a collection reproduces
+        /// it.
+        /// </remarks>
+        internal TransitionResult ApplyToState(
+            string inputDocument,
+            IReadOnlyDictionary<StateAddress, string> states,
+            string commitDocument,
+            CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(inputDocument);
+            ArgumentNullException.ThrowIfNull(states);
+            ArgumentNullException.ThrowIfNull(commitDocument);
+
+            using JsonDocument input = Parse(inputDocument, "input");
+            using JsonDocument commit = Parse(commitDocument, "commit");
+            (InputRequest request, Located located, Position position) = ReadPosition(input.RootElement, states);
+            CommitRequest committed = CommitDocument.Read(_ruleSet, commit.RootElement);
+
+            if (!string.Equals(committed.Input, request.Input, StringComparison.Ordinal))
+            {
+                throw new RuleDocumentException(
+                    $"The commit is of '{committed.Input}', and the input document applies '{request.Input}'.");
+            }
+
+            string temporary = $"{TemporaryKeyPrefix}1";
+            string? assigned = null;
+            if (located.Declared.Creates is not null)
+            {
+                if (committed.Created.Count != 1 || !committed.Created.TryGetValue(temporary, out assigned))
+                {
+                    throw new RuleDocumentException(
+                        $"'{request.Input}' creates one instance, under '{temporary}', and the commit assigns "
+                        + (committed.Created.Count == 0 ? "no key." : $"{string.Join(", ", committed.Created.Keys.Select(static key => $"'{key}'"))}."));
+                }
+
+                if (assigned.StartsWith(TemporaryKeyPrefix, StringComparison.Ordinal))
+                {
+                    throw new RuleDocumentException(
+                        $"The commit assigns '{assigned}', which is a temporary key and not one a store could have given.");
+                }
+            }
+            else if (committed.Created.Count > 0)
+            {
+                throw new RuleDocumentException(
+                    $"'{request.Input}' creates nothing, and the commit assigns keys as though it did.");
+            }
+
+            Prepared prepared = Begin(request, located, position, outcomeSupplied: false, assigned, cancellationToken);
+            return Run(prepared, new DrawTrail([]), cancellationToken);
+        }
+
+        /// <summary>Lists the inputs the rules allow at one address of a position.</summary>
+        /// <param name="states">
+        /// The state documents, by address: the rule set's own, and the instance
+        /// <paramref name="at"/> names and each it is held under.
+        /// </param>
+        /// <param name="at">
+        /// Where to look. <see cref="StateAddress.Root"/> offers the rule set's own inputs that
+        /// are at no instance; an instance offers the inputs about it, at whatever depth.
+        /// </param>
+        /// <param name="validationLimit">The most candidates whose guard may be evaluated.</param>
+        /// <param name="cancellationToken">Cancels a long search.</param>
+        /// <returns>The available inputs, each written with the <c>at</c> it was found at.</returns>
+        /// <exception cref="ArgumentException"><paramref name="at"/> is not an address of this rule set.</exception>
+        /// <exception cref="RuleDocumentException">A document is malformed, does not match its schema, or was not supplied.</exception>
+        /// <remarks>
+        /// One address per call, and no call offers every instance's moves at once: that would
+        /// read every instance, and the point of keeping them apart is that nothing does.
+        /// </remarks>
+        internal ValidInputSet GetValidInputs(
+            IReadOnlyDictionary<StateAddress, string> states,
+            StateAddress at,
+            int validationLimit,
+            CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(states);
+            ArgumentNullException.ThrowIfNull(at);
+            ArgumentOutOfRangeException.ThrowIfNegativeOrZero(validationLimit);
+
+            // The address is followed down one collection at a time, each alias resolved against
+            // the rule set of the instance before it.
+            ImmutableArray<Step>.Builder steps = ImmutableArray.CreateBuilder<Step>();
+            CompiledRuleSet rules = _ruleSet;
+            StateAddress address = StateAddress.Root;
+            for (int i = 0; i < at.Segments.Length; i += 2)
+            {
+                HeldRuleSet? held = rules.FindHeld(at.Segments[i]);
+                if (held?.Many is null || i + 1 >= at.Segments.Length)
+                {
+                    throw new ArgumentException(
+                        $"'{at}' is not the address of an instance of '{_ruleSet.Qualified}'.", nameof(at));
+                }
+
+                if (KeyFault(held, at.Segments[i + 1]) is string fault)
+                {
+                    throw new ArgumentException(fault, nameof(at));
+                }
+
+                address = address.Child(held.Alias, at.Segments[i + 1]);
+                steps.Add(new Step(address, held));
+                rules = held.Rules;
+            }
+
+            ImmutableArray<RuleValue> fields = ReadAt(states, StateAddress.Root, _ruleSet);
+            Part root = Part.Of(_ruleSet, new Position(fields, Read(states, steps.ToImmutable())), "inputs", cancellationToken);
+
+            Search search = new(validationLimit, at);
+            OfferedAt(root, null, null, string.Empty, [.. steps.Select(static step => step.Held.Alias)], search, cancellationToken);
+
+            return new ValidInputSet(search.Found.ToImmutable(), search.Evaluated, search.Exhausted);
+        }
+
+        /// <summary>Applies an input to the documents a store keeps, and keeps what it wrote.</summary>
+        /// <param name="inputDocument">A <c>rulealize/input/v1</c> document.</param>
+        /// <param name="cancellationToken">Cancels reading, evaluating or committing.</param>
+        /// <returns>Where the transition arrived, and the commit document that records what the store did.</returns>
+        /// <exception cref="InvalidOperationException">
+        /// This rule set keeps no instances, so its state is one document and
+        /// <see cref="ApplyToState(string, string, CancellationToken)"/> takes it; a store it
+        /// names was not given to the runtime; the transition writes to more than one store and
+        /// no coordinator was given; or the input resolves a draw, which a position of several
+        /// documents cannot be asked about yet.
+        /// </exception>
+        /// <exception cref="RuleDocumentException">
+        /// A document is malformed, names no input of this rule set, or does not match its schema;
+        /// or the input is at an instance the store does not have.
+        /// </exception>
+        /// <exception cref="IllegalInputException">The rules do not allow this input in this position.</exception>
+        /// <exception cref="RuleEvaluationException">An operation received values that make it meaningless.</exception>
+        /// <exception cref="StateConflictException">
+        /// A document the transition read was written by another transition before this one
+        /// committed. Nothing was kept, and applying the input again decides it afresh.
+        /// </exception>
+        /// <remarks>
+        /// <para>
+        /// For a rule set whose <c>uses</c> declares a <c>many</c>. Every state document it has is
+        /// in the store its <c>requires</c> names, its own included, and the host hands over the
+        /// input alone. The runtime works out which documents the input reads from the input
+        /// document and the rule set, reads those and nothing else through a session, evaluates
+        /// the transition in memory, and commits what it wrote through the same session. The
+        /// rule set's own document, before anything has written it, is its <c>state.initial</c>.
+        /// </para>
+        /// <para>
+        /// Versions are the store's. A guard reads only documents its transition writes, so the
+        /// session checking what is written against what it read is enough to catch two
+        /// transitions that raced. A transition that writes to more than one store is handed to
+        /// the <see cref="IStoreCoordinator"/> the runtime was given.
+        /// </para>
+        /// </remarks>
+        public Task<CommittedTransition> ApplyAsync(string inputDocument, CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(inputDocument);
+            return KeepAsync(inputDocument, null, cancellationToken);
+        }
+
+        /// <summary>Applies an input to the documents a store keeps, as a commit recorded it.</summary>
+        /// <param name="inputDocument">A <c>rulealize/input/v1</c> document.</param>
+        /// <param name="commitDocument">The <c>rulealize/commit/v1</c> document the transition was committed with.</param>
+        /// <param name="cancellationToken">Cancels reading, evaluating or committing.</param>
+        /// <returns>Where the transition arrived, and the commit document it was replayed with.</returns>
+        /// <exception cref="InvalidOperationException">
+        /// This rule set keeps no instances; a store it names was not given to the runtime; the
+        /// transition writes to more than one store and no coordinator was given; or the input
+        /// resolves a draw.
+        /// </exception>
+        /// <exception cref="RuleDocumentException">
+        /// A document is malformed or does not match its schema, or the commit belongs to another
+        /// transition.
+        /// </exception>
+        /// <exception cref="IllegalInputException">The rules do not allow this input in this position.</exception>
+        /// <exception cref="RuleEvaluationException">An operation received values that make it meaningless.</exception>
+        /// <exception cref="StateConflictException">
+        /// A document the transition read was written since, or the instance it creates is
+        /// already in the store under its key.
+        /// </exception>
+        /// <remarks>
+        /// The replaying overload, for a store being rebuilt from a history of input and commit
+        /// documents. A new instance is written under the key the commit records, and the store
+        /// keeps it there rather than assign another, so the history reproduces the same
+        /// documents under the same keys.
+        /// </remarks>
+        public Task<CommittedTransition> ApplyAsync(
+            string inputDocument,
+            string commitDocument,
+            CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(inputDocument);
+            ArgumentNullException.ThrowIfNull(commitDocument);
+            return KeepAsync(inputDocument, commitDocument, cancellationToken);
+        }
+
+        /// <summary>Lists the inputs the rules allow at the rule set's own document, which a store keeps.</summary>
+        /// <param name="validationLimit">The most candidates whose guard may be evaluated.</param>
+        /// <param name="cancellationToken">Cancels reading or searching.</param>
+        /// <returns>The available inputs that are at no instance: creating one, say.</returns>
+        /// <exception cref="InvalidOperationException">This rule set keeps no instances, or a store it names was not given to the runtime.</exception>
+        /// <exception cref="RuleDocumentException">A stored document is malformed or does not match its schema.</exception>
+        public Task<ValidInputSet> GetValidInputsAsync(int validationLimit, CancellationToken cancellationToken = default) =>
+            GetValidInputsAsync(StateAddress.Root, validationLimit, cancellationToken);
+
+        /// <summary>Lists the inputs the rules allow at one document a store keeps.</summary>
+        /// <param name="at">
+        /// Where to look. <see cref="StateAddress.Root"/> offers the rule set's own inputs that
+        /// are at no instance; an instance offers the inputs about it, at whatever depth.
+        /// </param>
+        /// <param name="validationLimit">The most candidates whose guard may be evaluated.</param>
+        /// <param name="cancellationToken">Cancels reading or searching.</param>
+        /// <returns>The available inputs, each written with the <c>at</c> it was found at.</returns>
+        /// <exception cref="ArgumentException"><paramref name="at"/> is not an address of this rule set.</exception>
+        /// <exception cref="InvalidOperationException">This rule set keeps no instances, or a store it names was not given to the runtime.</exception>
+        /// <exception cref="RuleDocumentException">
+        /// A stored document is malformed or does not match its schema, or the store has no
+        /// instance at <paramref name="at"/>.
+        /// </exception>
+        /// <remarks>
+        /// Reads the rule set's own document and the instances on the way to
+        /// <paramref name="at"/>, and no others. One address per call: offering every instance's
+        /// moves at once would read every instance, and the point of keeping them apart is that
+        /// nothing does.
+        /// </remarks>
+        public async Task<ValidInputSet> GetValidInputsAsync(
+            StateAddress at,
+            int validationLimit,
+            CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(at);
+            ArgumentOutOfRangeException.ThrowIfNegativeOrZero(validationLimit);
+            RequireStore();
+            CheckAddress(at);
+
+            List<StateAddress> reads = [StateAddress.Root];
+            for (int i = 0; i + 1 < at.Segments.Length; i += 2)
+            {
+                reads.Add(reads[^1].Child(at.Segments[i], at.Segments[i + 1]));
+            }
+
+            await using StoreSessions sessions = new(this);
+            IReadOnlyDictionary<StateAddress, string> states = await sessions.ReadAsync(reads, cancellationToken).ConfigureAwait(false);
+            return GetValidInputs(states, at, validationLimit, cancellationToken);
+        }
+
+        /// <summary>Asks the rule set what it says about the position a store keeps.</summary>
+        /// <param name="projection">The name, out of <see cref="Projections"/>.</param>
+        /// <param name="cancellationToken">Cancels reading or evaluating.</param>
+        /// <returns>The answer, as JSON.</returns>
+        /// <exception cref="ArgumentException">This rule set declares no projection of that name.</exception>
+        /// <exception cref="InvalidOperationException">This rule set keeps no instances, or a store it names was not given to the runtime.</exception>
+        /// <exception cref="RuleDocumentException">A stored document is malformed or does not match its schema.</exception>
+        /// <exception cref="RuleEvaluationException">An operation received values that make it meaningless.</exception>
+        /// <remarks>
+        /// <para>
+        /// Reads the rule set's own document, and every instance of each collection the
+        /// projection reads as <c>$alias</c>: a sequence of <c>{ "key": …, "state": … }</c> in
+        /// the order the instances were created. Which collections those are is settled when the
+        /// rule set is built, so nothing else is read.
+        /// </para>
+        /// <para>
+        /// Still a function of the position: the same documents give the same answer. The
+        /// projection is not translated into a query; the store loads the instances and the
+        /// runtime reads them in memory.
+        /// </para>
+        /// </remarks>
+        public async Task<string> ProjectAsync(string projection, CancellationToken cancellationToken = default)
+        {
+            ArgumentException.ThrowIfNullOrEmpty(projection);
+
+            CompiledProjection declared = FindProjection(projection);
+            RequireStore();
+
+            await using StoreSessions sessions = new(this);
+            IReadOnlyDictionary<StateAddress, string> root =
+                await sessions.ReadAsync([StateAddress.Root], cancellationToken).ConfigureAwait(false);
+
+            Dictionary<string, IReadOnlyList<KeyValuePair<string, string>>> collections = new(StringComparer.Ordinal);
+            if (!declared.Collections.IsEmpty)
+            {
+                IStateStoreSession session = await sessions.ForAsync(_ruleSet.Store!, cancellationToken).ConfigureAwait(false);
+                foreach (string alias in declared.Collections)
+                {
+                    collections[alias] = await session.ReadCollectionAsync(StateAddress.Root, alias, cancellationToken)
+                        .ConfigureAwait(false);
+                }
+            }
+
+            return Project(projection, root[StateAddress.Root], collections, cancellationToken);
+        }
+
+        /// <summary>Reads what an input reads, applies it, and commits what it wrote.</summary>
+        private async Task<CommittedTransition> KeepAsync(
+            string inputDocument,
+            string? commitDocument,
+            CancellationToken cancellationToken)
+        {
+            RequireStore();
+
+            ImmutableArray<StateAddress> reads = GetReads(inputDocument);
+
+            await using StoreSessions sessions = new(this);
+            IReadOnlyDictionary<StateAddress, string> states =
+                await sessions.ReadAsync(reads, cancellationToken).ConfigureAwait(false);
+
+            TransitionResult result = commitDocument is null
+                ? ApplyToState(inputDocument, states, cancellationToken)
+                : ApplyToState(inputDocument, states, commitDocument, cancellationToken);
+
+            IReadOnlyDictionary<string, string> created =
+                await sessions.CommitAsync(result.Writes, cancellationToken).ConfigureAwait(false);
+
+            string input;
+            using (JsonDocument document = Parse(inputDocument, "input"))
+            {
+                input = document.RootElement.GetProperty("input").GetString()!;
+            }
+
+            if (commitDocument is not null)
+            {
+                using JsonDocument commit = Parse(commitDocument, "commit");
+                created = CommitDocument.Read(_ruleSet, commit.RootElement).Created;
+            }
+
+            return new CommittedTransition(result.IsTerminal, result.Result, CommitDocument.Write(_ruleSet, input, created));
+        }
+
+        /// <summary>Says which store keeps the document at an address.</summary>
+        /// <remarks>
+        /// The rule set's own document is in the store it names. An instance is in the store
+        /// named by the rule set that holds its collection, so a month held by a ledger is in the
+        /// ledger's store and a claim held by the month is in the month's.
+        /// </remarks>
+        private string StoreOf(StateAddress address)
+        {
+            CompiledRuleSet holder = _ruleSet;
+            for (int i = 0; i + 2 < address.Segments.Length; i += 2)
+            {
+                holder = holder.FindHeld(address.Segments[i])!.Rules;
+            }
+
+            return holder.Store!;
+        }
+
+        /// <summary>Refuses a call that goes through a store, on a rule set that keeps nothing in one.</summary>
+        private void RequireStore()
+        {
+            if (!_ruleSet.KeepsInstances)
+            {
+                throw new InvalidOperationException(
+                    $"'{_ruleSet.Qualified}' keeps no instances, so it is kept in no store: its state is one document, "
+                    + "and the methods that take a state document take it.");
+            }
+        }
+
+        /// <summary>The sessions one call opened, one per store, disposed of together.</summary>
+        private sealed class StoreSessions(RuleContext context) : IAsyncDisposable
+        {
+            private readonly Dictionary<string, IStateStoreSession> _open = new(StringComparer.OrdinalIgnoreCase);
+
+            /// <summary>Gets the session for one store, opening it the first time.</summary>
+            public async Task<IStateStoreSession> ForAsync(string store, CancellationToken cancellationToken)
+            {
+                if (_open.TryGetValue(store, out IStateStoreSession? session))
+                {
+                    return session;
+                }
+
+                if (!context._stores.Stores.TryGetValue(store, out IStateStore? opened))
+                {
+                    throw new InvalidOperationException(
+                        $"'{context._ruleSet.Qualified}' keeps documents in {store}, and the runtime was given no such store. "
+                        + "RuleRuntime.UseStore gives one, before the context is created.");
+                }
+
+                session = await opened.OpenSessionAsync(cancellationToken).ConfigureAwait(false);
+                _open[store] = session;
+                return session;
+            }
+
+            /// <summary>Reads documents from whichever stores keep them.</summary>
+            /// <remarks>The rule set's own document, when no store has it yet, is its initial state.</remarks>
+            public async Task<IReadOnlyDictionary<StateAddress, string>> ReadAsync(
+                IReadOnlyList<StateAddress> addresses,
+                CancellationToken cancellationToken)
+            {
+                Dictionary<StateAddress, string> states = [];
+                foreach (IGrouping<string, StateAddress> group in
+                    addresses.GroupBy(context.StoreOf, StringComparer.OrdinalIgnoreCase))
+                {
+                    IStateStoreSession session = await ForAsync(group.Key, cancellationToken).ConfigureAwait(false);
+                    foreach ((StateAddress address, string state) in
+                        await session.ReadAsync([.. group], cancellationToken).ConfigureAwait(false))
+                    {
+                        states[address] = state;
+                    }
+                }
+
+                states.TryAdd(StateAddress.Root, context.InitialState);
+                return states;
+            }
+
+            /// <summary>Commits what a transition wrote, through one session or through the coordinator.</summary>
+            public async Task<IReadOnlyDictionary<string, string>> CommitAsync(
+                ImmutableArray<StateWrite> writes,
+                CancellationToken cancellationToken)
+            {
+                List<IGrouping<string, StateWrite>> stores =
+                    [.. writes.GroupBy(write => context.StoreOf(write.Address), StringComparer.OrdinalIgnoreCase)];
+
+                if (stores.Count == 0)
+                {
+                    return ImmutableDictionary<string, string>.Empty;
+                }
+
+                if (stores.Count == 1)
+                {
+                    IStateStoreSession session = await ForAsync(stores[0].Key, cancellationToken).ConfigureAwait(false);
+                    return await session.CommitAsync([.. stores[0]], cancellationToken).ConfigureAwait(false);
+                }
+
+                IStoreCoordinator coordinator = context._stores.Coordinator
+                    ?? throw new InvalidOperationException(
+                        $"The transition writes to {string.Join(" and ", stores.Select(static store => store.Key))}, and the "
+                        + "runtime was given no coordinator to keep all of it or none. RuleRuntime.UseCoordinator gives one.");
+
+                List<StoreWriteSet> sets = [];
+                foreach (IGrouping<string, StateWrite> store in stores)
+                {
+                    IStateStoreSession session = await ForAsync(store.Key, cancellationToken).ConfigureAwait(false);
+                    sets.Add(new StoreWriteSet(store.Key, session, [.. store]));
+                }
+
+                return await coordinator.CommitAsync(sets, cancellationToken).ConfigureAwait(false);
+            }
+
+            public async ValueTask DisposeAsync()
+            {
+                foreach (IStateStoreSession session in _open.Values)
+                {
+                    await session.DisposeAsync().ConfigureAwait(false);
+                }
+            }
+        }
+
+        /// <summary>Refuses an address that is not one of this rule set's instances.</summary>
+        /// <remarks>Checked before anything is read, so a store is never asked for an address no rule set has.</remarks>
+        private void CheckAddress(StateAddress at)
+        {
+            CompiledRuleSet rules = _ruleSet;
+            for (int i = 0; i < at.Segments.Length; i += 2)
+            {
+                HeldRuleSet? held = rules.FindHeld(at.Segments[i]);
+                if (held?.Many is null || i + 1 >= at.Segments.Length)
+                {
+                    throw new ArgumentException(
+                        $"'{at}' is not the address of an instance of '{_ruleSet.Qualified}'.", nameof(at));
+                }
+
+                if (KeyFault(held, at.Segments[i + 1]) is string fault)
+                {
+                    throw new ArgumentException(fault, nameof(at));
+                }
+
+                rules = held.Rules;
+            }
+        }
+
+        /// <summary>Reads the input document, and every state document it says the transition reads.</summary>
+        private (InputRequest Request, Located Located, Position Position) ReadPosition(
+            JsonElement input,
+            IReadOnlyDictionary<StateAddress, string> states)
+        {
+            InputRequest request = InputDocument.Read(_ruleSet, input);
+            Located located = Locate(request);
+
+            if (located.Declared.HasDraw)
+            {
+                throw new InvalidOperationException(
+                    $"'{request.Input}' resolves something nobody chose, and a position of several documents "
+                    + "cannot be asked what may happen yet.");
+            }
+
+            ImmutableArray<RuleValue> root = ReadAt(states, StateAddress.Root, _ruleSet);
+            return (request, located, new Position(root, Read(states, located.Instances)));
+        }
+
+        /// <summary>Reads each instance on the way to an input, outermost first.</summary>
+        /// <remarks>
+        /// An instance of a keyed collection that the store has no document for was never
+        /// written, and is at its collection's start. Any other missing document is one the
+        /// transition reads and was not given.
+        /// </remarks>
+        private static ImmutableArray<Instance> Read(
+            IReadOnlyDictionary<StateAddress, string> states,
+            ImmutableArray<Step> steps) =>
+        [
+            .. steps.Select(step => new Instance(
+                step.Address,
+                step.Held,
+                step.Held.Many!.Key is not null && !states.ContainsKey(step.Address)
+                    ? step.Held.Many.Start
+                    : ReadAt(states, step.Address, step.Held.Rules)))
+        ];
+
+        /// <summary>Says what is wrong with a key for one collection, or <see langword="null"/> when nothing is.</summary>
+        /// <remarks>
+        /// A temporary key names a write not yet committed and is never where an input is, in
+        /// either kind of collection. A keyed collection's key has to be one its schema admits,
+        /// because that is what makes it an instance.
+        /// </remarks>
+        private static string? KeyFault(HeldRuleSet held, string key)
+        {
+            if (key.StartsWith(TemporaryKeyPrefix, StringComparison.Ordinal))
+            {
+                return $"'{key}' is a temporary key, which only a transition that creates an instance writes. "
+                    + "The instance is reached by the key the store assigned it.";
+            }
+
+            if (held.Many!.Key is SchemaNode schema)
+            {
+                SchemaViolations violations = new();
+                schema.Validate(RuleValue.Text(key), violations.For(held.Alias));
+                if (violations.Any)
+                {
+                    return $"'{key}' is not a key of '{held.Alias}'. {string.Join(" ", violations.Messages)}";
+                }
+            }
+
+            return null;
+        }
+
+        /// <summary>Reads the state document at one address against the rule set that is there.</summary>
+        private static ImmutableArray<RuleValue> ReadAt(
+            IReadOnlyDictionary<StateAddress, string> states,
+            StateAddress address,
+            CompiledRuleSet rules)
+        {
+            if (!states.TryGetValue(address, out string? text))
+            {
+                throw new RuleDocumentException(
+                    $"No state document was supplied at '{address}', and the transition reads it.");
+            }
+
+            using JsonDocument state = Parse(text, "state");
+            return StateDocument.Read(rules, state.RootElement);
+        }
+
+        /// <summary>Finds a projection, or tells the caller which there are.</summary>
+        private CompiledProjection FindProjection(string projection) =>
+            _ruleSet.FindProjection(projection)
+                ?? throw new ArgumentException(
+                    $"'{projection}' is not a projection of '{_ruleSet.Qualified}'."
+                    + (_ruleSet.Projections.IsEmpty
+                        ? " It declares none."
+                        : $" It declares {string.Join(", ", _ruleSet.Projections.Select(each => $"'{each.Name}'"))}."),
+                    nameof(projection));
+
+        /// <summary>Evaluates a projection against a snapshot.</summary>
+        private string Answer(CompiledProjection declared, ImmutableArray<RuleValue> fields, CancellationToken cancellationToken)
+        {
+            EvaluationSession session = new(_ruleSet.Definitions, new StateSnapshot(fields), cancellationToken);
+            EvaluationContext context = session.CreateContext(declared.FrameSize);
+
+            return ProjectionDocument.Write(declared.Name, declared.Body.Evaluate(context));
+        }
+
+        /// <summary>Reads every instance of a collection, in the order given, as <c>$alias</c> reads it.</summary>
+        private static RuleValue Every(HeldRuleSet held, IReadOnlyList<KeyValuePair<string, string>> instances)
+        {
+            ImmutableArray<RuleValue>.Builder found = ImmutableArray.CreateBuilder<RuleValue>(instances.Count);
+            foreach ((string key, string text) in instances)
+            {
+                if (key.StartsWith(TemporaryKeyPrefix, StringComparison.Ordinal))
+                {
+                    throw new RuleDocumentException(
+                        $"'{held.Alias}/{key}' is under a temporary key, which names a write not yet committed and never a stored instance.");
+                }
+
+                using JsonDocument state = Parse(text, "state");
+                found.Add(RuleValue.Record(new Dictionary<string, RuleValue>(StringComparer.Ordinal)
+                {
+                    ["key"] = RuleValue.Text(key),
+                    ["state"] = held.Schema.Pack(StateDocument.Read(held.Rules, state.RootElement))
+                }));
+            }
+
+            return RuleValue.Sequence(found.MoveToImmutable());
+        }
+
+        /// <summary>Refuses a one-document call on a rule set whose position is several documents.</summary>
+        private void RequireOneDocument()
+        {
+            if (_ruleSet.KeepsInstances)
+            {
+                throw new InvalidOperationException(
+                    $"'{_ruleSet.Qualified}' keeps instances of what it holds as documents of their own, in the store "
+                    + "it names, so its position is not one document. ApplyAsync, GetValidInputsAsync and ProjectAsync "
+                    + "read and write it through that store.");
+            }
         }
 
         private TransitionResult Apply(JsonElement input, JsonElement state, CancellationToken cancellationToken)
@@ -427,9 +1219,29 @@ namespace Rulealize
         {
             ImmutableArray<RuleValue> fields = StateDocument.Read(_ruleSet, state);
             InputRequest request = InputDocument.Read(_ruleSet, input);
+            Located located = Locate(request);
 
-            Part root = Part.Of(_ruleSet, fields, $"inputs.{request.Input}.effects", cancellationToken);
-            if (!root.TryResolveInput(
+            return Begin(request, located, new Position(fields, []), outcomeSupplied, null, cancellationToken);
+        }
+
+        /// <summary>Resolves the input an input document names, and which instances it is at.</summary>
+        /// <remarks>
+        /// <para>
+        /// Everything here is read off the input document and the rule set, and nothing off a
+        /// state. That is what lets <see cref="GetReads"/> say which documents a transition
+        /// reads before any of them has been fetched — and what makes that list the one the
+        /// transition then reads, rather than a promise about it.
+        /// </para>
+        /// <para>
+        /// An instance is needed for every collection on the way to the input — the one an
+        /// input of the instance's own belongs to — and for the one an input of this rule
+        /// set's own is <c>at</c>. The document's <c>at</c> has to name exactly those.
+        /// </para>
+        /// </remarks>
+        private Located Locate(InputRequest request)
+        {
+            if (!Part.TryResolveInput(
+                    _ruleSet,
                     request.Input,
                     out ImmutableArray<string> path,
                     out CompiledInput? declared,
@@ -438,7 +1250,77 @@ namespace Rulealize
                 throw new RuleDocumentException($"'{request.Input}' is not an input of '{_ruleSet.Qualified}'.");
             }
 
-            if (declared!.HasDraw && !outcomeSupplied)
+            // Every collection on the way down to the rule set that declares the input, and the
+            // one the input is at, in that order — which is the order the addresses nest in.
+            List<HeldRuleSet> needed = [];
+            CompiledRuleSet rules = _ruleSet;
+            foreach (string alias in path)
+            {
+                HeldRuleSet step = rules.FindHeld(alias)!;
+                if (step.Many is not null)
+                {
+                    needed.Add(step);
+                }
+
+                rules = step.Rules;
+            }
+
+            if (declared!.At is string at)
+            {
+                needed.Add(rules.FindHeld(at)!);
+            }
+
+            ImmutableArray<Step>.Builder instances = ImmutableArray.CreateBuilder<Step>(needed.Count);
+            StateAddress address = StateAddress.Root;
+
+            foreach (HeldRuleSet collection in needed)
+            {
+                if (!request.At.TryGetValue(collection.Alias, out string? key))
+                {
+                    throw new RuleDocumentException(
+                        $"'{request.Input}' is about one instance of '{collection.Alias}', and the input document's "
+                        + "'at' does not say which.");
+                }
+
+                if (KeyFault(collection, key) is string fault)
+                {
+                    throw new RuleDocumentException(fault);
+                }
+
+                address = address.Child(collection.Alias, key);
+                instances.Add(new Step(address, collection));
+            }
+
+            foreach (string alias in request.At.Keys)
+            {
+                if (!needed.Any(collection => string.Equals(collection.Alias, alias, StringComparison.Ordinal)))
+                {
+                    throw new RuleDocumentException(
+                        _ruleSet.CollectionsBelow.Contains(alias, StringComparer.Ordinal)
+                            ? $"The input document's 'at' names an instance of '{alias}', and '{request.Input}' "
+                              + "is not about one."
+                            : $"The input document's 'at' names '{alias}', which is not a collection of "
+                              + $"'{_ruleSet.Qualified}'.");
+                }
+            }
+
+            return new Located(path, declared, held, instances.MoveToImmutable());
+        }
+
+        private Prepared Begin(
+            InputRequest request,
+            Located located,
+            Position position,
+            bool outcomeSupplied,
+            string? createdKey,
+            CancellationToken cancellationToken)
+        {
+            Part root = Part.Of(_ruleSet, position, $"inputs.{request.Input}.effects", cancellationToken);
+            ImmutableArray<string> path = located.Path;
+            CompiledInput declared = located.Declared;
+            HeldRuleSet? held = located.Held;
+
+            if (declared.HasDraw && !outcomeSupplied)
             {
                 throw new InvalidOperationException(
                     $"'{request.Input}' resolves something nobody chose, so applying it takes an outcome as well. "
@@ -452,6 +1334,7 @@ namespace Rulealize
             EvaluationContext context = part.Session.CreateContext(declared.FrameSize);
             ImmutableArray<Inadmissible> inadmissible =
                 BindArguments(part.Session, request.Input, declared, request, context, cancellationToken);
+            SeedAt(part, declared, context);
 
             // The guard reads no open parameter, so it can be asked even where a schema refused
             // one — and is asked first, because whether the move was on offer at all is a
@@ -494,7 +1377,7 @@ namespace Rulealize
                     $"'{request.Input}' is allowed by '{part.Rules.Qualified}', and {refusal}");
             }
 
-            return new Prepared(fields, request.Input, path, declared, arguments);
+            return new Prepared(position, request.Input, path, declared, arguments, createdKey ?? $"{TemporaryKeyPrefix}1");
         }
 
         /// <summary>Runs an input's effects once, for the outcome a trail describes.</summary>
@@ -514,13 +1397,64 @@ namespace Rulealize
         private TransitionResult Run(Prepared prepared, DrawTrail trail, CancellationToken cancellationToken)
         {
             string origin = $"inputs.{prepared.Name}.effects";
-            Part root = Part.Of(_ruleSet, prepared.Fields, origin, cancellationToken, trail);
+            Part root = Part.Of(_ruleSet, prepared.Position, origin, cancellationToken, trail);
 
             Drive(root.Descend(prepared.Path), prepared.Name, prepared.Declared, prepared.Arguments, cancellationToken);
 
             ImmutableArray<RuleValue> next = root.Commit();
             TerminalStatus terminal = EvaluateTerminal(next, cancellationToken);
-            return new TransitionResult(_ruleSet.Qualified, WriteData(next), terminal.IsTerminal, terminal.Result);
+
+            return new TransitionResult(
+                _ruleSet.Qualified,
+                WriteData(next),
+                terminal.IsTerminal,
+                terminal.Result,
+                _ruleSet.KeepsInstances ? Writes(root, next, prepared) : null);
+        }
+
+        /// <summary>Lists the documents a transition over a position of several documents writes.</summary>
+        /// <remarks>
+        /// The holder's document when its own inputs wrote to it, each instance an input drove,
+        /// outermost first, and a new instance where the input creates one — at the state its
+        /// collection starts at, under the temporary key or the one a commit document assigned,
+        /// beneath the instance whose rule set declared the input.
+        /// </remarks>
+        private ImmutableArray<StateWrite> Writes(Part root, ImmutableArray<RuleValue> next, Prepared prepared)
+        {
+            ImmutableArray<StateWrite>.Builder writes = ImmutableArray.CreateBuilder<StateWrite>();
+            if (root.Written)
+            {
+                writes.Add(new StateWrite(StateAddress.Root, StateDocument.Write(_ruleSet, next), false));
+            }
+
+            WriteInstances(root, writes);
+
+            if (prepared.Declared.Creates is string creates)
+            {
+                Part declaring = root.Descend(prepared.Path);
+                HeldRuleSet held = declaring.Rules.FindHeld(creates)!;
+                writes.Add(new StateWrite(
+                    declaring.Address!.Child(creates, prepared.CreatedKey),
+                    StateDocument.Write(held.Rules, held.Many!.Start),
+                    true));
+            }
+
+            return writes.ToImmutable();
+        }
+
+        /// <summary>Commits each instance bound under a part, and every one under those, and lists the ones written.</summary>
+        private static void WriteInstances(Part part, ImmutableArray<StateWrite>.Builder writes)
+        {
+            foreach (Part instance in part.Instances)
+            {
+                ImmutableArray<RuleValue> fields = instance.Commit();
+                if (instance.Written)
+                {
+                    writes.Add(new StateWrite(instance.Address!, StateDocument.Write(instance.Rules, fields), false));
+                }
+
+                WriteInstances(instance, writes);
+            }
         }
 
         /// <summary>Runs one input's effects, and then everything it drives.</summary>
@@ -550,6 +1484,9 @@ namespace Rulealize
             {
                 context.Seed(declared.Parameters[i].Slot, arguments[i]);
             }
+
+            SeedAt(part, declared, context);
+            part.Written |= !declared.Effects.IsEmpty;
 
             foreach (EffectNode effect in declared.Effects)
             {
@@ -713,11 +1650,29 @@ namespace Rulealize
 
         /// <summary>What a transition has settled before its effects run.</summary>
         private readonly record struct Prepared(
-            ImmutableArray<RuleValue> Fields,
+            Position Position,
             string Name,
             ImmutableArray<string> Path,
             CompiledInput Declared,
-            ImmutableArray<RuleValue> Arguments);
+            ImmutableArray<RuleValue> Arguments,
+            string CreatedKey);
+
+        /// <summary>The input an input document names, and the instances it is at.</summary>
+        private readonly record struct Located(
+            ImmutableArray<string> Path,
+            CompiledInput Declared,
+            HeldRuleSet? Held,
+            ImmutableArray<Step> Instances);
+
+        /// <summary>One instance on the way to an input: where it is, and the collection it belongs to.</summary>
+        private readonly record struct Step(StateAddress Address, HeldRuleSet Held);
+
+        /// <summary>The key a new instance is written under until the store assigns its real one.</summary>
+        /// <remarks>
+        /// The prefix is refused in an input document's <c>at</c> and in what a commit document
+        /// assigns, so a temporary key can never be mistaken for a stored one.
+        /// </remarks>
+        private const string TemporaryKeyPrefix = "~";
 
         /// <summary>One partly or wholly decided outcome, waiting to be run.</summary>
         private readonly record struct Branch(
@@ -1020,7 +1975,95 @@ namespace Rulealize
                     return;
                 }
 
+                // An instance is offered at its own address, never alongside its holder's moves.
+                if (held.Many is not null)
+                {
+                    continue;
+                }
+
                 Offered(part.Held(held.Alias), part, held, prefix + held.Alias + ".", search, cancellationToken);
+            }
+        }
+
+        /// <summary>Sifts what is offered at one address of a rule set that keeps instances.</summary>
+        /// <param name="part">The rule set's part, or an instance's on the way down.</param>
+        /// <param name="holder">The part holding <paramref name="part"/>, whose <c>held</c> guard reads it.</param>
+        /// <param name="through">What <paramref name="holder"/> holds <paramref name="part"/> as.</param>
+        /// <param name="prefix">What the inputs of <paramref name="part"/> are qualified with.</param>
+        /// <param name="below">The collections still to go down through to the address, outermost first.</param>
+        /// <param name="search">The search.</param>
+        /// <param name="cancellationToken">Cancels a long search.</param>
+        /// <remarks>
+        /// At the address itself: the inputs of its rule set that are at no instance, and what
+        /// it holds once. One level above it: the inputs that are at its collection. Each is
+        /// sifted by its own rules and by what <c>held</c> says, as a held rule set's always
+        /// is, so <c>months.submit</c> is offered at a claim of a month with whatever holds the
+        /// months asked as well.
+        /// </remarks>
+        private static void OfferedAt(
+            Part part,
+            Part? holder,
+            HeldRuleSet? through,
+            string prefix,
+            ImmutableArray<string> below,
+            Search search,
+            CancellationToken cancellationToken)
+        {
+            string? at = below.IsEmpty ? null : below[0];
+            if (below.Length <= 1)
+            {
+                foreach (CompiledInput input in part.Rules.Inputs)
+                {
+                    if (search.Exhausted)
+                    {
+                        return;
+                    }
+
+                    HeldConstraint? constraint = through?.FindConstraint(input.Name);
+                    if (string.Equals(input.At, at, StringComparison.Ordinal) && constraint?.Never != true)
+                    {
+                        Collect(new Offer(prefix + input.Name, input, part, constraint, holder), search, cancellationToken);
+                    }
+                }
+            }
+
+            if (at is null)
+            {
+                foreach (HeldRuleSet held in part.Rules.Held)
+                {
+                    if (search.Exhausted)
+                    {
+                        return;
+                    }
+
+                    if (held.Many is null)
+                    {
+                        Offered(part.Held(held.Alias), part, held, prefix + held.Alias + ".", search, cancellationToken);
+                    }
+                }
+
+                return;
+            }
+
+            if (!search.Exhausted)
+            {
+                OfferedAt(
+                    part.Held(at),
+                    part,
+                    part.Rules.FindHeld(at),
+                    prefix + at + ".",
+                    below.RemoveAt(0),
+                    search,
+                    cancellationToken);
+            }
+        }
+
+        /// <summary>Binds <c>@alias</c> for an input that is at an instance.</summary>
+        private static void SeedAt(Part part, CompiledInput declared, EvaluationContext context)
+        {
+            if (declared.AtSlot is LocalSlot slot)
+            {
+                context.Seed(slot, part.Held(declared.At!).AtValue);
             }
         }
 
@@ -1113,6 +2156,8 @@ namespace Rulealize
                 }
             }
 
+            SeedAt(offer.Part, input, context);
+
             if (input.Guard is not null && !input.Guard.Evaluate(context).AsBoolean($"inputs.{offer.Name}.when"))
             {
                 return;
@@ -1167,8 +2212,17 @@ namespace Rulealize
                 new ArgumentList(arguments.ToImmutable()),
                 new OpenParameterList(open.ToImmutable()),
                 parameters.MoveToImmutable(),
-                actor));
+                actor,
+                search.At));
         }
+
+        /// <summary>A position as it was read: the rule set's own fields, and each instance an input is at.</summary>
+        /// <param name="Root">The rule set's own fields, in schema order.</param>
+        /// <param name="Instances">The instances, read from their own documents.</param>
+        private sealed record Position(ImmutableArray<RuleValue> Root, ImmutableArray<Instance> Instances);
+
+        /// <summary>One instance of a collection, read from its document.</summary>
+        private readonly record struct Instance(StateAddress Address, HeldRuleSet Held, ImmutableArray<RuleValue> Fields);
 
         /// <summary>One rule set's part of a composite state, and what is happening to it.</summary>
         /// <remarks>
@@ -1221,6 +2275,31 @@ namespace Rulealize
 
             public StateDraft Draft { get; }
 
+            /// <summary>Gets whether a transition wrote to this part's document, or to a field holding a rule set inside it.</summary>
+            /// <remarks>
+            /// Settled by which inputs ran, not by whether a value changed, so it is a fact about
+            /// the input document and the rule set: the same move writes the same documents in
+            /// every position it is legal in.
+            /// </remarks>
+            public bool Written { get; set; }
+
+            /// <summary>Gets where this part's document is, or null when its state is a field of another's.</summary>
+            /// <remarks>
+            /// <see cref="StateAddress.Root"/> for the rule set a position is read for, and an
+            /// instance's own address for each instance read with it.
+            /// </remarks>
+            public StateAddress? Address { get; private init; }
+
+            /// <summary>Gets what <c>@alias</c> reads for this instance: its key and its state, as found.</summary>
+            public RuleValue AtValue => _atValue ??= RuleValue.Record(new Dictionary<string, RuleValue>(StringComparer.Ordinal)
+            {
+                ["key"] = RuleValue.Text(Address!.Segments[^1]),
+                ["state"] = _packing!.Pack(Snapshot.Fields)
+            });
+
+            private HeldStateSchema? _packing;
+            private RuleValue? _atValue;
+
             public static Part Of(
                 CompiledRuleSet rules,
                 ImmutableArray<RuleValue> fields,
@@ -1228,6 +2307,43 @@ namespace Rulealize
                 CancellationToken cancellationToken,
                 DrawTrail? trail = null) =>
                 new(rules, fields, origin, cancellationToken, trail);
+
+            /// <summary>Makes the part a position is, with the instances it was read with bound under their aliases.</summary>
+            /// <remarks>
+            /// The instances come outermost first, so each one's holder is bound before it is:
+            /// a claim of a month goes under the month it was read with.
+            /// </remarks>
+            public static Part Of(
+                CompiledRuleSet rules,
+                Position position,
+                string origin,
+                CancellationToken cancellationToken,
+                DrawTrail? trail = null)
+            {
+                Part root = new(rules, position.Root, origin, cancellationToken, trail) { Address = StateAddress.Root };
+                foreach (Instance instance in position.Instances)
+                {
+                    Part holder = root;
+                    ImmutableArray<string> segments = instance.Address.Segments;
+                    for (int i = 0; i + 2 < segments.Length; i += 2)
+                    {
+                        holder = holder._held[segments[i]];
+                    }
+
+                    holder._held.Add(
+                        instance.Held.Alias,
+                        new Part(instance.Held.Rules, instance.Fields, origin, cancellationToken, trail)
+                        {
+                            Address = instance.Address,
+                            _packing = instance.Held.Schema
+                        });
+                }
+
+                return root;
+            }
+
+            /// <summary>Gets the instances bound directly under this part.</summary>
+            public IEnumerable<Part> Instances => _held.Values.Where(static part => part.Address is not null);
 
             /// <summary>Gets the part a held rule set occupies, making it the first time.</summary>
             /// <remarks>
@@ -1241,9 +2357,17 @@ namespace Rulealize
                 if (!_held.TryGetValue(alias, out Part? part))
                 {
                     HeldRuleSet held = Rules.FindHeld(alias)!;
+
+                    // An instance is bound when the position is read, from the document the input
+                    // named. Reaching one that was not means the runtime read less than it said
+                    // it would.
+                    StatePath field = held.Field
+                        ?? throw new InvalidOperationException(
+                            $"No instance of '{alias}' was read, and evaluation reached for one.");
+
                     part = new Part(
                         held.Rules,
-                        held.Schema.Unpack(Snapshot[held.Field.FieldIndex]),
+                        held.Schema.Unpack(Snapshot[field.FieldIndex]),
                         _origin,
                         _cancellationToken,
                         _trail);
@@ -1267,7 +2391,8 @@ namespace Rulealize
             }
 
             /// <summary>Splits a qualified input name into the aliases leading to it, and the input.</summary>
-            /// <param name="name">The name an input document gave, relative to this part.</param>
+            /// <param name="rules">The rule set the name is relative to.</param>
+            /// <param name="name">The name an input document gave, relative to that rule set.</param>
             /// <param name="path">Receives the aliases, outermost first.</param>
             /// <param name="declared">Receives the input.</param>
             /// <param name="through">Receives the held rule set the input belongs to.</param>
@@ -1278,14 +2403,14 @@ namespace Rulealize
             /// documents do: <c>a.b.c</c> is what <c>a</c> holds under <c>b</c>, and its input
             /// <c>c</c>.
             /// </remarks>
-            public bool TryResolveInput(
+            public static bool TryResolveInput(
+                CompiledRuleSet rules,
                 string name,
                 out ImmutableArray<string> path,
                 out CompiledInput? declared,
                 out HeldRuleSet? through)
             {
                 ImmutableArray<string>.Builder aliases = ImmutableArray.CreateBuilder<string>();
-                CompiledRuleSet rules = Rules;
                 through = null;
 
                 ReadOnlySpan<char> rest = name;
@@ -1316,12 +2441,22 @@ namespace Rulealize
             }
 
             /// <summary>Produces the state this part arrives at, with everything it holds folded in.</summary>
+            /// <remarks>
+            /// An instance of a collection is a document of its own and is not folded in; it is
+            /// committed on its own, as its own write.
+            /// </remarks>
             public ImmutableArray<RuleValue> Commit()
             {
                 foreach ((string alias, Part part) in _held)
                 {
                     HeldRuleSet held = Rules.FindHeld(alias)!;
-                    Draft.Adopt(held.Field, held.Schema.Pack(part.Commit()));
+                    if (held.Field is not StatePath field)
+                    {
+                        continue;
+                    }
+
+                    Draft.Adopt(field, held.Schema.Pack(part.Commit()));
+                    Written |= part.Written;
                 }
 
                 return Draft.Commit(_origin);
@@ -1373,6 +2508,11 @@ namespace Rulealize
                         {
                             outer.Seed(constraint.ParameterSlots[i], chosen[i]);
                         }
+                    }
+
+                    if (constraint.AtSlot is LocalSlot atSlot)
+                    {
+                        outer.Seed(atSlot, Part.AtValue);
                     }
 
                     if (!constraint.When.Evaluate(outer).AsBoolean($"held.{Name}.when"))
@@ -1571,8 +2711,11 @@ namespace Rulealize
         }
 
         /// <summary>How far the candidate search has got, and whether it may go further.</summary>
-        private sealed class Search(int limit)
+        private sealed class Search(int limit, StateAddress? at = null)
         {
+            /// <summary>Gets the address the moves are found at, which each one is written with.</summary>
+            public StateAddress At { get; } = at ?? StateAddress.Root;
+
             public ImmutableArray<ValidInput>.Builder Found { get; } = ImmutableArray.CreateBuilder<ValidInput>();
 
             public int Evaluated { get; private set; }

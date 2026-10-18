@@ -8,7 +8,13 @@ using Rulealize.Internal.RuleSet;
 namespace Rulealize.Internal.Document
 {
     /// <summary>An input document, read.</summary>
-    internal sealed record InputRequest(string Input, IReadOnlyDictionary<string, JsonElement> Arguments);
+    /// <param name="Input">The input's name, qualified by the aliases leading to it.</param>
+    /// <param name="Arguments">The arguments, as JSON, by parameter name.</param>
+    /// <param name="At">Which instance of each collection the input is about, by alias. Empty when it names none.</param>
+    internal sealed record InputRequest(
+        string Input,
+        IReadOnlyDictionary<string, JsonElement> Arguments,
+        IReadOnlyDictionary<string, string> At);
 
     /// <summary>Reads the <c>rulealize/input/v1</c> document.</summary>
     /// <remarks>
@@ -38,7 +44,7 @@ namespace Rulealize.Internal.Document
                 throw new RuleDocumentException("An input document must be a JSON object.");
             }
 
-            DocumentFrame.OnlyTheseKeys(document, "an input", "$schema", "ruleSet", "input", "args");
+            DocumentFrame.OnlyTheseKeys(document, "an input", "$schema", "ruleSet", "input", "args", "at");
 
             if (document.TryGetProperty("ruleSet", out JsonElement declared)
                 && declared.ValueKind == JsonValueKind.String
@@ -67,7 +73,26 @@ namespace Rulealize.Internal.Document
                 }
             }
 
-            return new InputRequest(name.GetString()!, arguments);
+            Dictionary<string, string> at = new(StringComparer.Ordinal);
+            if (document.TryGetProperty("at", out JsonElement where))
+            {
+                if (where.ValueKind != JsonValueKind.Object)
+                {
+                    throw new RuleDocumentException("The 'at' of an input document must be an object naming a key per collection.");
+                }
+
+                foreach (JsonProperty instance in where.EnumerateObject())
+                {
+                    if (instance.Value.ValueKind != JsonValueKind.String || instance.Value.GetString()!.Length == 0)
+                    {
+                        throw new RuleDocumentException($"'at.{instance.Name}' must be the key of an instance, as text.");
+                    }
+
+                    at[instance.Name] = instance.Value.GetString()!;
+                }
+            }
+
+            return new InputRequest(name.GetString()!, arguments, at);
         }
 
         /// <summary>Reads an argument of a parameter that has a domain.</summary>

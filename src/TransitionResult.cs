@@ -1,8 +1,10 @@
 // Copyright (c) 2026 Reny
 // Licensed under the Apache License, Version 2.0.
 
+using System.Collections.Immutable;
 using System.Text;
 using System.Text.Json;
+using Rulealize.Abstraction.Store;
 
 namespace Rulealize
 {
@@ -17,12 +19,20 @@ namespace Rulealize
         private readonly string _data;
         private readonly string _ruleSet;
 
-        internal TransitionResult(string ruleSet, string data, bool isTerminal, string? result)
+        private readonly ImmutableArray<StateWrite>? _writes;
+
+        internal TransitionResult(
+            string ruleSet,
+            string data,
+            bool isTerminal,
+            string? result,
+            ImmutableArray<StateWrite>? writes = null)
         {
             _ruleSet = ruleSet;
             _data = data;
             IsTerminal = isTerminal;
             Result = result;
+            _writes = writes;
         }
 
         /// <summary>Gets a value indicating whether the rule set considers the new state final.</summary>
@@ -40,6 +50,14 @@ namespace Rulealize
 
         /// <summary>Gets the state the transition arrived at, as a state document.</summary>
         public string State => BuildStateDocument();
+
+        /// <summary>Gets every document the transition writes.</summary>
+        /// <remarks>
+        /// One, at <see cref="StateAddress.Root"/>, for a rule set that keeps no instances. A
+        /// rule set that does writes the documents its input touches and no others, so an
+        /// input at one instance leaves its holder's document out unless it wrote to it.
+        /// </remarks>
+        internal ImmutableArray<StateWrite> Writes => _writes ?? [new StateWrite(StateAddress.Root, State, false)];
 
         /// <summary>Writes the result as the document a caller passes on.</summary>
         /// <returns>An object with <c>data</c>, <c>terminal</c>, and <c>result</c> when there is one.</returns>

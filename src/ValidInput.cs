@@ -6,6 +6,7 @@ using System.Collections.Immutable;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Rulealize.Abstraction.Store;
 using Rulealize.Abstraction.Value;
 
 namespace Rulealize
@@ -52,8 +53,10 @@ namespace Rulealize
             ArgumentList arguments,
             OpenParameterList open,
             ImmutableArray<string> parameters,
-            string? actor)
+            string? actor,
+            StateAddress at)
         {
+            At = at;
             Input = input;
             _values = values;
             _parameters = parameters;
@@ -64,6 +67,13 @@ namespace Rulealize
 
         /// <summary>Gets the name of the input.</summary>
         public string Input { get; }
+
+        /// <summary>Gets the address this move was found at, and is about.</summary>
+        /// <remarks>
+        /// <see cref="StateAddress.Root"/> except for a rule set that keeps instances, where a
+        /// move at an instance is written with an <c>at</c> naming it.
+        /// </remarks>
+        public StateAddress At { get; }
 
         /// <summary>Gets the arguments rendered as text, one per declared parameter, in that order.</summary>
         /// <remarks>
@@ -110,6 +120,7 @@ namespace Rulealize
                 writer.WriteString("$schema", Internal.Document.InputDocument.SchemaId);
                 writer.WriteString("ruleSet", ruleSet);
                 writer.WriteString("input", Input);
+                WriteAt(writer);
                 writer.WritePropertyName("args");
                 WriteArguments(writer);
                 writer.WriteEndObject();
@@ -201,6 +212,7 @@ namespace Rulealize
                 writer.WriteString("$schema", Internal.Document.InputDocument.SchemaId);
                 writer.WriteString("ruleSet", ruleSet);
                 writer.WriteString("input", Input);
+                WriteAt(writer);
                 writer.WritePropertyName("args");
                 writer.WriteStartObject();
 
@@ -262,6 +274,23 @@ namespace Rulealize
             if (Actor is not null)
             {
                 writer.WriteString("actor", Actor);
+            }
+
+            writer.WriteEndObject();
+        }
+
+        private void WriteAt(Utf8JsonWriter writer)
+        {
+            if (At.IsRoot)
+            {
+                return;
+            }
+
+            writer.WritePropertyName("at");
+            writer.WriteStartObject();
+            for (int i = 0; i + 1 < At.Segments.Length; i += 2)
+            {
+                writer.WriteString(At.Segments[i], At.Segments[i + 1]);
             }
 
             writer.WriteEndObject();

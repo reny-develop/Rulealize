@@ -4,6 +4,7 @@
 using System.Collections.Immutable;
 using Rulealize.Abstraction.Building;
 using Rulealize.Abstraction.Node;
+using Rulealize.Abstraction.Value;
 using Rulealize.Internal.Building;
 
 namespace Rulealize.Internal.RuleSet
@@ -28,11 +29,22 @@ namespace Rulealize.Internal.RuleSet
         /// <summary>Gets the component, compiled.</summary>
         public required CompiledRuleSet Rules { get; init; }
 
-        /// <summary>Gets the composite state field its state occupies.</summary>
-        public required StatePath Field { get; init; }
+        /// <summary>Gets the composite state field its state occupies, or null when it is held <c>many</c>.</summary>
+        /// <remarks>
+        /// Instances are documents of their own, so a collection occupies no field: reading the
+        /// composite's state does not read them, and writing it does not write them.
+        /// </remarks>
+        public required StatePath? Field { get; init; }
 
-        /// <summary>Gets the schema of that field, which packs and unpacks the component's state.</summary>
-        public HeldStateSchema Schema => (HeldStateSchema)Field.Schema;
+        /// <summary>Gets the schema that packs and unpacks the component's state into a record.</summary>
+        /// <remarks>
+        /// The schema of <see cref="Field"/> for a single held rule set; for a collection, the same
+        /// packing, which is what <c>@alias</c> carries as its <c>state</c>.
+        /// </remarks>
+        public required HeldStateSchema Schema { get; init; }
+
+        /// <summary>Gets how instances are kept, or null when exactly one is held, inside this rule set's state.</summary>
+        public HeldMany? Many { get; init; }
 
         /// <summary>Gets what the composite refuses, by component input name.</summary>
         public required ImmutableArray<HeldConstraint> Constraints { get; init; }
@@ -52,6 +64,32 @@ namespace Rulealize.Internal.RuleSet
 
             return null;
         }
+    }
+
+    /// <summary>What <c>many</c> says about a held rule set: any number of instances, each a document.</summary>
+    /// <remarks>
+    /// <para>
+    /// Two forms. A generated key is one the store assigns when an instance is created, so the
+    /// collection grows by <c>creates</c>. A key written as a schema makes every key it admits
+    /// an instance already: one nobody has written is at <see cref="Start"/>, and nothing
+    /// creates one.
+    /// </para>
+    /// <para>
+    /// A key is text either way. The schema says which texts are keys.
+    /// </para>
+    /// </remarks>
+    internal sealed class HeldMany
+    {
+        /// <summary>Gets the state an instance starts at, in the component's schema order.</summary>
+        /// <remarks>
+        /// The state document <c>start</c> names, or the component's own <c>state.initial</c>
+        /// where it names none. A new instance is written at it; an instance of a keyed
+        /// collection that has no document yet is read as it.
+        /// </remarks>
+        public required ImmutableArray<RuleValue> Start { get; init; }
+
+        /// <summary>Gets the schema a key has to satisfy, or null when the store generates keys.</summary>
+        public SchemaNode? Key { get; init; }
     }
 
     /// <summary>One held rule set's input, driven by an input of the composite.</summary>
@@ -127,6 +165,9 @@ namespace Rulealize.Internal.RuleSet
         /// the component's own.
         /// </remarks>
         public required ImmutableArray<LocalSlot> ParameterSlots { get; init; }
+
+        /// <summary>Gets the slot <c>@alias</c> was given, where the input belongs to an instance of a collection.</summary>
+        public LocalSlot? AtSlot { get; init; }
 
         public required int FrameSize { get; init; }
     }

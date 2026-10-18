@@ -6,6 +6,7 @@ using System.Reflection;
 using System.Text.Json;
 using Rulealize.Abstraction;
 using Rulealize.Abstraction.Plugin;
+using Rulealize.Abstraction.Store;
 using Rulealize.Internal.Building;
 using Rulealize.Internal.Plugin;
 
@@ -52,6 +53,7 @@ namespace Rulealize
         };
 
         private readonly OperationTable _operations = new();
+        private StoreBinding _stores = StoreBinding.None;
         private readonly List<SkippedPlugin> _skipped = [];
 
         /// <summary>Gets what each loaded plugin declares about itself, in load order.</summary>
@@ -213,6 +215,68 @@ namespace Rulealize
             return this;
         }
 
+        /// <summary>Gives the runtime a store a host opened, for the rule sets that name its plugin.</summary>
+        /// <param name="plugin">The store plugin's identifier, as a rule set's <c>requires</c> names it.</param>
+        /// <param name="store">The store, opened: connected, and ready for a session.</param>
+        /// <returns>This runtime, so calls can be chained.</returns>
+        /// <exception cref="InvalidOperationException">
+        /// No plugin of that identifier is loaded, it is not a store, or this is not the kind of
+        /// store it declared.
+        /// </exception>
+        /// <remarks>
+        /// <para>
+        /// A rule set whose <c>uses</c> declares a <c>many</c> keeps every state document in the
+        /// store its <c>requires</c> names, its own included, and the runtime reads and writes
+        /// them through what is given here. The plugin says what a store is; opening one, with
+        /// whatever connection it takes, is the host's, and handing it over is the whole of what
+        /// the host does with documents.
+        /// </para>
+        /// <para>
+        /// Taken when a context is created, as the plugins are, so give the stores before
+        /// <see cref="CreateContext(string)"/>. Giving another for the same plugin replaces it for
+        /// the contexts created afterwards.
+        /// </para>
+        /// </remarks>
+        public RuleRuntime UseStore(string plugin, IStateStore store)
+        {
+            ArgumentException.ThrowIfNullOrEmpty(plugin);
+            ArgumentNullException.ThrowIfNull(store);
+
+            if (!_operations.TryGetPlugin(plugin, out PluginManifest? manifest))
+            {
+                throw new InvalidOperationException($"'{plugin}' is not loaded, so there is no store of it to use.");
+            }
+
+            if (!_operations.TryGetStore(manifest!.Id, out Type? declared))
+            {
+                throw new InvalidOperationException($"{manifest.Id} is not a store.");
+            }
+
+            if (!declared!.IsInstanceOfType(store))
+            {
+                throw new InvalidOperationException(
+                    $"{manifest.Id} keeps documents in a '{declared.FullName}', and this is a '{store.GetType().FullName}'.");
+            }
+
+            _stores = _stores with { Stores = _stores.Stores.SetItem(manifest.Id, store) };
+            return this;
+        }
+
+        /// <summary>Gives the runtime what keeps a transition that writes to more than one store.</summary>
+        /// <param name="coordinator">The coordinator.</param>
+        /// <returns>This runtime, so calls can be chained.</returns>
+        /// <remarks>
+        /// Taken when a context is created, as the stores are. Without one, a transition that
+        /// writes to more than one store fails rather than commit part of itself.
+        /// </remarks>
+        public RuleRuntime UseCoordinator(IStoreCoordinator coordinator)
+        {
+            ArgumentNullException.ThrowIfNull(coordinator);
+
+            _stores = _stores with { Coordinator = coordinator };
+            return this;
+        }
+
         /// <summary>Compiles a rule set document.</summary>
         /// <param name="ruleSetDocument">The document.</param>
         /// <returns>A context that states can be run through.</returns>
@@ -243,7 +307,9 @@ namespace Rulealize
         /// <see cref="RuleContext.GetOutcomes(string, string, int, CancellationToken)"/> and
         /// <see cref="RuleContext.GetTerminalStatus(string, CancellationToken)"/> are
         /// unchanged, and so is what a case is: one state document, one string, storable in a
-        /// column and resumable on another machine.
+        /// column and resumable on another machine. The exception is a <c>uses</c> entry with a
+        /// <c>many</c>, whose instances are documents of their own; the overload taking start
+        /// documents is the one such a rule set is compiled with.
         /// </para>
         /// <para>
         /// A dictionary rather than a callback, because fetching a document is somebody
@@ -255,12 +321,48 @@ namespace Rulealize
         /// </remarks>
         public RuleContext CreateContext(
             string ruleSetDocument,
-            IReadOnlyDictionary<string, string>? heldDocuments)
+            IReadOnlyDictionary<string, string>? heldDocuments) =>
+            CreateContext(ruleSetDocument, heldDocuments, null);
+
+        /// <summary>Compiles a rule set document, the documents it holds, and the states its instances start at.</summary>
+        /// <param name="ruleSetDocument">The document.</param>
+        /// <param name="heldDocuments">
+        /// The document of every rule set reachable through <c>uses</c>, by identifier.
+        /// </param>
+        /// <param name="startDocuments">
+        /// The state document each <c>many</c> names as its <c>start</c>, by that name.
+        /// </param>
+        /// <returns>A context that states can be run through.</returns>
+        /// <exception cref="RuleSetBuildException">
+        /// The document is not a valid rule set, a document it holds or starts an instance at
+        /// was not supplied, or one that was is not one the rule set can take.
+        /// </exception>
+        /// <remarks>
+        /// <para>
+        /// A rule set that keeps instances says where a new one starts, by name, rather than
+        /// writing the state out a second time: who may sign and what kinds of expense there
+        /// are belong to no rule set, so they are said in one state document and handed in
+        /// here, on the terms a held document is.
+        /// </para>
+        /// <para>
+        /// The document is read when the context is built — its <c>ruleSet</c> checked against
+        /// what <c>uses</c> asks for, its data against the component's schema — so a start
+        /// that could not be a state of the component is refused before any instance is made
+        /// from it.
+        /// </para>
+        /// </remarks>
+        public RuleContext CreateContext(
+            string ruleSetDocument,
+            IReadOnlyDictionary<string, string>? heldDocuments,
+            IReadOnlyDictionary<string, string>? startDocuments)
         {
             ArgumentNullException.ThrowIfNull(ruleSetDocument);
 
             using JsonDocument document = Parse(ruleSetDocument);
-            return new RuleContext(new RuleSetCompiler(_operations, heldDocuments).Compile(document.RootElement));
+            return new RuleContext(
+                new RuleSetCompiler(_operations, heldDocuments, startDocuments: startDocuments)
+                    .Compile(document.RootElement),
+                _stores);
         }
 
         /// <summary>Compiles a rule set document read from a stream.</summary>
@@ -286,7 +388,7 @@ namespace Rulealize
 
             using (document)
             {
-                return new RuleContext(new RuleSetCompiler(_operations).Compile(document.RootElement));
+                return new RuleContext(new RuleSetCompiler(_operations).Compile(document.RootElement), _stores);
             }
         }
 

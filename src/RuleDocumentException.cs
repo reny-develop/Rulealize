@@ -6,7 +6,7 @@ using System.Collections.Immutable;
 namespace Rulealize
 {
     /// <summary>
-    /// Thrown when a state, input or outcome document handed to a context is not one this
+    /// Thrown when a state, input, outcome or commit document handed to a context is not one this
     /// rule set can accept.
     /// </summary>
     /// <remarks>

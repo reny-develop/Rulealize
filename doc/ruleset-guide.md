@@ -549,7 +549,7 @@ ends the game at two. The redundancy is deliberate and the two say different thi
 
 ## 6. `inputs` — what may be done
 
-An input is a named thing somebody may do. It takes six keys and all but one are optional.
+An input is a named thing somebody may do. It takes eight keys and all but one are optional.
 
 ```jsonc
 "inputs": {
@@ -559,12 +559,14 @@ An input is a named thing somebody may do. It takes six keys and all but one are
     "when":     /* whether it is allowed */,
     "validate": [ /* what an argument from outside is held to */ ],
     "effects":  [ /* what it does */ ],
-    "fires":    [ /* component inputs it drives — §11 */ ]
+    "fires":    [ /* component inputs it drives — §11 */ ],
+    "at":       /* the collection whose instance it is about — §11 */,
+    "creates":  /* the collection it adds an instance to — §11 */
   }
 }
 ```
 
-`effects` is required unless `fires` is written. An input's name may not contain `.`; the
+`effects` is required unless `fires` or `creates` is written. An input's name may not contain `.`; the
 character is reserved for the qualified names a composite offers (§11).
 
 ### `params` — a domain, and what comes of it
@@ -1238,6 +1240,107 @@ by identifier. The rest — where those documents come from, how a version is ch
 stored composite state carries, and what a composite deliberately does not get — is
 [`uses` and `held`](runtime.md#uses-and-held-a-rule-set-that-holds-others).
 
+### `many` — any number of instances, each its own document
+
+A month holds the claims made in it, and there is no saying in advance how many. A `uses`
+entry with a `many` holds any number of instances of the component, and each is kept as a
+document of its own rather than as a field of the holder's state. Those documents are kept by a
+store, and the document names the store plugin in `requires`, exactly one, as it names any
+vocabulary it draws on:
+
+```jsonc
+"requires": [ /* … */, { "plugin": "Acme.Plugin.PostgreSqlStore" } ],
+
+"uses": [
+  { "ruleSet": "claim", "version": "^1.0", "as": "claims",
+    "many": { "key": "generated", "start": "claim-start" } }
+],
+
+"inputs": {
+  "create": { "creates": "claims" },
+  "submit": {
+    "at": "claims",
+    "params": { "by": { "domain": { "op": "seq.of", "of": ["ann", "bo", "cy"] } } },
+    "when": { "op": "cmp.lte", "right": "$limit",
+              "left": { "op": "math.add", "of": ["$used", { "op": "def.call", "def": "amountOf", "args": { "claim": "@claims" } }] } },
+    "fires": [ { "held": "claims", "input": "submit", "args": { "by": "@by" } } ],
+    "effects": [ /* add the claim's amount to $used */ ]
+  }
+}
+```
+
+`"key": "generated"` is the store's key, assigned when an instance is created. `start` names
+the state document a new instance starts at, handed to `CreateContext` by that name; without
+one, a new instance starts at the component's own `state.initial`.
+
+**`creates` adds an instance**, and **`at` is about one that exists** — which one is the input
+document's to say, in its `at`. Inside an input that is `at` a collection, `@claims` is that
+instance: a record with its `key` and its `state`. A component's own inputs are offered at the
+instance as `claims.enterAmount`, and `held` constrains them as it does any held input, with
+`@claims` in scope there too.
+
+**A guard reads only documents its transition writes**, because that is what lets the store
+check versions on what is written and nothing else; two moves each legal alone could otherwise
+commit together into a position no rule allows. Three refusals follow from it. An input at an
+instance fires at least one of its inputs, since that is how a transition writes one. An input
+that writes nothing of the holder's own — `create` above — may not read `$limit` or `$used`
+to decide anything, directly or through a definition. And a `held` guard over an instance's
+input may read `@claims` but not the holder's state, since that input never writes it.
+
+**`$claims` is every instance, and only a projection reads it** — a sequence, in the order
+they were created, of the same `{ key, state }` records, for a screen that lists the month's claims or for the month
+to say whether `used` is what its claims add up to:
+
+```jsonc
+"projections": {
+  "claims": {
+    "op": "seq.select", "source": "$claims", "as": "c",
+    "select": { "key": { "op": "rec.at", "record": "@c", "key": "key" },
+                "amount": { "op": "def.call", "def": "amountOf", "args": { "claim": "@c" } } }
+  }
+}
+```
+
+A guard, an effect or a definition that read it would read documents its transition does not
+write, so the compiler refuses it there. A rule across instances is kept as state, as `used`
+is, and a projection is how the rule set shows it holds.
+
+**A key written as a schema** is the other kind of `many`. Every key the schema admits is an
+instance already, so nothing creates one and `creates` is refused on it; an instance nobody has
+written is at its `start`, and is stored the first time something writes it. That is how every
+month is held — asking about next month needs nothing done first:
+
+```jsonc
+"uses": [
+  { "ruleSet": "claim-month", "version": "^0.1", "as": "months",
+    "many": { "key": { "op": "type.string", "minLength": 7, "maxLength": 7 } } }
+]
+```
+
+A key is text either way, and the schema says which texts are keys; an `at` naming one it does
+not admit is refused. Most of those instances are never written, so there is no sequence of
+every one: `$months` is refused, in a projection too.
+
+**A rule set that keeps instances can be held `many` itself**, and only that way. The month
+above is the one with its claims, unchanged, so a claim is kept at `months/2026-10/claims/c-8`
+and which month it belongs to is where it is kept. The ledger offers the month's inputs under
+its alias — `months.create`, `months.submit`, `months.claims.enterAmount` — and an input
+document names an instance of each collection on the way down:
+
+```json
+{ "input": "months.submit", "at": { "months": "2026-10", "claims": "c-8" }, "args": { "by": "ann" } }
+```
+
+Because `at` names them by alias, no two collections on one way down may share one. Driving a
+month's input that is itself at a claim, from an input of the ledger's, is not supported yet.
+
+Every state document of a rule set like this is in its store, its own included, and Rulealize
+reads and writes them as it calls any plugin; a host gives the runtime the opened store and
+then hands over input documents alone, through `ApplyAsync`, `GetValidInputsAsync` and
+`ProjectAsync`. How the runtime treats the documents, and what happens when two transitions
+race or one writes to two stores, is
+[`many`](runtime.md#many-instances-kept-as-documents-of-their-own).
+
 ---
 
 ## 12. The three documents that travel
@@ -1313,7 +1416,7 @@ message carries the path of the offending node:
 /inputs/submit/when/left: 'stagee' is not a field of the state schema.
 /inputs/reject/effects[0]/path: 'staeg' is not a field of the state schema.
 /inputs/submit/effects[0]: 'cmp.eq' is an expression and cannot appear where an effect is expected.
-/inputs/submit/whn: is not a key an input takes; those are 'params', 'actor', 'when', 'validate', 'effects' and 'fires'.
+/inputs/submit/whn: is not a key an input takes; those are 'params', 'actor', 'when', 'validate', 'effects', 'fires', 'at' and 'creates'.
 ```
 
 **That path is the runtime's own, and it is not a JSON pointer.** A member is `/name` and an
@@ -1352,12 +1455,13 @@ Reading past the end of a sequence and reading a square off the board are **not*
 They produce null, and rule sets are built on their doing so (§2).
 
 Each exception says which class of thing went wrong: `RuleSetBuildException` for a document
-that is not a valid rule set, `RuleDocumentException` for a state, input or outcome document
+that is not a valid rule set, `RuleDocumentException` for a state, input, outcome or commit document
 this rule set cannot accept, `IllegalInputException` for a move the rules do not allow —
 including a value a parameter's `open` schema does not admit —
-`RuleEvaluationException` for values that make an operation meaningless, and
-`PluginLoadException` for a plugin that cannot be used or a set of them that cannot be used
-together.
+`RuleEvaluationException` for values that make an operation meaningless,
+`StateConflictException` for a transition another committed ahead of, against a document a store
+keeps, and `PluginLoadException` for a plugin that cannot be used or a set of them that cannot
+be used together.
 
 ---
 

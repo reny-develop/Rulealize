@@ -50,6 +50,25 @@ namespace Rulealize.Internal.RuleSet
         /// </remarks>
         public ImmutableArray<HeldRuleSet> Held { get; init; } = [];
 
+        /// <summary>Gets whether anything this rule set holds is held <c>many</c>, so a position is several documents.</summary>
+        public bool KeepsInstances => Held.Any(static held => held.Many is not null);
+
+        /// <summary>Gets the store plugin <c>requires</c> names to keep instances in, or <see langword="null"/> when this keeps none.</summary>
+        /// <remarks>
+        /// The rule set's own document and every instance of each collection it declares are kept
+        /// there. An instance whose rule set keeps instances of its own keeps those in its store.
+        /// </remarks>
+        public string? Store { get; init; }
+
+        /// <summary>Gets the alias of every collection this rule set keeps, and every one its instances keep, at any depth.</summary>
+        /// <remarks>
+        /// An input document's <c>at</c> names an instance of each collection on the way to an
+        /// input by alias alone, so no two collections on one way down may share one.
+        /// </remarks>
+        public IEnumerable<string> CollectionsBelow =>
+            Held.Where(static held => held.Many is not null)
+                .SelectMany(static held => held.Rules.CollectionsBelow.Prepend(held.Alias));
+
         /// <summary>Finds an input by the name an input document gives.</summary>
         /// <param name="name">The input name.</param>
         /// <returns>The input, or <see langword="null"/> when the rule set has none by that name.</returns>
@@ -143,6 +162,19 @@ namespace Rulealize.Internal.RuleSet
         /// author writing that guard a second time and writing it differently.
         /// </remarks>
         public ImmutableArray<CompiledFire> Fires { get; init; } = [];
+
+        /// <summary>Gets the collection this input is at, or null when it is about this rule set's own document.</summary>
+        /// <remarks>
+        /// Which instance is the input document's to say, in its <c>at</c>. The instance is
+        /// read before anything is evaluated, because the document names it.
+        /// </remarks>
+        public string? At { get; init; }
+
+        /// <summary>Gets the slot <c>@alias</c> was given, where <see cref="At"/> names a collection.</summary>
+        public LocalSlot? AtSlot { get; init; }
+
+        /// <summary>Gets the collection this input adds an instance to, or null when it creates nothing.</summary>
+        public string? Creates { get; init; }
 
         /// <summary>Gets whether anything in this input's effects resolves a chance event.</summary>
         /// <remarks>
@@ -272,6 +304,13 @@ namespace Rulealize.Internal.RuleSet
         public required ExpressionNode Body { get; init; }
 
         public required int FrameSize { get; init; }
+
+        /// <summary>Gets the collections it reads every instance of, in declaration order.</summary>
+        /// <remarks>
+        /// Settled when the rule set is compiled, so a host knows which instances to load
+        /// before asking, as <c>GetReads</c> tells it for an input.
+        /// </remarks>
+        public ImmutableArray<string> Collections { get; init; } = [];
     }
 
     /// <summary>The <c>terminal</c> section.</summary>
