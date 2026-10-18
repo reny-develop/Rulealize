@@ -127,7 +127,28 @@ namespace Rulealize.Tests
                 }
               },
               "projections": {
-                "left": { "op": "math.sub", "left": "$limit", "right": "$used" }
+                "left": { "op": "math.sub", "left": "$limit", "right": "$used" },
+                "claims": {
+                  "op": "seq.select", "source": "$claims", "as": "c",
+                  "select": {
+                    "key": { "op": "rec.at", "record": "@c", "key": "key" },
+                    "stage": { "op": "rec.at", "key": "stage", "record": { "op": "rec.at", "record": "@c", "key": "state" } },
+                    "amount": { "op": "def.call", "def": "amountOf", "args": { "claim": "@c" } }
+                  }
+                },
+                "consistent": {
+                  "op": "cmp.eq", "left": "$used",
+                  "right": {
+                    "op": "seq.sum", "source": "$claims", "as": "c",
+                    "select": {
+                      "op": "branch.if",
+                      "cond": { "op": "cmp.eq", "right": "review",
+                                "left": { "op": "rec.at", "key": "stage", "record": { "op": "rec.at", "record": "@c", "key": "state" } } },
+                      "then": { "op": "def.call", "def": "amountOf", "args": { "claim": "@c" } },
+                      "else": 0
+                    }
+                  }
+                }
               }
             }
             """;
@@ -237,6 +258,123 @@ namespace Rulealize.Tests
             Assert.Equal(0, Data(store[MonthAddress]).GetProperty("used").GetInt32());
             Assert.Equal("denied", Data(store[StateAddress.Of("claims", "c-1")]).GetProperty("stage").GetString());
             Assert.Equal("50000", month.Project("left", store[MonthAddress]));
+        }
+
+        [Fact]
+        public void AProjectionReadsEveryClaimInKeyOrder()
+        {
+            RuleContext month = Context();
+            MemoryStore store = Drafted(month, 32000);
+            store.Apply(month, Input("create"));
+
+            // Handed over last-first, which is not the order a projection sees them in.
+            Dictionary<StateAddress, string> position = store.Snapshot().Reverse().ToDictionary();
+
+            using JsonDocument answer = JsonDocument.Parse(month.Project("claims", position));
+            Assert.Equal(
+                [("c-1", "draft", 32000), ("c-2", "draft", 0)],
+                answer.RootElement.EnumerateArray().Select(static row => (
+                    row.GetProperty("key").GetString(),
+                    row.GetProperty("stage").GetString(),
+                    row.GetProperty("amount").GetInt32())));
+        }
+
+        [Fact]
+        public void AMonthWithNoClaimsProjectsNone()
+        {
+            RuleContext month = Context();
+
+            Assert.Equal("[]", month.Project("claims", MemoryStore.Opened(month).Snapshot()));
+        }
+
+        [Fact]
+        public void TheMonthCanSayWhetherItsUseIsWhatItsClaimsSay()
+        {
+            RuleContext month = Context();
+            MemoryStore store = Drafted(month, 32000);
+            store.Apply(month, Input("submit", "c-1", """{ "by": "ann" }"""));
+
+            Assert.Equal("true", month.Project("consistent", store.Snapshot()));
+
+            store.Apply(month, Input("reject", "c-1", """{ "by": "bo" }"""));
+
+            Assert.Equal("true", month.Project("consistent", store.Snapshot()));
+        }
+
+        [Fact]
+        public void AProjectionSaysWhichCollectionsItReads()
+        {
+            RuleContext month = Context();
+
+            Assert.Equal(["claims"], month.GetCollectionsRead("claims").AsEnumerable());
+            Assert.Empty(month.GetCollectionsRead("left"));
+        }
+
+        [Fact]
+        public void AProjectionOverEveryClaimRefusesOneDocument()
+        {
+            RuleContext month = Context();
+
+            Assert.Throws<InvalidOperationException>(() => month.Project("claims", month.InitialState));
+        }
+
+        [Fact]
+        public void AProjectionIsNotAskedAboutAnUncommittedClaim()
+        {
+            RuleContext month = Context();
+            Dictionary<StateAddress, string> position = new(MemoryStore.Opened(month).Snapshot())
+            {
+                [StateAddress.Of("claims", "~1")] = ClaimStart
+            };
+
+            Assert.Throws<RuleDocumentException>(() => month.Project("claims", position));
+        }
+
+        [Fact]
+        public void AGuardMayNotReadEveryClaim()
+        {
+            RuleSetBuildException refused = Assert.Throws<RuleSetBuildException>(() => Context(Month.Replace(
+                """
+                "create": { "creates": "claims" },
+                """,
+                """
+                "create": { "creates": "claims", "when": { "op": "cmp.lt", "left": { "op": "seq.count", "source": "$claims" }, "right": 3 } },
+                """,
+                StringComparison.Ordinal)));
+
+            Assert.Contains("/inputs/create/when", refused.Message, StringComparison.Ordinal);
+            Assert.Contains("only a projection may read that", refused.Message, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void ADefinitionMayNotReadEveryClaim()
+        {
+            // A definition may be called from a guard, so a body reading every claim would be one.
+            RuleSetBuildException refused = Assert.Throws<RuleSetBuildException>(() => Context(Month.Replace(
+                """
+                "definitions": {
+                """,
+                """
+                "definitions": { "all": "$claims",
+                """,
+                StringComparison.Ordinal)));
+
+            Assert.Contains("only a projection may read that", refused.Message, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void ACollectionIsNotAFieldToWrite()
+        {
+            RuleSetBuildException refused = Assert.Throws<RuleSetBuildException>(() => Context(Month.Replace(
+                """
+                "create": { "creates": "claims" },
+                """,
+                """
+                "create": { "creates": "claims", "effects": [ { "op": "state.set", "path": "claims", "value": 0 } ] },
+                """,
+                StringComparison.Ordinal)));
+
+            Assert.Contains("only a projection may read that", refused.Message, StringComparison.Ordinal);
         }
 
         [Fact]

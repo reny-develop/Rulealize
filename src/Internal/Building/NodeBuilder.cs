@@ -64,6 +64,7 @@ namespace Rulealize.Internal.Building
             State = state;
             Definitions = definitions;
             Scope = new ScopeBuilder(() => _path);
+            state.CurrentPath = () => _path;
         }
 
         public StateSchema State { get; }

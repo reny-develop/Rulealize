@@ -402,9 +402,6 @@ the version's.
 | `RuleContext.GetOutcomes` | what could happen when one of them is applied, and how likely each of those is |
 | `RuleContext.GetTerminalStatus` | whether a state is final, and its outcome |
 | `RuleContext.Projections` / `Project` | what else the rule set will say about a position, and its answer for one |
-| `RuleContext.GetReads` / `StateAddress` | for a rule set that keeps instances, which documents an input reads, by address, before any is fetched |
-| `RuleContext.ApplyToState(input, states)` / `GetValidInputs(states, at, limit)` | the same questions over a position of several documents |
-| `TransitionResult.Writes` / `StateWrite` / `ValidInput.At` | what a transition wrote, document by document, and where a move was found |
 | `ValidInput.Input` / `Arguments` / `Actor` | one legal move: what it is, what it was called with — by name or in declared parameter order — and whose it is where a rule set says |
 | `ValidInput.Open` / `IsComplete` / `ValidInputSet.HasOpenParameters` | what a move is still waiting for, where a rule set leaves a parameter `open`, and whether anything in the answer is |
 | `OpenParameter.Description` / `Field` / `Op` | the bounds the admitting schema declares, the state field it is edited into, and the operation to read both against |

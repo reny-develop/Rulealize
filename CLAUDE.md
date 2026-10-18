@@ -44,7 +44,7 @@ Create a `RuleRuntime` instance and load the required plugins into it.
 
 `RuleContext` provides an `ApplyToState` method. This method accepts an input document and a state document, applies the input to the state, and returns where the transition arrived.
 
-A rule set whose `uses` holds something `many` keeps each instance as its own document, so a position is several documents, passed by `StateAddress`. `GetReads` says which an input reads before any is fetched, `ApplyToState(input, states)` returns what it wrote in `TransitionResult.Writes`, and versions and keys are the store's: the runtime stays pure (`doc/runtime.md#many-instances-kept-as-documents-of-their-own`).
+A rule set whose `uses` holds something `many` keeps each instance as its own document. Those documents are read and written by a store plugin the rule set names in `requires`, and Rulealize calls it as it calls every plugin; a host never fetches or writes them. Evaluation stays pure: what is read is settled before anything is evaluated, versions and keys are the store's, and every instance at once (`$alias`) is read by projections only, because a guard that read it would read documents its transition does not write. The store contract is not in Abstraction yet, so the by-address members that do this are internal and the tests stand in for the store (`doc/runtime.md#many-instances-kept-as-documents-of-their-own`).
 
 Asynchrony belongs at the boundary only. Evaluation is pure computation over in-memory documents, so the `string` overloads are synchronous; the `Async` suffix is reserved for the `Stream` overloads, where reading a document genuinely is I/O (`CreateContextAsync`, `ApplyToStateAsync`).
 

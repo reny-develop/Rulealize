@@ -19,7 +19,7 @@ namespace Rulealize
     /// compared and written segment by segment rather than as one string.
     /// </para>
     /// </remarks>
-    public sealed class StateAddress : IEquatable<StateAddress>
+    internal sealed class StateAddress : IEquatable<StateAddress>
     {
         private StateAddress(ImmutableArray<string> segments)
         {

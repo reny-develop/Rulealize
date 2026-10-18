@@ -288,6 +288,13 @@ namespace Rulealize.Internal.RuleSet
         public required ExpressionNode Body { get; init; }
 
         public required int FrameSize { get; init; }
+
+        /// <summary>Gets the collections it reads every instance of, in declaration order.</summary>
+        /// <remarks>
+        /// Settled when the rule set is compiled, so a host knows which instances to load
+        /// before asking, as <c>GetReads</c> tells it for an input.
+        /// </remarks>
+        public ImmutableArray<string> Collections { get; init; } = [];
     }
 
     /// <summary>The <c>terminal</c> section.</summary>

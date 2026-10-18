@@ -1283,9 +1283,29 @@ that writes nothing of the holder's own — `create` above — may not read `$li
 to decide anything, directly or through a definition. And a `held` guard over an instance's
 input may read `@claims` but not the holder's state, since that input never writes it.
 
-So far this is the generated key only. A key written as a schema, reading every instance at
-once, and holding a rule set that itself keeps instances are not supported yet. What a
-position of several documents looks like to a host is
+**`$claims` is every instance, and only a projection reads it** — a sequence in key order of
+the same `{ key, state }` records, for a screen that lists the month's claims or for the month
+to say whether `used` is what its claims add up to:
+
+```jsonc
+"projections": {
+  "claims": {
+    "op": "seq.select", "source": "$claims", "as": "c",
+    "select": { "key": { "op": "rec.at", "record": "@c", "key": "key" },
+                "amount": { "op": "def.call", "def": "amountOf", "args": { "claim": "@c" } } }
+  }
+}
+```
+
+A guard, an effect or a definition that read it would read documents its transition does not
+write, so the compiler refuses it there. A rule across instances is kept as state, as `used`
+is, and a projection is how the rule set shows it holds.
+
+The instances are read and written by a store plugin the rule set names in `requires`, and
+Rulealize calls it as it calls any plugin; a host does not fetch them. That contract is not in
+Abstraction yet, so a rule set like this compiles but cannot be run by a host yet. A key written
+as a schema, and holding a rule set that itself keeps instances, are not supported yet either.
+How the runtime treats the documents is
 [`many`](runtime.md#many-instances-kept-as-documents-of-their-own).
 
 ---

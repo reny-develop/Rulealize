@@ -274,7 +274,8 @@ component's own ending is the component's business and says nothing about the co
 
 **What a composite does not get.** It cannot start a case — *when A finishes, start a B* is
 I/O, and `GetValidInputs` answerable with no I/O is the property everything else rests on.
-It cannot hold *a list of* instances; one per declaration. And a component meant to be held
+A declaration holds one instance, in a field of the composite's state; any number of them is
+[`many`](#many-instances-kept-as-documents-of-their-own), each a document of its own. And a component meant to be held
 and used more than once has to offer the transition that returns it to its start, because
 nothing else can: a composite may not write into a component's state, and the runtime will
 not invent an input the component did not declare.
@@ -348,35 +349,41 @@ what it will not do is fail to notice.
 
 A `uses` entry with a `many` holds any number of instances of the component, and each is a
 document of its own. The holder's state does not contain them, so a position is no longer one
-document: it is the holder's, at `StateAddress.Root`, and an instance's, at
-`StateAddress.Of("claims", "c-8")`. An input document says which instance it is about in its
-`at`:
+document: it is the holder's, and one per instance under its key. An input document says
+which instance it is about in its `at`:
 
 ```json
 { "input": "submit", "at": { "claims": "c-8" }, "args": { "by": "ann" } }
 ```
 
-**What is read is settled before anything is evaluated.** `GetReads(input)` lists it from the
-input document and the rule set alone — the holder's document, and each instance `at` names —
-and `ApplyToState(input, states)` reads exactly those, by address. Nothing is fetched while a
-transition runs.
+**The documents are read and written by a store plugin, and Rulealize calls it**, as it calls
+every plugin a rule set names in `requires`. A host never fetches an instance or writes one: it
+hands Rulealize an input document, as it does for any rule set. The contract a store plugin
+implements is not in Abstraction yet, so a host cannot run such a rule set yet. It compiles, and
+`InitialState`, `GetTerminalStatus` and `Project` for a projection that reads no collection
+answer about the holder's own document; everything else refuses it with
+`InvalidOperationException`. What follows is what the runtime does with the documents once the
+store has them, and it is already pinned by tests that stand in for the store.
 
-**What is written comes back, document by document.** `TransitionResult.Writes` holds the
-holder's document only where one of its own inputs wrote to it, each instance an input drove,
-and a new instance where the input `creates` one. A new instance is written under the
-temporary key `~1`, because its real key does not exist until the store assigns one; a
-`rulealize/commit/v1` document records that key —
+**What is read is settled before anything is evaluated.** It follows from the input document
+and the rule set alone — the holder's document, and each instance `at` names — so the store is
+asked for exactly those, and nothing is fetched while a transition runs.
+
+**What is written is reported document by document**: the holder's document only where one of
+its own inputs wrote to it, each instance an input drove, and a new instance where the input
+`creates` one. A new instance is written under the temporary key `~1`, because its real key
+does not exist until the store assigns one; a `rulealize/commit/v1` document records that key —
 
 ```json
 { "$schema": "rulealize/commit/v1", "ruleSet": "claim-month@0.1.0",
   "input": "create", "created": { "~1": "c-8" } }
 ```
 
-— and `ApplyToState(input, states, commit)` replays the pair into the same instance under the
-same key, as an outcome replays a draw. A temporary key is refused in an input document's
-`at` and in what a commit assigns.
+— and the input and the commit together replay into the same instance under the same key, as
+an outcome replays a draw. A temporary key is refused in an input document's `at` and in what
+a commit assigns.
 
-**The runtime stays pure.** It knows no versions and stores nothing: checking each written
+**Evaluation stays pure.** It knows no versions and stores nothing: checking each written
 document against the version it was read at, and assigning keys, is the store's. Two
 submissions in one month both write the month's document and collide there; a claim created
 or edited meanwhile writes neither and does not.
@@ -397,18 +404,41 @@ compiled, in three places:
   instance's own input writes the instance and never the holder. It may read `@alias` and the
   input's arguments.
 
-**Moves are asked about one address at a time.** `GetValidInputs(states, at, limit)` offers,
-at the root, the holder's inputs that are at no instance and what it holds once; at an
-instance, the holder's inputs `at` that collection and the instance's own under its alias.
-Each `ValidInput` carries the `At` it was found at and writes it into its input document. No
-call offers every instance's moves at once, because that would read every instance.
+**Moves are found one place at a time.** At the holder, the inputs offered are the holder's
+that are at no instance and what it holds once; at an instance, the holder's inputs `at` that
+collection and the instance's own under its alias, each written with the `at` it was found at.
+Nothing offers every instance's moves at once, because that would read every instance.
 
-The one-document methods — `ApplyToState`, `GetOutcomes`, `GetValidInputs` taking a single
-state — refuse a rule set that keeps instances with `InvalidOperationException`.
-`InitialState`, `Project` and `GetTerminalStatus` take the holder's own document as before.
+**Every instance is read by a projection, and by nothing else.** In a projection, `$claims`
+is every instance of `claims`: a sequence in the ordinal order of their keys, each element the
+record `@claims` is, `{ "key": …, "state": … }`. Listing them, counting them and summing over
+them are Record's and Sequence's vocabulary, and the core adds none:
 
-Not yet: a key written as a schema, reading every instance from a projection, a rule set that
-keeps instances being held itself, an input that draws, and naming the store in `requires`.
+```json
+"projections": {
+  "consistent": {
+    "op": "cmp.eq", "left": "$used",
+    "right": { "op": "seq.sum", "source": "$claims", "as": "c",
+               "select": { "op": "def.call", "def": "countedOf", "args": { "claim": "@c" } } }
+  }
+}
+```
+
+— where `countedOf` is a definition giving a claim's amount while it is in review or granted,
+and 0 otherwise. Anywhere else — a guard, an effect, a definition body, `terminal`, a `held`
+guard — reading it is refused when the rule set is compiled. A guard or an effect reading every
+instance would read documents its transition does not write, and the version check on what is
+written would not see them move; a definition may be called from either. What has to hold
+across instances is kept as state the inputs write, as `used` is, and a projection like
+`consistent` above is how the rule set says whether it does.
+
+Which collections a projection reads is settled when the rule set is compiled, so the store is
+asked for every instance of those before anything is evaluated. The projection is not
+translated into a query: the store loads the instances and the runtime reads them in memory,
+which needs nothing from Abstraction it does not already have.
+
+Not yet: the store contract and naming the store in `requires`, a key written as a schema, a
+rule set that keeps instances being held itself, and an input that draws.
 
 ## Snapshot semantics
 

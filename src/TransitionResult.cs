@@ -48,10 +48,6 @@ namespace Rulealize
         public string? Result { get; }
 
         /// <summary>Gets the state the transition arrived at, as a state document.</summary>
-        /// <remarks>
-        /// For a rule set that keeps instances, the rule set's own document, whether the
-        /// transition wrote it or not. What it wrote is <see cref="Writes"/>.
-        /// </remarks>
         public string State => BuildStateDocument();
 
         /// <summary>Gets every document the transition writes.</summary>
@@ -60,7 +56,7 @@ namespace Rulealize
         /// rule set that does writes the documents its input touches and no others, so an
         /// input at one instance leaves its holder's document out unless it wrote to it.
         /// </remarks>
-        public ImmutableArray<StateWrite> Writes => _writes ?? [new StateWrite(StateAddress.Root, State, false)];
+        internal ImmutableArray<StateWrite> Writes => _writes ?? [new StateWrite(StateAddress.Root, State, false)];
 
         /// <summary>Writes the result as the document a caller passes on.</summary>
         /// <returns>An object with <c>data</c>, <c>terminal</c>, and <c>result</c> when there is one.</returns>

@@ -134,8 +134,9 @@ namespace Rulealize
         /// <exception cref="IllegalInputException">The rules do not allow this input in this state.</exception>
         /// <exception cref="RuleEvaluationException">An operation received values that make it meaningless.</exception>
         /// <exception cref="InvalidOperationException">
-        /// The rule set keeps instances of what it holds as documents of their own, so a
-        /// position is several documents and is passed by address.
+        /// The rule set keeps instances of what it holds as documents of their own. Those are
+        /// read and written through a store the rule set names, which this version cannot be
+        /// given yet.
         /// </exception>
         public async Task<TransitionResult> ApplyToStateAsync(
             Stream inputDocument,
@@ -161,8 +162,9 @@ namespace Rulealize
         /// <exception cref="IllegalInputException">The rules do not allow this input in this state.</exception>
         /// <exception cref="RuleEvaluationException">An operation received values that make it meaningless.</exception>
         /// <exception cref="InvalidOperationException">
-        /// The rule set keeps instances of what it holds as documents of their own, so a
-        /// position is several documents and is passed by address.
+        /// The rule set keeps instances of what it holds as documents of their own. Those are
+        /// read and written through a store the rule set names, which this version cannot be
+        /// given yet.
         /// </exception>
         /// <remarks>
         /// <para>
@@ -209,8 +211,9 @@ namespace Rulealize
         /// <exception cref="IllegalInputException">The rules do not allow this input in this state.</exception>
         /// <exception cref="RuleEvaluationException">An operation received values that make it meaningless.</exception>
         /// <exception cref="InvalidOperationException">
-        /// The rule set keeps instances of what it holds as documents of their own, so a
-        /// position is several documents and is passed by address.
+        /// The rule set keeps instances of what it holds as documents of their own. Those are
+        /// read and written through a store the rule set names, which this version cannot be
+        /// given yet.
         /// </exception>
         public async Task<TransitionResult> ApplyToStateAsync(
             Stream inputDocument,
@@ -246,8 +249,9 @@ namespace Rulealize
         /// <exception cref="IllegalInputException">The rules do not allow this input in this state.</exception>
         /// <exception cref="RuleEvaluationException">An operation received values that make it meaningless.</exception>
         /// <exception cref="InvalidOperationException">
-        /// The rule set keeps instances of what it holds as documents of their own, so a
-        /// position is several documents and is passed by address.
+        /// The rule set keeps instances of what it holds as documents of their own. Those are
+        /// read and written through a store the rule set names, which this version cannot be
+        /// given yet.
         /// </exception>
         /// <remarks>
         /// <para>
@@ -312,8 +316,9 @@ namespace Rulealize
         /// result is a subset of what is legal, never a wrong entry.
         /// </returns>
         /// <exception cref="InvalidOperationException">
-        /// The rule set keeps instances of what it holds as documents of their own, so a
-        /// position is several documents and is passed by address.
+        /// The rule set keeps instances of what it holds as documents of their own. Those are
+        /// read and written through a store the rule set names, which this version cannot be
+        /// given yet.
         /// </exception>
         /// <remarks>
         /// <para>
@@ -367,6 +372,10 @@ namespace Rulealize
         /// </exception>
         /// <exception cref="RuleDocumentException">The state document is not one this rule set accepts.</exception>
         /// <exception cref="RuleEvaluationException">An operation received values that make it meaningless.</exception>
+        /// <exception cref="InvalidOperationException">
+        /// The projection reads every instance of a collection. Those are read through a store
+        /// the rule set names, which this version cannot be given yet.
+        /// </exception>
         /// <remarks>
         /// <para>
         /// The three questions a rule set answers without this — what is legal, where a move
@@ -397,21 +406,93 @@ namespace Rulealize
             ArgumentException.ThrowIfNullOrEmpty(projection);
             ArgumentNullException.ThrowIfNull(stateDocument);
 
-            CompiledProjection declared = _ruleSet.FindProjection(projection)
-                ?? throw new ArgumentException(
-                    $"'{projection}' is not a projection of '{_ruleSet.Qualified}'."
-                    + (_ruleSet.Projections.IsEmpty
-                        ? " It declares none."
-                        : $" It declares {string.Join(", ", _ruleSet.Projections.Select(each => $"'{each.Name}'"))}."),
-                    nameof(projection));
+            CompiledProjection declared = FindProjection(projection);
+            if (!declared.Collections.IsEmpty)
+            {
+                throw new InvalidOperationException(
+                    $"'{projection}' reads every instance of {string.Join(", ", declared.Collections.Select(static alias => $"'{alias}'"))}, "
+                    + "and those are read through a store the rule set names, which this version cannot be given yet.");
+            }
 
             using JsonDocument state = Parse(stateDocument, "state");
-            ImmutableArray<RuleValue> fields = StateDocument.Read(_ruleSet, state.RootElement);
+            return Answer(declared, StateDocument.Read(_ruleSet, state.RootElement), cancellationToken);
+        }
 
-            EvaluationSession session = new(_ruleSet.Definitions, new StateSnapshot(fields), cancellationToken);
-            EvaluationContext context = session.CreateContext(declared.FrameSize);
+        /// <summary>Says which collections a projection reads every instance of, before any is fetched.</summary>
+        /// <param name="projection">The name, out of <see cref="Projections"/>.</param>
+        /// <returns>
+        /// The aliases, in the order <c>uses</c> declares them. Empty for a projection that reads
+        /// the rule set's own document alone.
+        /// </returns>
+        /// <exception cref="ArgumentException">This rule set declares no projection of that name.</exception>
+        /// <remarks>
+        /// The rule set's own document is always read, and is not on the list. What a store loads
+        /// for <see cref="Project(string, IReadOnlyDictionary{StateAddress, string}, CancellationToken)"/>
+        /// is that document and every instance of each collection named here. An alias stands
+        /// for all of them, which no list of addresses could say before the store has looked.
+        /// </remarks>
+        internal ImmutableArray<string> GetCollectionsRead(string projection)
+        {
+            ArgumentException.ThrowIfNullOrEmpty(projection);
+            return FindProjection(projection).Collections;
+        }
 
-            return ProjectionDocument.Write(declared.Name, declared.Body.Evaluate(context));
+        /// <summary>Asks the rule set what it says about a position of several documents.</summary>
+        /// <param name="projection">The name, out of <see cref="Projections"/>.</param>
+        /// <param name="states">
+        /// The state documents, by address: the rule set's own, and every instance of each
+        /// collection <see cref="GetCollectionsRead(string)"/> names.
+        /// </param>
+        /// <param name="cancellationToken">Cancels a long evaluation.</param>
+        /// <returns>The answer, as JSON.</returns>
+        /// <exception cref="ArgumentException">This rule set declares no projection of that name.</exception>
+        /// <exception cref="RuleDocumentException">
+        /// A document is malformed, does not match its schema, or was not supplied; or an
+        /// instance is under a temporary key.
+        /// </exception>
+        /// <exception cref="RuleEvaluationException">An operation received values that make it meaningless.</exception>
+        /// <remarks>
+        /// <para>
+        /// <c>$claims</c> reads as every instance of <c>claims</c> that <paramref name="states"/>
+        /// holds, a sequence in the ordinal order of their keys, each the record <c>@claims</c>
+        /// is: <c>{ "key": …, "state": … }</c>. Which instances exist is the store's to say, so
+        /// the answer is about the ones supplied; a store that left one out asked about a
+        /// different position.
+        /// </para>
+        /// <para>
+        /// Still a function of the position: the same documents give the same answer. The
+        /// projection is not translated into a query; the store loads the instances and the
+        /// runtime reads them in memory.
+        /// </para>
+        /// <para>
+        /// A document at the address of a collection the projection does not read is ignored,
+        /// so a host may pass everything it holds.
+        /// </para>
+        /// </remarks>
+        internal string Project(
+            string projection,
+            IReadOnlyDictionary<StateAddress, string> states,
+            CancellationToken cancellationToken = default)
+        {
+            ArgumentException.ThrowIfNullOrEmpty(projection);
+            ArgumentNullException.ThrowIfNull(states);
+
+            CompiledProjection declared = FindProjection(projection);
+            ImmutableArray<RuleValue> root = ReadAt(states, StateAddress.Root, _ruleSet);
+
+            // Every collection has a position past the fields, in declaration order. Only the
+            // ones this projection reads are filled: the compiler refused every other read.
+            ImmutableArray<string> collections = _ruleSet.Schema.Collections;
+            ImmutableArray<RuleValue>.Builder fields = ImmutableArray.CreateBuilder<RuleValue>(root.Length + collections.Length);
+            fields.AddRange(root);
+            foreach (string alias in collections)
+            {
+                fields.Add(declared.Collections.Contains(alias, StringComparer.Ordinal)
+                    ? Every(_ruleSet.FindHeld(alias)!, states)
+                    : RuleValue.EmptySequence);
+            }
+
+            return Answer(declared, fields.MoveToImmutable(), cancellationToken);
         }
 
         /// <summary>Asks whether a state is final, and what its outcome is.</summary>
@@ -448,7 +529,7 @@ namespace Rulealize
         /// nothing to read: it starts where its collection's <c>start</c> says.
         /// </para>
         /// </remarks>
-        public ImmutableArray<StateAddress> GetReads(string inputDocument)
+        internal ImmutableArray<StateAddress> GetReads(string inputDocument)
         {
             ArgumentNullException.ThrowIfNull(inputDocument);
 
@@ -490,7 +571,7 @@ namespace Rulealize
         /// <see cref="StateAddress.Root"/>, and this means what the one-document overload means.
         /// </para>
         /// </remarks>
-        public TransitionResult ApplyToState(
+        internal TransitionResult ApplyToState(
             string inputDocument,
             IReadOnlyDictionary<StateAddress, string> states,
             CancellationToken cancellationToken = default)
@@ -526,7 +607,7 @@ namespace Rulealize
         /// however long afterwards — which is how a recorded history of a collection reproduces
         /// it.
         /// </remarks>
-        public TransitionResult ApplyToState(
+        internal TransitionResult ApplyToState(
             string inputDocument,
             IReadOnlyDictionary<StateAddress, string> states,
             string commitDocument,
@@ -589,7 +670,7 @@ namespace Rulealize
         /// One address per call, and no call offers every instance's moves at once: that would
         /// read every instance, and the point of keeping them apart is that nothing does.
         /// </remarks>
-        public ValidInputSet GetValidInputs(
+        internal ValidInputSet GetValidInputs(
             IReadOnlyDictionary<StateAddress, string> states,
             StateAddress at,
             int validationLimit,
@@ -665,14 +746,64 @@ namespace Rulealize
             return StateDocument.Read(rules, state.RootElement);
         }
 
+        /// <summary>Finds a projection, or tells the caller which there are.</summary>
+        private CompiledProjection FindProjection(string projection) =>
+            _ruleSet.FindProjection(projection)
+                ?? throw new ArgumentException(
+                    $"'{projection}' is not a projection of '{_ruleSet.Qualified}'."
+                    + (_ruleSet.Projections.IsEmpty
+                        ? " It declares none."
+                        : $" It declares {string.Join(", ", _ruleSet.Projections.Select(each => $"'{each.Name}'"))}."),
+                    nameof(projection));
+
+        /// <summary>Evaluates a projection against a snapshot.</summary>
+        private string Answer(CompiledProjection declared, ImmutableArray<RuleValue> fields, CancellationToken cancellationToken)
+        {
+            EvaluationSession session = new(_ruleSet.Definitions, new StateSnapshot(fields), cancellationToken);
+            EvaluationContext context = session.CreateContext(declared.FrameSize);
+
+            return ProjectionDocument.Write(declared.Name, declared.Body.Evaluate(context));
+        }
+
+        /// <summary>Reads every instance of a collection that was supplied, as <c>$alias</c> reads it.</summary>
+        private static RuleValue Every(HeldRuleSet held, IReadOnlyDictionary<StateAddress, string> states)
+        {
+            List<(string Key, RuleValue Instance)> found = [];
+            foreach ((StateAddress address, string text) in states)
+            {
+                if (address.Segments.Length != 2
+                    || !string.Equals(address.Segments[0], held.Alias, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                string key = address.Segments[1];
+                if (key.StartsWith(TemporaryKeyPrefix, StringComparison.Ordinal))
+                {
+                    throw new RuleDocumentException(
+                        $"'{address}' is under a temporary key, which names a write not yet committed and never a stored instance.");
+                }
+
+                using JsonDocument state = Parse(text, "state");
+                found.Add((key, RuleValue.Record(new Dictionary<string, RuleValue>(StringComparer.Ordinal)
+                {
+                    ["key"] = RuleValue.Text(key),
+                    ["state"] = held.Schema.Pack(StateDocument.Read(held.Rules, state.RootElement))
+                })));
+            }
+
+            found.Sort(static (left, right) => string.CompareOrdinal(left.Key, right.Key));
+            return RuleValue.Sequence([.. found.Select(static each => each.Instance)]);
+        }
+
         /// <summary>Refuses a one-document call on a rule set whose position is several documents.</summary>
         private void RequireOneDocument()
         {
             if (_ruleSet.KeepsInstances)
             {
                 throw new InvalidOperationException(
-                    $"'{_ruleSet.Qualified}' keeps instances of what it holds as documents of their own, so a "
-                    + "position is several documents. Pass them by address.");
+                    $"'{_ruleSet.Qualified}' keeps instances of what it holds as documents of their own, and those "
+                    + "are read and written through a store the rule set names, which this version cannot be given yet.");
             }
         }
 

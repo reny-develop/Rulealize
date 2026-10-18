@@ -19,7 +19,7 @@ namespace Rulealize
     /// same key.
     /// </para>
     /// </remarks>
-    public sealed class StateWrite
+    internal sealed class StateWrite
     {
         internal StateWrite(StateAddress address, string state, bool isInsert)
         {

@@ -446,6 +446,13 @@ namespace Rulealize.Internal.Building
                 HeldStateSchema node = new(components[index]);
                 if (many[index] is HeldMany kept)
                 {
+                    if (!schema.DeclareCollection(uses[index].Alias))
+                    {
+                        throw new RuleSetBuildException(
+                            Root.Append("uses").Append(index).Append("as"),
+                            $"'{uses[index].Alias}' is already a field of this rule set's state.");
+                    }
+
                     held.Add(new HeldRuleSet
                     {
                         Alias = uses[index].Alias,
@@ -1656,12 +1663,23 @@ namespace Rulealize.Internal.Building
                         "a projection's name may not contain '.', which separates a held rule set from what it offers.");
                 }
 
+                // The one place every instance of a collection may be read. A projection is
+                // asked about a position and changes nothing, so reading documents nothing
+                // writes is reading, not deciding.
                 builder.Scope.BeginFrame();
+                HashSet<string> collections = new(StringComparer.Ordinal);
+                ExpressionNode body;
+                using (builder.State.ReadCollections(collections))
+                {
+                    body = builder.BuildExpression(entry.Value, entryPath);
+                }
+
                 projections.Add(new CompiledProjection
                 {
                     Name = entry.Name,
-                    Body = builder.BuildExpression(entry.Value, entryPath),
-                    FrameSize = builder.Scope.FrameSize
+                    Body = body,
+                    FrameSize = builder.Scope.FrameSize,
+                    Collections = [.. builder.State.Collections.Where(collections.Contains)]
                 });
             }
 
