@@ -33,14 +33,14 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- A rule set that keeps instances is read and written through a store plugin, and the
-         contract for one is not in Abstraction yet. Until it is, the tests stand in for the
-         store, and what they call to do that is internal rather than offered to a host. -->
+    <!-- A rule set that keeps instances is read and written through a store plugin. A host
+         reaches it through the store; the pure overloads that take documents by address sit
+         underneath, internal, and the tests ask them directly. -->
     <InternalsVisibleTo Include="Rulealize.Tests" />
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Rulealize.Abstraction" Version="0.5.0" />
+    <PackageReference Include="Rulealize.Abstraction" Version="0.6.0" />
   </ItemGroup>
 
 </Project>

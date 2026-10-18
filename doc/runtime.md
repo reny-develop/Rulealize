@@ -62,7 +62,7 @@ opens itself, and what it takes from each.
 | the document | `$schema` `id` `version` `requires` `uses` `state` `definitions` `held` `inputs` `projections` `terminal` | `id` and `version` are required; so are `state` and `inputs` unless `uses` declares something. `$schema` is reserved and not read |
 | `requires[]` | `plugin` `version` | a constraint omitted means any version will do |
 | `uses[]` | `ruleSet` `version` `as` `many` | `ruleSet` is required; `as` defaults to it and may not contain `.`. A rule set that keeps instances may be held only with a `many` |
-| `uses[].many` | `key` `start` | `key` is required, and is `"generated"` or a schema node; `start` names a state document handed to `CreateContext` |
+| `uses[].many` | `key` `start` | `key` is required, and is `"generated"` or a schema node; `start` names a state document handed to `CreateContext`. The document names exactly one store plugin in `requires` |
 | `state` | `schema` `initial` | both required, and a schema declaring no fields is refused |
 | `state.initial` | one value per declared field | every field, and no field the schema did not declare |
 | `definitions.<name>` | `body` `params` | only where `body` is written. Otherwise the value **is** the body, so a definition can be a node, a record, or a plain named constant |
@@ -356,23 +356,53 @@ which instance it is about in its `at`:
 { "input": "submit", "at": { "claims": "c-8" }, "args": { "by": "ann" } }
 ```
 
-**The documents are read and written by a store plugin, and Rulealize calls it**, as it calls
-every plugin a rule set names in `requires`. A host never fetches an instance or writes one: it
-hands Rulealize an input document, as it does for any rule set. The contract a store plugin
-implements is not in Abstraction yet, so a host cannot run such a rule set yet. It compiles, and
-`InitialState`, `GetTerminalStatus` and `Project` for a projection that reads no collection
-answer about the holder's own document; everything else refuses it with
-`InvalidOperationException`. What follows is what the runtime does with the documents once the
-store has them, and it is already pinned by tests that stand in for the store.
+**The documents are kept by a store plugin, and Rulealize calls it**, as it calls every
+plugin a rule set names in `requires`. A host never fetches an instance or writes one. It opens
+the store — with a connection, a file, whatever that store takes — gives it to the runtime, and
+from then on hands over input documents and nothing else:
+
+```csharp
+RuleContext ledger = new RuleRuntime()
+    .LoadPluginsFrom("plugin")
+    .UseStore("Acme.Plugin.PostgreSqlStore", new PostgreSqlStore(connection))
+    .CreateContext(ledgerDocument, heldDocuments, startDocuments);
+
+CommittedTransition done = await ledger.ApplyAsync(
+    """{ "input": "months.submit", "at": { "months": "2026-10", "claims": "c-8" }, "args": { "by": "ann" } }""");
+```
+
+The calls that go through the store are `ApplyAsync`, `GetValidInputsAsync` and `ProjectAsync`,
+and only those: reading a document is I/O there, so they are asynchronous, and the ones that
+take a state document refuse such a rule set with `InvalidOperationException`, because its
+position is not one document. `ApplyAsync` returns where the transition arrived and the commit
+document below, and no state document, because the documents are the store's.
+
+**The rule set names its store, exactly one.** A document whose `uses` declares a `many` names
+the store plugin its instances are kept in, in `requires`, the way it names any vocabulary it
+draws on; naming none is refused at `uses[i].many`, and naming two is refused, because nothing
+would say which of them keeps which collection. A plugin is a store by declaring one
+(`IPluginRegistry.AddStore`), which does no I/O — a build needs nothing more — and the host's
+`UseStore` takes an opened store of the type it declared, under the plugin's identifier. Stores are given before
+the context is created, as plugins are.
+
+**Every state document such a rule set has is in its store**, its own included. Its own
+document, before anything has written it, is its `state.initial`, so nothing is set up first;
+a holder with no fields of its own, like a ledger, is never written at all. An instance is in
+the store named by the rule set that holds its collection: a ledger and the month it holds may
+name different stores, and then the months are in the ledger's and the claims in the month's.
+Rule set, input and commit documents are not state, and no store is handed one: a history is
+the host's to keep, as the pairs below.
 
 **What is read is settled before anything is evaluated.** It follows from the input document
-and the rule set alone — the holder's document, and each instance `at` names — so the store is
-asked for exactly those, and nothing is fetched while a transition runs.
+and the rule set alone — the holder's document, and each instance `at` names — so one session
+is opened per store, asked for exactly those, and nothing is fetched while a transition runs.
 
-**What is written is reported document by document**: the holder's document only where one of
+**What is written is committed document by document**: the holder's document only where one of
 its own inputs wrote to it, each instance an input drove, and a new instance where the input
-`creates` one. A new instance is written under the temporary key `~1`, because its real key
-does not exist until the store assigns one; a `rulealize/commit/v1` document records that key —
+`creates` one, all through the session that read them. A new instance is written under the
+temporary key `~1`, because its real key does not exist until the store assigns one; a key is
+text, and no key a store assigns begins with `~`. The `rulealize/commit/v1` document
+`ApplyAsync` returns records the key —
 
 ```json
 { "$schema": "rulealize/commit/v1", "ruleSet": "claim-month@0.1.0",
@@ -380,13 +410,24 @@ does not exist until the store assigns one; a `rulealize/commit/v1` document rec
 ```
 
 — and the input and the commit together replay into the same instance under the same key, as
-an outcome replays a draw. A temporary key is refused in an input document's `at` and in what
-a commit assigns.
+an outcome replays a draw. `ApplyAsync(input, commit)` is that replay, for a store rebuilt from
+a history: the new instance is handed to the store under the key it was assigned, and the store
+keeps it there rather than assign another. A temporary key is refused in an input document's
+`at` and in what a commit assigns.
 
-**Evaluation stays pure.** It knows no versions and stores nothing: checking each written
-document against the version it was read at, and assigning keys, is the store's. Two
+**Evaluation stays pure.** It knows no versions: the session remembers what it read each
+document at, and on commit refuses, with `StateConflictException`, a write to a document that
+has moved since. Nothing is kept then, and applying the input again decides it afresh. Two
 submissions in one month both write the month's document and collide there; a claim created
 or edited meanwhile writes neither and does not.
+
+**A transition that writes to two stores is handed to the host.** A claim kept in one store and
+the month whose limit it uses in another cannot be committed in one transaction by either, and
+whether such a transition is refused, committed in two phases or compensated is the host's to
+decide with what its stores can do. The runtime does not check it and does not refuse it. It
+commits a transition that writes to one store through that store's session, and hands one that
+writes to two or more to the `IStoreCoordinator` given to `UseCoordinator`, split per store;
+with none given, it fails before anything is committed.
 
 **A guard reads only documents its transition writes**, and that is what makes checking the
 written documents enough: whatever a move was decided on is something it writes, so a
@@ -411,8 +452,10 @@ An address further down is the same question asked of the instance above it. Not
 every instance's moves at once, because that would read every instance.
 
 **Every instance is read by a projection, and by nothing else.** In a projection, `$claims`
-is every instance of `claims`: a sequence in the ordinal order of their keys, each element the
-record `@claims` is, `{ "key": …, "state": … }`. Listing them, counting them and summing over
+is every instance of `claims`: a sequence in the order they were created, each element the
+record `@claims` is, `{ "key": …, "state": … }`. The order is the store's to keep, as the
+documents are, and it is part of the position: a generated key is the store's text and its
+spelling says nothing, so ordering by it would put `c-10` before `c-2`. Listing them, counting them and summing over
 them are Record's and Sequence's vocabulary, and the core adds none:
 
 ```json
@@ -442,8 +485,8 @@ which needs nothing from Abstraction it does not already have.
 "op": "type.string", "minLength": 7, "maxLength": 7 } }` holds a month at every seven-character
 key, whether or not anything was ever written there, so nothing creates one and `creates` on it
 is refused. An instance the store has no document for is at its collection's `start`: it is
-still on what `GetReads` lists, the store leaves it out of what it supplies, and it is stored
-the first time a transition writes it. Two transitions that both found it unwritten and both
+still read, the store has nothing to hand back for it, and it is stored the first time a
+transition writes it. Two transitions that both found it unwritten and both
 write it collide on that, as two that read one version of any document do. A key is text, an
 `at` naming one the schema does not admit is refused, and `$months` is refused everywhere —
 most of the instances were never written, so there is no sequence of every one.
@@ -454,13 +497,13 @@ claims, keeps a claim at `months/2026-10/claims/c-8`, and which month it belongs
 is kept. The month's inputs are offered as `months.create` and `months.submit`, the claim's as
 `months.claims.enterAmount`, and an input document's `at` names an instance of each collection
 on the way down, by alias — which is why no two collections on one way down may share one.
-`GetReads` lists every document on the way, outermost first; `months.create` writes its new
+What a transition reads is every document on the way, outermost first; `months.create` writes its new
 claim under the month it is at, and the month itself only when it writes it. What `held` says
 about the months' inputs is asked at whatever depth they are offered.
 
-Not yet: the store contract and naming the store in `requires`, an input of the ledger's that
-drives a month's input that is itself at a claim, a held rule set's projections, and an input
-that draws.
+Not yet: an input of the ledger's that drives a month's input that is itself at a claim, a
+held rule set's projections, an input that draws, and keeping a rule set that holds nothing
+`many` in a store — its state is one document, and the host keeps it.
 
 ## Snapshot semantics
 

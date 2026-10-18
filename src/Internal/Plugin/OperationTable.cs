@@ -33,6 +33,7 @@ namespace Rulealize.Internal.Plugin
         private readonly Dictionary<string, SchemaNodeFactory> _schemas = new(StringComparer.Ordinal);
         private readonly Dictionary<string, DrawNodeFactory> _draws = new(StringComparer.Ordinal);
         private readonly Dictionary<char, List<SugarClaim>> _sugar = [];
+        private readonly Dictionary<string, Type> _stores = new(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<string, PluginManifest> _byId = new(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<string, PluginManifest> _byNamespace = new(StringComparer.Ordinal);
         private readonly List<PluginManifest> _manifests = [];
@@ -96,6 +97,24 @@ namespace Rulealize.Internal.Plugin
         /// </remarks>
         public bool TryGetProvider(string @namespace, out PluginManifest? manifest) =>
             _byNamespace.TryGetValue(@namespace, out manifest);
+
+        /// <summary>Records that a plugin is a store, and the type of an opened one.</summary>
+        /// <param name="manifest">The registering plugin.</param>
+        /// <param name="store">The type a host opens and hands the runtime.</param>
+        /// <exception cref="InvalidOperationException">The plugin has already declared a store.</exception>
+        public void AddStore(PluginManifest manifest, Type store)
+        {
+            if (!_stores.TryAdd(manifest.Id, store))
+            {
+                throw new InvalidOperationException($"{manifest.Id} has already declared a store.");
+            }
+        }
+
+        /// <summary>Finds the store a loaded plugin declared.</summary>
+        /// <param name="id">The plugin identifier as written in a rule set's <c>requires</c>.</param>
+        /// <param name="store">Receives the type of an opened store when the plugin declared one.</param>
+        /// <returns><see langword="true"/> when the plugin is loaded and is a store.</returns>
+        public bool TryGetStore(string id, out Type? store) => _stores.TryGetValue(id, out store);
 
         /// <summary>Registers an expression operation.</summary>
         /// <param name="manifest">The registering plugin.</param>

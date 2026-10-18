@@ -70,6 +70,7 @@ namespace Rulealize.Internal.Building
             ImmutableArray<RuleSetRequirement> uses = ReadUses(document);
             ImmutableArray<CompiledRuleSet> components = CompileComponents(uses, id);
             ImmutableArray<HeldMany?> many = ReadMany(builder, document, uses, components);
+            string? store = ChooseStore(document, many);
 
             ImmutableArray<RuleValue> initial = CompileState(builder, schema, document, components.Length > 0);
             ImmutableArray<HeldRuleSet> held = DeclareHeld(uses, schema, components, many, ref initial);
@@ -90,7 +91,54 @@ namespace Rulealize.Internal.Building
                 Inputs = inputs,
                 Projections = projections,
                 Terminal = terminal,
-                Held = held
+                Held = held,
+                Store = store
+            };
+        }
+
+        /// <summary>Finds the store <c>requires</c> names for a rule set that keeps instances.</summary>
+        /// <returns>The store plugin's identifier, or <see langword="null"/> for a rule set that keeps none.</returns>
+        /// <remarks>
+        /// A store is named the way a vocabulary is, and for the same reason: what a document
+        /// needs in order to mean anything is readable from the document. It names exactly one,
+        /// because nothing says which of two would keep which collection. A store named by a
+        /// rule set that keeps nothing is not refused; a store plugin may provide vocabulary
+        /// too.
+        /// </remarks>
+        private string? ChooseStore(JsonElement document, ImmutableArray<HeldMany?> many)
+        {
+            int kept = -1;
+            for (int index = 0; index < many.Length && kept < 0; index++)
+            {
+                kept = many[index] is null ? -1 : index;
+            }
+
+            if (kept < 0)
+            {
+                return null;
+            }
+
+            List<string> stores = [];
+            foreach (PluginRequirement required in ReadRequirements(document))
+            {
+                if (operations.TryGetStore(required.Plugin, out _)
+                    && operations.TryGetPlugin(required.Plugin, out PluginManifest? manifest))
+                {
+                    stores.Add(manifest!.Id);
+                }
+            }
+
+            return stores.Count switch
+            {
+                1 => stores[0],
+                0 => throw new RuleSetBuildException(
+                    Root.Append("uses").Append(kept).Append("many"),
+                    "keeps each instance as a document of its own, and 'requires' names no store to keep them in. "
+                    + "Name the store plugin there, as any vocabulary is named."),
+                _ => throw new RuleSetBuildException(
+                    Root.Append("requires"),
+                    $"names {string.Join(" and ", stores.Select(static id => $"'{id}'"))}, which are all stores, "
+                    + "and a rule set keeps its instances in one.")
             };
         }
 

@@ -6,6 +6,7 @@ using System.Collections.Immutable;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Rulealize.Abstraction.Store;
 using Rulealize.Abstraction.Value;
 
 namespace Rulealize
@@ -72,7 +73,7 @@ namespace Rulealize
         /// <see cref="StateAddress.Root"/> except for a rule set that keeps instances, where a
         /// move at an instance is written with an <c>at</c> naming it.
         /// </remarks>
-        internal StateAddress At { get; }
+        public StateAddress At { get; }
 
         /// <summary>Gets the arguments rendered as text, one per declared parameter, in that order.</summary>
         /// <remarks>

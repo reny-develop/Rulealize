@@ -1244,9 +1244,13 @@ stored composite state carries, and what a composite deliberately does not get �
 
 A month holds the claims made in it, and there is no saying in advance how many. A `uses`
 entry with a `many` holds any number of instances of the component, and each is kept as a
-document of its own rather than as a field of the holder's state:
+document of its own rather than as a field of the holder's state. Those documents are kept by a
+store, and the document names the store plugin in `requires`, exactly one, as it names any
+vocabulary it draws on:
 
 ```jsonc
+"requires": [ /* … */, { "plugin": "Acme.Plugin.PostgreSqlStore" } ],
+
 "uses": [
   { "ruleSet": "claim", "version": "^1.0", "as": "claims",
     "many": { "key": "generated", "start": "claim-start" } }
@@ -1283,8 +1287,8 @@ that writes nothing of the holder's own — `create` above — may not read `$li
 to decide anything, directly or through a definition. And a `held` guard over an instance's
 input may read `@claims` but not the holder's state, since that input never writes it.
 
-**`$claims` is every instance, and only a projection reads it** — a sequence in key order of
-the same `{ key, state }` records, for a screen that lists the month's claims or for the month
+**`$claims` is every instance, and only a projection reads it** — a sequence, in the order
+they were created, of the same `{ key, state }` records, for a screen that lists the month's claims or for the month
 to say whether `used` is what its claims add up to:
 
 ```jsonc
@@ -1330,10 +1334,11 @@ document names an instance of each collection on the way down:
 Because `at` names them by alias, no two collections on one way down may share one. Driving a
 month's input that is itself at a claim, from an input of the ledger's, is not supported yet.
 
-The instances are read and written by a store plugin the rule set names in `requires`, and
-Rulealize calls it as it calls any plugin; a host does not fetch them. That contract is not in
-Abstraction yet, so a rule set like this compiles but cannot be run by a host yet. How the
-runtime treats the documents is
+Every state document of a rule set like this is in its store, its own included, and Rulealize
+reads and writes them as it calls any plugin; a host gives the runtime the opened store and
+then hands over input documents alone, through `ApplyAsync`, `GetValidInputsAsync` and
+`ProjectAsync`. How the runtime treats the documents, and what happens when two transitions
+race or one writes to two stores, is
 [`many`](runtime.md#many-instances-kept-as-documents-of-their-own).
 
 ---
@@ -1453,9 +1458,10 @@ Each exception says which class of thing went wrong: `RuleSetBuildException` for
 that is not a valid rule set, `RuleDocumentException` for a state, input, outcome or commit document
 this rule set cannot accept, `IllegalInputException` for a move the rules do not allow —
 including a value a parameter's `open` schema does not admit —
-`RuleEvaluationException` for values that make an operation meaningless, and
-`PluginLoadException` for a plugin that cannot be used or a set of them that cannot be used
-together.
+`RuleEvaluationException` for values that make an operation meaningless,
+`StateConflictException` for a transition another committed ahead of, against a document a store
+keeps, and `PluginLoadException` for a plugin that cannot be used or a set of them that cannot
+be used together.
 
 ---
 

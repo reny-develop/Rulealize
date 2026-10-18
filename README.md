@@ -402,6 +402,9 @@ the version's.
 | `RuleContext.GetOutcomes` | what could happen when one of them is applied, and how likely each of those is |
 | `RuleContext.GetTerminalStatus` | whether a state is final, and its outcome |
 | `RuleContext.Projections` / `Project` | what else the rule set will say about a position, and its answer for one |
+| `RuleRuntime.UseStore` / `UseCoordinator` | give the runtime the opened store a rule set that keeps instances names, and what keeps a transition that writes to two stores |
+| `RuleContext.ApplyAsync` / `GetValidInputsAsync` / `ProjectAsync` | the same three questions, for a rule set whose documents a store keeps — the host hands over an input, never a state |
+| `CommittedTransition.Commit` | what the store did about a transition, to record beside its input and replay with it |
 | `ValidInput.Input` / `Arguments` / `Actor` | one legal move: what it is, what it was called with — by name or in declared parameter order — and whose it is where a rule set says |
 | `ValidInput.Open` / `IsComplete` / `ValidInputSet.HasOpenParameters` | what a move is still waiting for, where a rule set leaves a parameter `open`, and whether anything in the answer is |
 | `OpenParameter.Description` / `Field` / `Op` | the bounds the admitting schema declares, the state field it is edited into, and the operation to read both against |
@@ -428,19 +431,21 @@ Exceptions: `RuleSetBuildException` for a document that is not a valid rule set,
 `IllegalInputException` for a move the rules do not allow — `InputRejectedException` is the
 kind of that one meaning the move *was* on offer and the value supplied for an open parameter
 is what is wrong, and it carries a code per refusal the rule set named — `RuleEvaluationException` for
-values that make an operation meaningless, and `PluginLoadException` for a plugin that cannot
+values that make an operation meaningless, `StateConflictException` for a transition another
+committed ahead of, against a document a store keeps, and `PluginLoadException` for a plugin that cannot
 be used or a set of them that cannot be used together — two claiming one identifier or one
 namespace, but never two reserving one shorthand character, which is recorded rather than
 owned. `InvalidOperationException` is the wrong method rather than a bad
 document, and is refused before anything is evaluated: applying an input that draws without
-saying what it drew, writing out a move that is still waiting for an argument, or handing one
-state document to a rule set that keeps instances as documents of their own.
+saying what it drew, writing out a move that is still waiting for an argument, handing one
+state document to a rule set that keeps instances as documents of their own, or asking a store
+about one that keeps none.
 
 A context is immutable and holds no position, so one serves any number of concurrent games.
 
 The methods taking a `string` are synchronous, because evaluation is pure computation over
-documents already in memory; the `Async` overloads exist for the one thing that is genuinely
-I/O, reading a document off a stream. That, along with snapshot semantics, the caching and
+documents already in memory; the `Async` overloads exist for what is genuinely I/O, reading a
+document off a stream or out of a store. That, along with snapshot semantics, the caching and
 purity rules for definitions, and how `validationLimit` behaves, is in
 [`doc/runtime.md`](doc/runtime.md).
 

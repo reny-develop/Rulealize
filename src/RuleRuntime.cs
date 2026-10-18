@@ -6,6 +6,7 @@ using System.Reflection;
 using System.Text.Json;
 using Rulealize.Abstraction;
 using Rulealize.Abstraction.Plugin;
+using Rulealize.Abstraction.Store;
 using Rulealize.Internal.Building;
 using Rulealize.Internal.Plugin;
 
@@ -52,6 +53,7 @@ namespace Rulealize
         };
 
         private readonly OperationTable _operations = new();
+        private StoreBinding _stores = StoreBinding.None;
         private readonly List<SkippedPlugin> _skipped = [];
 
         /// <summary>Gets what each loaded plugin declares about itself, in load order.</summary>
@@ -213,6 +215,68 @@ namespace Rulealize
             return this;
         }
 
+        /// <summary>Gives the runtime a store a host opened, for the rule sets that name its plugin.</summary>
+        /// <param name="plugin">The store plugin's identifier, as a rule set's <c>requires</c> names it.</param>
+        /// <param name="store">The store, opened: connected, and ready for a session.</param>
+        /// <returns>This runtime, so calls can be chained.</returns>
+        /// <exception cref="InvalidOperationException">
+        /// No plugin of that identifier is loaded, it is not a store, or this is not the kind of
+        /// store it declared.
+        /// </exception>
+        /// <remarks>
+        /// <para>
+        /// A rule set whose <c>uses</c> declares a <c>many</c> keeps every state document in the
+        /// store its <c>requires</c> names, its own included, and the runtime reads and writes
+        /// them through what is given here. The plugin says what a store is; opening one, with
+        /// whatever connection it takes, is the host's, and handing it over is the whole of what
+        /// the host does with documents.
+        /// </para>
+        /// <para>
+        /// Taken when a context is created, as the plugins are, so give the stores before
+        /// <see cref="CreateContext(string)"/>. Giving another for the same plugin replaces it for
+        /// the contexts created afterwards.
+        /// </para>
+        /// </remarks>
+        public RuleRuntime UseStore(string plugin, IStateStore store)
+        {
+            ArgumentException.ThrowIfNullOrEmpty(plugin);
+            ArgumentNullException.ThrowIfNull(store);
+
+            if (!_operations.TryGetPlugin(plugin, out PluginManifest? manifest))
+            {
+                throw new InvalidOperationException($"'{plugin}' is not loaded, so there is no store of it to use.");
+            }
+
+            if (!_operations.TryGetStore(manifest!.Id, out Type? declared))
+            {
+                throw new InvalidOperationException($"{manifest.Id} is not a store.");
+            }
+
+            if (!declared!.IsInstanceOfType(store))
+            {
+                throw new InvalidOperationException(
+                    $"{manifest.Id} keeps documents in a '{declared.FullName}', and this is a '{store.GetType().FullName}'.");
+            }
+
+            _stores = _stores with { Stores = _stores.Stores.SetItem(manifest.Id, store) };
+            return this;
+        }
+
+        /// <summary>Gives the runtime what keeps a transition that writes to more than one store.</summary>
+        /// <param name="coordinator">The coordinator.</param>
+        /// <returns>This runtime, so calls can be chained.</returns>
+        /// <remarks>
+        /// Taken when a context is created, as the stores are. Without one, a transition that
+        /// writes to more than one store fails rather than commit part of itself.
+        /// </remarks>
+        public RuleRuntime UseCoordinator(IStoreCoordinator coordinator)
+        {
+            ArgumentNullException.ThrowIfNull(coordinator);
+
+            _stores = _stores with { Coordinator = coordinator };
+            return this;
+        }
+
         /// <summary>Compiles a rule set document.</summary>
         /// <param name="ruleSetDocument">The document.</param>
         /// <returns>A context that states can be run through.</returns>
@@ -297,7 +361,8 @@ namespace Rulealize
             using JsonDocument document = Parse(ruleSetDocument);
             return new RuleContext(
                 new RuleSetCompiler(_operations, heldDocuments, startDocuments: startDocuments)
-                    .Compile(document.RootElement));
+                    .Compile(document.RootElement),
+                _stores);
         }
 
         /// <summary>Compiles a rule set document read from a stream.</summary>
@@ -323,7 +388,7 @@ namespace Rulealize
 
             using (document)
             {
-                return new RuleContext(new RuleSetCompiler(_operations).Compile(document.RootElement));
+                return new RuleContext(new RuleSetCompiler(_operations).Compile(document.RootElement), _stores);
             }
         }
 

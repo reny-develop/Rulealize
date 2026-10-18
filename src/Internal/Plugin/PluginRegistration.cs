@@ -3,6 +3,7 @@
 
 using Rulealize.Abstraction.Building;
 using Rulealize.Abstraction.Plugin;
+using Rulealize.Abstraction.Store;
 
 namespace Rulealize.Internal.Plugin
 {
@@ -24,6 +25,9 @@ namespace Rulealize.Internal.Plugin
         public void AddSchema(string name, SchemaNodeFactory factory) => table.AddSchema(manifest, name, factory);
 
         public void AddDraw(string name, DrawNodeFactory factory) => table.AddDraw(manifest, name, factory);
+
+        public void AddStore<TStore>()
+            where TStore : class, IStateStore => table.AddStore(manifest, typeof(TStore));
 
         public void AddSugar(ISugarExpander expander)
         {

@@ -4,6 +4,7 @@
 using System.Collections.Immutable;
 using System.Text.Json;
 using Rulealize.Abstraction;
+using Rulealize.Abstraction.Store;
 
 namespace Rulealize.Tests
 {
@@ -17,9 +18,11 @@ namespace Rulealize.Tests
     /// <c>used</c> — write the month as well.
     /// </para>
     /// <para>
-    /// The store is <see cref="MemoryStore"/>, a dictionary with a version per document. The
-    /// runtime stores nothing and knows no versions: it says what a transition reads before it
-    /// runs and what it writes afterwards, and the store checks the one against the other.
+    /// The store is <see cref="MemoryStore"/>, a dictionary with a version per document, and the
+    /// month names it in <c>requires</c>. The runtime reads and writes through it and knows no
+    /// versions: it settles what a transition reads before it runs and hands over what it wrote
+    /// afterwards, and the store checks the one against the other. The tests of what is read
+    /// and written ask the pure overloads directly, which is what they stand on.
     /// </para>
     /// </remarks>
     [Collection(StandardCollection.Name)]
@@ -74,7 +77,7 @@ namespace Rulealize.Tests
         internal const string Month = $$"""
             {
               "id": "claim-month", "version": "0.1.0",
-            {{Requires}}
+            {{MemoryStore.Requires}}
               "uses": [
                 { "ruleSet": "claim", "version": "^1.0", "as": "claims",
                   "many": { "key": "generated", "start": "claim-start" } }
@@ -157,8 +160,8 @@ namespace Rulealize.Tests
         [Fact]
         public void CreatingAClaimWritesTheNewClaimAndNothingElse()
         {
-            RuleContext month = Context();
-            MemoryStore store = MemoryStore.Opened(month);
+            MemoryStore store = new();
+            RuleContext month = Context(store);
 
             TransitionResult result = month.ApplyToState(Input("create"), store.Read(month, Input("create")));
 
@@ -169,34 +172,100 @@ namespace Rulealize.Tests
         }
 
         [Fact]
-        public void TheStoreAssignsTheKeyAndRecordsIt()
+        public async Task TheStoreAssignsTheKeyAndTheCommitRecordsIt()
         {
-            RuleContext month = Context();
-            MemoryStore store = MemoryStore.Opened(month);
+            MemoryStore store = new();
+            RuleContext month = Context(store);
 
-            string commit = store.Apply(month, Input("create"));
+            CommittedTransition created = await month.ApplyAsync(Input("create"));
 
-            using JsonDocument recorded = JsonDocument.Parse(commit);
+            using JsonDocument recorded = JsonDocument.Parse(created.Commit);
+            Assert.Equal("rulealize/commit/v1", recorded.RootElement.GetProperty("$schema").GetString());
+            Assert.Equal("create", recorded.RootElement.GetProperty("input").GetString());
             Assert.Equal("c-1", recorded.RootElement.GetProperty("created").GetProperty("~1").GetString());
             Assert.True(store.Holds(StateAddress.Of("claims", "c-1")));
         }
 
         [Fact]
-        public void ReplayingACreationWithItsCommitWritesTheSameKey()
+        public async Task ATransitionReadsAndCommitsThroughOneSession()
         {
-            RuleContext month = Context();
-            MemoryStore store = MemoryStore.Opened(month);
-            string commit = store.Apply(month, Input("create"));
+            MemoryStore store = new();
+            RuleContext month = Context(store);
 
-            TransitionResult replayed = month.ApplyToState(Input("create"), store.Read(month, Input("create")), commit);
+            await month.ApplyAsync(Input("create"));
+
+            Assert.Equal(1, store.Sessions);
+        }
+
+        [Fact]
+        public async Task TheMonthsOwnDocumentIsItsInitialStateUntilSomethingWritesIt()
+        {
+            MemoryStore store = new();
+            RuleContext month = Context(store);
+
+            await month.ApplyAsync(Input("create"));
+
+            Assert.False(store.Holds(MonthAddress));
+            Assert.Equal("50000", await month.ProjectAsync("left"));
+        }
+
+        [Fact]
+        public async Task ReplayingACreationWithItsCommitWritesTheSameKey()
+        {
+            MemoryStore store = new();
+            RuleContext month = Context(store);
+            CommittedTransition created = await month.ApplyAsync(Input("create"));
+
+            TransitionResult replayed = month.ApplyToState(Input("create"), store.Read(month, Input("create")), created.Commit);
 
             Assert.Equal(StateAddress.Of("claims", "c-1"), Assert.Single(replayed.Writes).Address);
         }
 
         [Fact]
+        public async Task AHistoryReplayedIntoAnEmptyStoreReproducesIt()
+        {
+            MemoryStore store = new();
+            RuleContext month = Context(store);
+            List<(string Input, string Commit)> history = [];
+            foreach (string input in new[]
+            {
+                Input("create"),
+                Input("create"),
+                Input("claims.enterAmount", "c-2", """{ "amount": 32000 }"""),
+                Input("submit", "c-2", """{ "by": "ann" }""")
+            })
+            {
+                history.Add((input, (await month.ApplyAsync(input)).Commit));
+            }
+
+            MemoryStore rebuilt = new();
+            RuleContext again = Context(rebuilt);
+            foreach ((string input, string commit) in history)
+            {
+                await again.ApplyAsync(input, commit);
+            }
+
+            Assert.Equal(await month.ProjectAsync("claims"), await again.ProjectAsync("claims"));
+            Assert.Equal(await month.ProjectAsync("left"), await again.ProjectAsync("left"));
+        }
+
+        [Fact]
+        public async Task ReplayingACreationOverAnInstanceAlreadyThereCollides()
+        {
+            MemoryStore store = new();
+            RuleContext month = Context(store);
+            CommittedTransition created = await month.ApplyAsync(Input("create"));
+
+            StateConflictException conflict = await Assert.ThrowsAsync<StateConflictException>(
+                () => month.ApplyAsync(Input("create"), created.Commit));
+
+            Assert.Equal(StateAddress.Of("claims", "c-1"), conflict.Address);
+        }
+
+        [Fact]
         public void AnInputAtAClaimReadsTheMonthAndThatClaim()
         {
-            RuleContext month = Context();
+            RuleContext month = Context(new MemoryStore());
 
             ImmutableArray<StateAddress> reads = month.GetReads(Input("claims.enterAmount", "c-3", """{ "amount": 1 }"""));
 
@@ -204,11 +273,11 @@ namespace Rulealize.Tests
         }
 
         [Fact]
-        public void EnteringAnAmountWritesOnlyTheClaim()
+        public async Task EnteringAnAmountWritesOnlyTheClaim()
         {
-            RuleContext month = Context();
-            MemoryStore store = MemoryStore.Opened(month);
-            store.Apply(month, Input("create"));
+            MemoryStore store = new();
+            RuleContext month = Context(store);
+            await month.ApplyAsync(Input("create"));
 
             string input = Input("claims.enterAmount", "c-1", """{ "amount": 32000 }""");
             TransitionResult result = month.ApplyToState(input, store.Read(month, input));
@@ -219,10 +288,10 @@ namespace Rulealize.Tests
         }
 
         [Fact]
-        public void SubmittingWritesTheMonthAndTheClaim()
+        public async Task SubmittingWritesTheMonthAndTheClaim()
         {
-            RuleContext month = Context();
-            MemoryStore store = Drafted(month, 32000);
+            MemoryStore store = new();
+            RuleContext month = await Drafted(store, 32000);
 
             string input = Input("submit", "c-1", """{ "by": "ann" }""");
             TransitionResult result = month.ApplyToState(input, store.Read(month, input));
@@ -235,84 +304,74 @@ namespace Rulealize.Tests
         }
 
         [Fact]
-        public void ASubmissionThatDoesNotFitInTheMonthIsRefused()
+        public async Task ASubmissionThatDoesNotFitInTheMonthIsRefused()
         {
-            RuleContext month = Context();
-            MemoryStore store = Drafted(month, 60000);
+            MemoryStore store = new();
+            RuleContext month = await Drafted(store, 60000);
 
-            string input = Input("submit", "c-1", """{ "by": "ann" }""");
-
-            Assert.Throws<IllegalInputException>(() => month.ApplyToState(input, store.Read(month, input)));
+            await Assert.ThrowsAsync<IllegalInputException>(
+                () => month.ApplyAsync(Input("submit", "c-1", """{ "by": "ann" }""")));
+            Assert.False(store.Holds(MonthAddress));
         }
 
         [Fact]
-        public void RejectingAClaimGivesItsAmountBack()
+        public async Task RejectingAClaimGivesItsAmountBack()
         {
-            RuleContext month = Context();
-            MemoryStore store = Drafted(month, 32000);
-            store.Apply(month, Input("submit", "c-1", """{ "by": "ann" }"""));
+            MemoryStore store = new();
+            RuleContext month = await Drafted(store, 32000);
+            await month.ApplyAsync(Input("submit", "c-1", """{ "by": "ann" }"""));
 
-            store.Apply(month, Input("reject", "c-1", """{ "by": "bo" }"""));
+            await month.ApplyAsync(Input("reject", "c-1", """{ "by": "bo" }"""));
 
             Assert.Equal(0, Data(store[MonthAddress]).GetProperty("used").GetInt32());
             Assert.Equal("denied", Data(store[StateAddress.Of("claims", "c-1")]).GetProperty("stage").GetString());
-            Assert.Equal("50000", month.Project("left", store[MonthAddress]));
+            Assert.Equal("50000", await month.ProjectAsync("left"));
         }
 
         [Fact]
-        public void AProjectionReadsEveryClaimInKeyOrder()
+        public async Task AProjectionReadsEveryClaimInTheOrderTheyWereCreated()
         {
-            RuleContext month = Context();
-            MemoryStore store = Drafted(month, 32000);
-            store.Apply(month, Input("create"));
+            MemoryStore store = new();
+            RuleContext month = await Drafted(store, 32000);
+            for (int i = 0; i < 10; i++)
+            {
+                await month.ApplyAsync(Input("create"));
+            }
 
-            // Handed over last-first, which is not the order a projection sees them in.
-            Dictionary<StateAddress, string> position = store.Snapshot().Reverse().ToDictionary();
-
-            using JsonDocument answer = JsonDocument.Parse(month.Project("claims", position));
+            // Ordinal order would put c-10 and c-11 straight after c-1.
+            using JsonDocument answer = JsonDocument.Parse(await month.ProjectAsync("claims"));
             Assert.Equal(
-                [("c-1", "draft", 32000), ("c-2", "draft", 0)],
-                answer.RootElement.EnumerateArray().Select(static row => (
-                    row.GetProperty("key").GetString(),
-                    row.GetProperty("stage").GetString(),
-                    row.GetProperty("amount").GetInt32())));
+                Enumerable.Range(1, 11).Select(static n => $"c-{n}"),
+                answer.RootElement.EnumerateArray().Select(static row => row.GetProperty("key").GetString()));
+            Assert.Equal(32000, answer.RootElement[0].GetProperty("amount").GetInt32());
         }
 
         [Fact]
-        public void AMonthWithNoClaimsProjectsNone()
+        public async Task AMonthWithNoClaimsProjectsNone()
         {
-            RuleContext month = Context();
+            RuleContext month = Context(new MemoryStore());
 
-            Assert.Equal("[]", month.Project("claims", MemoryStore.Opened(month).Snapshot()));
+            Assert.Equal("[]", await month.ProjectAsync("claims"));
         }
 
         [Fact]
-        public void TheMonthCanSayWhetherItsUseIsWhatItsClaimsSay()
+        public async Task TheMonthCanSayWhetherItsUseIsWhatItsClaimsSay()
         {
-            RuleContext month = Context();
-            MemoryStore store = Drafted(month, 32000);
-            store.Apply(month, Input("submit", "c-1", """{ "by": "ann" }"""));
+            MemoryStore store = new();
+            RuleContext month = await Drafted(store, 32000);
+            await month.ApplyAsync(Input("submit", "c-1", """{ "by": "ann" }"""));
 
-            Assert.Equal("true", month.Project("consistent", store.Snapshot()));
+            Assert.Equal("true", await month.ProjectAsync("consistent"));
 
-            store.Apply(month, Input("reject", "c-1", """{ "by": "bo" }"""));
+            await month.ApplyAsync(Input("reject", "c-1", """{ "by": "bo" }"""));
 
-            Assert.Equal("true", month.Project("consistent", store.Snapshot()));
-        }
-
-        [Fact]
-        public void AProjectionSaysWhichCollectionsItReads()
-        {
-            RuleContext month = Context();
-
-            Assert.Equal(["claims"], month.GetCollectionsRead("claims").AsEnumerable());
-            Assert.Empty(month.GetCollectionsRead("left"));
+            Assert.Equal("true", await month.ProjectAsync("consistent"));
         }
 
         [Fact]
         public void AProjectionOverEveryClaimRefusesOneDocument()
         {
-            RuleContext month = Context();
+            RuleContext month = Context(new MemoryStore());
 
             Assert.Throws<InvalidOperationException>(() => month.Project("claims", month.InitialState));
         }
@@ -320,19 +379,19 @@ namespace Rulealize.Tests
         [Fact]
         public void AProjectionIsNotAskedAboutAnUncommittedClaim()
         {
-            RuleContext month = Context();
-            Dictionary<StateAddress, string> position = new(MemoryStore.Opened(month).Snapshot())
+            RuleContext month = Context(new MemoryStore());
+            Dictionary<string, IReadOnlyList<KeyValuePair<string, string>>> collections = new(StringComparer.Ordinal)
             {
-                [StateAddress.Of("claims", "~1")] = ClaimStart
+                ["claims"] = [KeyValuePair.Create("~1", ClaimStart)]
             };
 
-            Assert.Throws<RuleDocumentException>(() => month.Project("claims", position));
+            Assert.Throws<RuleDocumentException>(() => month.Project("claims", month.InitialState, collections));
         }
 
         [Fact]
         public void AGuardMayNotReadEveryClaim()
         {
-            RuleSetBuildException refused = Assert.Throws<RuleSetBuildException>(() => Context(Month.Replace(
+            RuleSetBuildException refused = Assert.Throws<RuleSetBuildException>(() => Context(new MemoryStore(), Month.Replace(
                 """
                 "create": { "creates": "claims" },
                 """,
@@ -349,7 +408,7 @@ namespace Rulealize.Tests
         public void ADefinitionMayNotReadEveryClaim()
         {
             // A definition may be called from a guard, so a body reading every claim would be one.
-            RuleSetBuildException refused = Assert.Throws<RuleSetBuildException>(() => Context(Month.Replace(
+            RuleSetBuildException refused = Assert.Throws<RuleSetBuildException>(() => Context(new MemoryStore(), Month.Replace(
                 """
                 "definitions": {
                 """,
@@ -364,7 +423,7 @@ namespace Rulealize.Tests
         [Fact]
         public void ACollectionIsNotAFieldToWrite()
         {
-            RuleSetBuildException refused = Assert.Throws<RuleSetBuildException>(() => Context(Month.Replace(
+            RuleSetBuildException refused = Assert.Throws<RuleSetBuildException>(() => Context(new MemoryStore(), Month.Replace(
                 """
                 "create": { "creates": "claims" },
                 """,
@@ -377,88 +436,97 @@ namespace Rulealize.Tests
         }
 
         [Fact]
-        public void TheClaimsOwnRejectIsDrivenOnlyThroughTheMonth()
+        public async Task TheClaimsOwnRejectIsDrivenOnlyThroughTheMonth()
         {
-            RuleContext month = Context();
-            MemoryStore store = Drafted(month, 32000);
-            store.Apply(month, Input("submit", "c-1", """{ "by": "ann" }"""));
+            MemoryStore store = new();
+            RuleContext month = await Drafted(store, 32000);
+            await month.ApplyAsync(Input("submit", "c-1", """{ "by": "ann" }"""));
 
-            string input = Input("claims.reject", "c-1", """{ "by": "bo" }""");
-
-            Assert.Throws<IllegalInputException>(() => month.ApplyToState(input, store.Read(month, input)));
+            await Assert.ThrowsAsync<IllegalInputException>(
+                () => month.ApplyAsync(Input("claims.reject", "c-1", """{ "by": "bo" }""")));
         }
 
         [Fact]
-        public void TheMonthOffersCreationAtItsOwnAddress()
+        public async Task TheMonthOffersCreationAtItsOwnAddress()
         {
-            RuleContext month = Context();
-            MemoryStore store = Drafted(month, 32000);
+            MemoryStore store = new();
+            RuleContext month = await Drafted(store, 32000);
 
-            ValidInputSet offered = month.GetValidInputs(store.Snapshot(), MonthAddress, 100);
+            ValidInputSet offered = await month.GetValidInputsAsync(100);
 
             Assert.Equal(["create"], offered.Select(static input => input.ToString()));
         }
 
         [Fact]
-        public void AClaimIsOfferedItsMovesAtItsOwnAddress()
+        public async Task AClaimIsOfferedItsMovesAtItsOwnAddress()
         {
-            RuleContext month = Context();
-            MemoryStore store = Drafted(month, 32000);
+            MemoryStore store = new();
+            RuleContext month = await Drafted(store, 32000);
 
-            ValidInputSet offered = month.GetValidInputs(store.Snapshot(), StateAddress.Of("claims", "c-1"), 100);
+            ValidInputSet offered = await month.GetValidInputsAsync(StateAddress.Of("claims", "c-1"), 100);
 
             Assert.Equal(
                 ["submit(by: ann)", "submit(by: bo)", "submit(by: cy)", "claims.enterAmount(amount: <type.int>)"],
                 offered.Select(static input => input.ToString()));
+            Assert.All(offered, static input => Assert.Equal(StateAddress.Of("claims", "c-1"), input.At));
         }
 
         [Fact]
-        public void AMoveFoundAtAClaimIsWrittenWithItsAt()
+        public async Task AMoveFoundAtAClaimIsWrittenWithItsAt()
         {
-            RuleContext month = Context();
-            MemoryStore store = Drafted(month, 32000);
+            MemoryStore store = new();
+            RuleContext month = await Drafted(store, 32000);
 
-            ValidInput submit = month.GetValidInputs(store.Snapshot(), StateAddress.Of("claims", "c-1"), 100)[0];
-            store.Apply(month, submit.ToInputDocument(month.RuleSet));
+            ValidInput submit = (await month.GetValidInputsAsync(StateAddress.Of("claims", "c-1"), 100))[0];
+            await month.ApplyAsync(submit.ToInputDocument(month.RuleSet));
 
             Assert.Equal(32000, Data(store[MonthAddress]).GetProperty("used").GetInt32());
         }
 
         [Fact]
-        public void TwoSubmissionsInOneMonthCollideOnTheMonth()
+        public async Task AnAddressNoInstanceCanHaveIsRefusedBeforeAnythingIsRead()
         {
-            RuleContext month = Context();
-            MemoryStore store = Drafted(month, 10000);
-            store.Apply(month, Input("create"));
-            store.Apply(month, Input("claims.enterAmount", "c-2", """{ "amount": 10000 }"""));
+            MemoryStore store = new();
+            RuleContext month = Context(store);
 
-            MemoryStore.Pending first = store.Begin(month, Input("submit", "c-1", """{ "by": "ann" }"""));
-            MemoryStore.Pending second = store.Begin(month, Input("submit", "c-2", """{ "by": "ann" }"""));
-            store.Commit(first);
-
-            InvalidOperationException stale = Assert.Throws<InvalidOperationException>(() => store.Commit(second));
-            Assert.Contains("'/'", stale.Message, StringComparison.Ordinal);
+            await Assert.ThrowsAsync<ArgumentException>(() => month.GetValidInputsAsync(StateAddress.Of("months", "c-1"), 100));
+            Assert.Equal(0, store.Sessions);
         }
 
         [Fact]
-        public void AnAmountEnteredMeanwhileDoesNotCollideWithASubmission()
+        public async Task TwoSubmissionsInOneMonthCollideOnTheMonth()
         {
-            RuleContext month = Context();
-            MemoryStore store = Drafted(month, 10000);
-            store.Apply(month, Input("create"));
+            MemoryStore store = new();
+            RuleContext month = await Drafted(store, 10000);
+            await month.ApplyAsync(Input("create"));
+            await month.ApplyAsync(Input("claims.enterAmount", "c-2", """{ "amount": 10000 }"""));
 
-            MemoryStore.Pending submit = store.Begin(month, Input("submit", "c-1", """{ "by": "ann" }"""));
-            MemoryStore.Pending enter = store.Begin(month, Input("claims.enterAmount", "c-2", """{ "amount": 5 }"""));
-            store.Commit(submit);
-            store.Commit(enter);
+            store.BeforeNextCommit = () => month.ApplyAsync(Input("submit", "c-1", """{ "by": "ann" }"""));
+            StateConflictException stale = await Assert.ThrowsAsync<StateConflictException>(
+                () => month.ApplyAsync(Input("submit", "c-2", """{ "by": "ann" }""")));
+
+            Assert.Equal(MonthAddress, stale.Address);
+            Assert.Equal("draft", Data(store[StateAddress.Of("claims", "c-2")]).GetProperty("stage").GetString());
+        }
+
+        [Fact]
+        public async Task AnAmountEnteredMeanwhileDoesNotCollideWithASubmission()
+        {
+            MemoryStore store = new();
+            RuleContext month = await Drafted(store, 10000);
+            await month.ApplyAsync(Input("create"));
+
+            store.BeforeNextCommit = () => month.ApplyAsync(Input("claims.enterAmount", "c-2", """{ "amount": 5 }"""));
+            await month.ApplyAsync(Input("submit", "c-1", """{ "by": "ann" }"""));
 
             Assert.Equal(5, Data(store[StateAddress.Of("claims", "c-2")]).GetProperty("amount").GetInt32());
+            Assert.Equal("review", Data(store[StateAddress.Of("claims", "c-1")]).GetProperty("stage").GetString());
         }
 
         [Fact]
         public void AnInputAtAClaimNeedsTheInputDocumentToSayWhichClaim()
         {
-            RuleContext month = Context();
+            RuleContext month = Context(new MemoryStore());
 
             RuleDocumentException refused = Assert.Throws<RuleDocumentException>(
                 () => month.GetReads(Input("submit", null, """{ "by": "ann" }""")));
@@ -468,7 +536,7 @@ namespace Rulealize.Tests
         [Fact]
         public void ATemporaryKeyCannotBeWhereAnInputIs()
         {
-            RuleContext month = Context();
+            RuleContext month = Context(new MemoryStore());
 
             RuleDocumentException refused = Assert.Throws<RuleDocumentException>(
                 () => month.GetReads(Input("submit", "~1", """{ "by": "ann" }""")));
@@ -478,16 +546,82 @@ namespace Rulealize.Tests
         [Fact]
         public void ARuleSetThatKeepsInstancesRefusesOneDocument()
         {
-            RuleContext month = Context();
+            RuleContext month = Context(new MemoryStore());
 
-            Assert.Throws<InvalidOperationException>(() => month.GetValidInputs(month.InitialState, 10));
+            InvalidOperationException refused = Assert.Throws<InvalidOperationException>(() => month.GetValidInputs(month.InitialState, 10));
+            Assert.Contains("GetValidInputsAsync", refused.Message, StringComparison.Ordinal);
             Assert.Throws<InvalidOperationException>(() => month.ApplyToState(Input("create"), month.InitialState));
+        }
+
+        [Fact]
+        public async Task ARuleSetThatKeepsNoInstancesIsInNoStore()
+        {
+            await Assert.ThrowsAsync<InvalidOperationException>(
+                () => standard.Countdown.ApplyAsync("""{ "input": "add", "args": { "n": 1 } }"""));
+            await Assert.ThrowsAsync<InvalidOperationException>(() => standard.Countdown.GetValidInputsAsync(10));
+        }
+
+        [Fact]
+        public void ARuleSetThatKeepsInstancesNamesTheStoreTheyAreKeptIn()
+        {
+            RuleSetBuildException refused = Assert.Throws<RuleSetBuildException>(() => Context(
+                new MemoryStore(),
+                Month.Replace(MemoryStore.Requires, Requires, StringComparison.Ordinal)));
+
+            Assert.Contains("/uses[0]/many", refused.Message, StringComparison.Ordinal);
+            Assert.Contains("names no store", refused.Message, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void ARuleSetKeepsItsInstancesInOneStore()
+        {
+            RuleSetBuildException refused = Assert.Throws<RuleSetBuildException>(() => Context(
+                new MemoryStore(),
+                Month.Replace(
+                    $$"""{ "plugin": "{{MemoryStore.Plugin}}" }""",
+                    $$"""{ "plugin": "{{MemoryStore.Plugin}}" }, { "plugin": "{{MemoryStore.OtherPlugin}}" }""",
+                    StringComparison.Ordinal)));
+
+            Assert.Contains("/requires", refused.Message, StringComparison.Ordinal);
+            Assert.Contains("in one", refused.Message, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public async Task AStoreTheRuntimeWasNotGivenIsNamed()
+        {
+            RuleContext month = new RuleRuntime()
+                .LoadPluginsFrom(StandardRuntime.PluginFolder)
+                .AddPlugin(new MemoryStorePlugin(MemoryStore.Plugin, "memory"))
+                .CreateContext(Month, Held, Starts());
+
+            InvalidOperationException refused = await Assert.ThrowsAsync<InvalidOperationException>(
+                () => month.ApplyAsync(Input("create")));
+            Assert.Contains(MemoryStore.Plugin, refused.Message, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public void OnlyAStorePluginIsGivenAStore()
+        {
+            RuleRuntime runtime = MemoryStore.Runtime(new MemoryStore());
+
+            Assert.Throws<InvalidOperationException>(() => runtime.UseStore("Rulealize.Plugin.Logic", new MemoryStore()));
+            Assert.Throws<InvalidOperationException>(() => runtime.UseStore("Rulealize.Tests.Nothing", new MemoryStore()));
+        }
+
+        [Fact]
+        public void AStoreIsTheKindItsPluginDeclared()
+        {
+            RuleRuntime runtime = MemoryStore.Runtime(new MemoryStore());
+
+            InvalidOperationException refused = Assert.Throws<InvalidOperationException>(
+                () => runtime.UseStore(MemoryStore.Plugin, new ForeignStore()));
+            Assert.Contains(nameof(ForeignStore), refused.Message, StringComparison.Ordinal);
         }
 
         [Fact]
         public void AnInputAtAClaimThatDrivesNoneOfItsInputsIsRefused()
         {
-            RuleSetBuildException refused = Assert.Throws<RuleSetBuildException>(() => Context(Month.Replace(
+            RuleSetBuildException refused = Assert.Throws<RuleSetBuildException>(() => Context(new MemoryStore(), Month.Replace(
                 """
                 "fires": [ { "held": "claims", "input": "reject", "args": { "by": "@by" } } ],
                 """,
@@ -503,7 +637,7 @@ namespace Rulealize.Tests
             const string At = "\"at\": \"claims\",";
             string unaddressed = Month.Remove(Month.LastIndexOf(At, StringComparison.Ordinal), At.Length);
 
-            RuleSetBuildException refused = Assert.Throws<RuleSetBuildException>(() => Context(unaddressed));
+            RuleSetBuildException refused = Assert.Throws<RuleSetBuildException>(() => Context(new MemoryStore(), unaddressed));
 
             Assert.Contains("Write \"at\": \"claims\"", refused.Message, StringComparison.Ordinal);
         }
@@ -513,7 +647,7 @@ namespace Rulealize.Tests
         {
             // claims.enterAmount writes the claim and never the month, so a store checking the
             // claim's version would not see the month move between reading and committing.
-            RuleSetBuildException refused = Assert.Throws<RuleSetBuildException>(() => Context(Month.Replace(
+            RuleSetBuildException refused = Assert.Throws<RuleSetBuildException>(() => Context(new MemoryStore(), Month.Replace(
                 """
                 "submit": { "when": false },
                 """,
@@ -527,9 +661,10 @@ namespace Rulealize.Tests
         }
 
         [Fact]
-        public void AGuardOverAClaimsOwnInputMayReadTheClaim()
+        public async Task AGuardOverAClaimsOwnInputMayReadTheClaim()
         {
-            RuleContext month = Context(Month.Replace(
+            MemoryStore store = new();
+            RuleContext month = await Drafted(store, 0, Month.Replace(
                 """
                 "submit": { "when": false },
                 """,
@@ -537,18 +672,17 @@ namespace Rulealize.Tests
                 "submit": { "when": false }, "enterAmount": { "when": { "op": "cmp.eq", "left": { "op": "def.call", "def": "amountOf", "args": { "claim": "@claims" } }, "right": 0 } },
                 """,
                 StringComparison.Ordinal));
-            MemoryStore store = Drafted(month, 0);
 
-            store.Apply(month, Input("claims.enterAmount", "c-1", """{ "amount": 5 }"""));
-            string again = Input("claims.enterAmount", "c-1", """{ "amount": 6 }""");
+            await month.ApplyAsync(Input("claims.enterAmount", "c-1", """{ "amount": 5 }"""));
 
-            Assert.Throws<IllegalInputException>(() => month.ApplyToState(again, store.Read(month, again)));
+            await Assert.ThrowsAsync<IllegalInputException>(
+                () => month.ApplyAsync(Input("claims.enterAmount", "c-1", """{ "amount": 6 }""")));
         }
 
         [Fact]
         public void CreatingMayNotBeDecidedOnTheMonthItDoesNotWrite()
         {
-            RuleSetBuildException refused = Assert.Throws<RuleSetBuildException>(() => Context(Month.Replace(
+            RuleSetBuildException refused = Assert.Throws<RuleSetBuildException>(() => Context(new MemoryStore(), Month.Replace(
                 """
                 "create": { "creates": "claims" },
                 """,
@@ -563,7 +697,7 @@ namespace Rulealize.Tests
         [Fact]
         public void AReadThroughADefinitionIsARead()
         {
-            RuleSetBuildException refused = Assert.Throws<RuleSetBuildException>(() => Context(Month
+            RuleSetBuildException refused = Assert.Throws<RuleSetBuildException>(() => Context(new MemoryStore(), Month
                 .Replace(
                     """
                     "definitions": {
@@ -601,7 +735,7 @@ namespace Rulealize.Tests
             int projections = month.IndexOf("\"projections\"", StringComparison.Ordinal);
             month = month[..effects] + "\"effects\": [] } }," + month[projections..];
 
-            RuleSetBuildException refused = Assert.Throws<RuleSetBuildException>(() => Context(month));
+            RuleSetBuildException refused = Assert.Throws<RuleSetBuildException>(() => Context(new MemoryStore(), month));
 
             Assert.Contains("/inputs/reject/fires", refused.Message, StringComparison.Ordinal);
         }
@@ -610,6 +744,7 @@ namespace Rulealize.Tests
         public void AStartWrittenForAnotherMajorVersionIsRefused()
         {
             RuleSetBuildException refused = Assert.Throws<RuleSetBuildException>(() => Context(
+                new MemoryStore(),
                 Month,
                 ClaimStart.Replace("claim@1.0.0", "claim@2.0.0", StringComparison.Ordinal)));
 
@@ -620,25 +755,29 @@ namespace Rulealize.Tests
         public void AStartThatIsNotAStateOfTheClaimIsRefused()
         {
             RuleSetBuildException refused = Assert.Throws<RuleSetBuildException>(() => Context(
+                new MemoryStore(),
                 Month,
                 ClaimStart.Replace("\"bo\"", "\"di\"", StringComparison.Ordinal)));
 
             Assert.Contains("approver", refused.Message, StringComparison.Ordinal);
         }
 
-        private RuleContext Context(string month = Month, string start = ClaimStart) =>
-            standard.Runtime.CreateContext(
-                month,
-                new Dictionary<string, string>(StringComparer.Ordinal) { ["claim"] = Claim },
-                new Dictionary<string, string>(StringComparer.Ordinal) { ["claim-start"] = start });
+        private static readonly Dictionary<string, string> Held = new(StringComparer.Ordinal) { ["claim"] = Claim };
+
+        private static Dictionary<string, string> Starts(string start = ClaimStart) =>
+            new(StringComparer.Ordinal) { ["claim-start"] = start };
+
+        /// <summary>The month, kept in a store of its own.</summary>
+        private static RuleContext Context(MemoryStore store, string month = Month, string start = ClaimStart) =>
+            MemoryStore.Runtime(store).CreateContext(month, Held, Starts(start));
 
         /// <summary>A month with one claim, c-1, drafted at an amount.</summary>
-        private static MemoryStore Drafted(RuleContext month, int amount)
+        private static async Task<RuleContext> Drafted(MemoryStore store, int amount, string month = Month)
         {
-            MemoryStore store = MemoryStore.Opened(month);
-            store.Apply(month, Input("create"));
-            store.Apply(month, Input("claims.enterAmount", "c-1", $$"""{ "amount": {{amount}} }"""));
-            return store;
+            RuleContext context = Context(store, month);
+            await context.ApplyAsync(Input("create"));
+            await context.ApplyAsync(Input("claims.enterAmount", "c-1", $$"""{ "amount": {{amount}} }"""));
+            return context;
         }
 
         private static string Input(string input, string? claim = null, string args = "{}") =>
@@ -648,5 +787,12 @@ namespace Rulealize.Tests
 
         private static JsonElement Data(string state) =>
             JsonDocument.Parse(state).RootElement.GetProperty("data").Clone();
+
+        /// <summary>A store, but not the kind <see cref="MemoryStorePlugin"/> declared.</summary>
+        private sealed class ForeignStore : IStateStore
+        {
+            public Task<IStateStoreSession> OpenSessionAsync(CancellationToken cancellationToken = default) =>
+                throw new NotSupportedException();
+        }
     }
 }

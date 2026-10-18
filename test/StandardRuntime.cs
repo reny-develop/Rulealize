@@ -75,8 +75,14 @@ namespace Rulealize.Tests
         /// one such list and two of them would drift. No version constraints: which version
         /// resolved is <see cref="ResolutionTests"/>'s question, never these.
         /// </remarks>
-        public const string Requires = """
+        public const string Requires = $$"""
               "requires": [
+            {{Vocabularies}}
+              ],
+            """;
+
+        /// <summary>The entries of <see cref="Requires"/>, for a document that names something more.</summary>
+        public const string Vocabularies = """
                 { "plugin": "Rulealize.Plugin.TypeSchema" },  { "plugin": "Rulealize.Plugin.State" },
                 { "plugin": "Rulealize.Plugin.Binding" },     { "plugin": "Rulealize.Plugin.Definition" },
                 { "plugin": "Rulealize.Plugin.Sequence" },    { "plugin": "Rulealize.Plugin.Comparison" },
@@ -84,7 +90,6 @@ namespace Rulealize.Tests
                 { "plugin": "Rulealize.Plugin.Grid" },        { "plugin": "Rulealize.Plugin.Record" },
                 { "plugin": "Rulealize.Plugin.Tuple" },       { "plugin": "Rulealize.Plugin.Arithmetic" },
                 { "plugin": "Rulealize.Plugin.Chance" }
-              ],
             """;
 
         public RuleRuntime Runtime { get; }

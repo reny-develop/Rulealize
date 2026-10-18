@@ -3,6 +3,7 @@
 
 using System.Text.Json;
 using Rulealize.Abstraction;
+using Rulealize.Abstraction.Store;
 
 namespace Rulealize.Tests
 {
@@ -17,13 +18,15 @@ namespace Rulealize.Tests
     /// </para>
     /// <para>
     /// The month is <see cref="InstanceTests.Month"/> unchanged, and the store is the same
-    /// <see cref="MemoryStore"/>: nesting adds addresses and nothing a store has to know.
+    /// <see cref="MemoryStore"/>: nesting adds addresses and nothing a store has to know. A month
+    /// may name a different store from the ledger's, and then a transition that writes both is
+    /// handed to a coordinator split per store.
     /// </para>
     /// </remarks>
     [Collection(StandardCollection.Name)]
-    public class LedgerTests(StandardRuntime standard)
+    public class LedgerTests
     {
-        private const string Requires = StandardRuntime.Requires;
+        private const string Requires = MemoryStore.Requires;
 
         /// <summary>Every month. It has no state and no inputs of its own: it offers what the months offer.</summary>
         private const string Ledger = $$"""
@@ -41,11 +44,17 @@ namespace Rulealize.Tests
 
         private static readonly StateAddress OctoberAddress = StateAddress.Of("months", October);
 
+        /// <summary>The month, keeping its claims in the other store rather than the ledger's.</summary>
+        private static readonly string MonthElsewhere = InstanceTests.Month.Replace(
+            $$"""{ "plugin": "{{MemoryStore.Plugin}}" }""",
+            $$"""{ "plugin": "{{MemoryStore.OtherPlugin}}" }""",
+            StringComparison.Ordinal);
+
         [Fact]
         public void CreatingAClaimWritesItUnderItsMonthAndNothingElse()
         {
-            RuleContext ledger = Context();
-            MemoryStore store = MemoryStore.Opened(ledger);
+            MemoryStore store = new();
+            RuleContext ledger = Context(store);
 
             TransitionResult result = ledger.ApplyToState(Input("months.create"), store.Read(ledger, Input("months.create")));
 
@@ -57,33 +66,35 @@ namespace Rulealize.Tests
         [Fact]
         public void AMonthNobodyHasWrittenIsReadWithoutADocument()
         {
-            RuleContext ledger = Context();
+            MemoryStore store = new();
+            RuleContext ledger = Context(store);
 
             Assert.Equal([StateAddress.Root, OctoberAddress], ledger.GetReads(Input("months.create")).AsEnumerable());
-            Assert.False(MemoryStore.Opened(ledger).Read(ledger, Input("months.create")).ContainsKey(OctoberAddress));
+            Assert.False(store.Read(ledger, Input("months.create")).ContainsKey(OctoberAddress));
         }
 
         [Fact]
-        public void TheStoreAssignsTheClaimsKeyUnderItsMonth()
+        public async Task TheStoreAssignsTheClaimsKeyUnderItsMonth()
         {
-            RuleContext ledger = Context();
-            MemoryStore store = MemoryStore.Opened(ledger);
+            MemoryStore store = new();
+            RuleContext ledger = Context(store);
 
-            store.Apply(ledger, Input("months.create"));
+            await ledger.ApplyAsync(Input("months.create"));
 
             Assert.True(store.Holds(OctoberAddress.Child("claims", "c-1")));
             Assert.False(store.Holds(OctoberAddress));
+            Assert.False(store.Holds(StateAddress.Root));
         }
 
         [Fact]
-        public void ReplayingACreationInAMonthWritesTheSameKey()
+        public async Task ReplayingACreationInAMonthWritesTheSameKey()
         {
-            RuleContext ledger = Context();
-            MemoryStore store = MemoryStore.Opened(ledger);
-            string commit = store.Apply(ledger, Input("months.create"));
+            MemoryStore store = new();
+            RuleContext ledger = Context(store);
+            CommittedTransition created = await ledger.ApplyAsync(Input("months.create"));
 
             TransitionResult replayed = ledger.ApplyToState(
-                Input("months.create"), store.Read(ledger, Input("months.create")), commit);
+                Input("months.create"), store.Read(ledger, Input("months.create")), created.Commit);
 
             Assert.Equal(OctoberAddress.Child("claims", "c-1"), Assert.Single(replayed.Writes).Address);
         }
@@ -91,7 +102,7 @@ namespace Rulealize.Tests
         [Fact]
         public void AnInputOfAClaimReadsTheMonthAndTheClaim()
         {
-            RuleContext ledger = Context();
+            RuleContext ledger = Context(new MemoryStore());
 
             Assert.Equal(
                 [StateAddress.Root, OctoberAddress, OctoberAddress.Child("claims", "c-1")],
@@ -99,11 +110,11 @@ namespace Rulealize.Tests
         }
 
         [Fact]
-        public void EnteringAnAmountWritesOnlyTheClaim()
+        public async Task EnteringAnAmountWritesOnlyTheClaim()
         {
-            RuleContext ledger = Context();
-            MemoryStore store = MemoryStore.Opened(ledger);
-            store.Apply(ledger, Input("months.create"));
+            MemoryStore store = new();
+            RuleContext ledger = Context(store);
+            await ledger.ApplyAsync(Input("months.create"));
 
             string input = Input("months.claims.enterAmount", "c-1", """{ "amount": 32000 }""");
             TransitionResult result = ledger.ApplyToState(input, store.Read(ledger, input));
@@ -114,106 +125,104 @@ namespace Rulealize.Tests
         }
 
         [Fact]
-        public void TheFirstSubmissionWritesTheMonthForTheFirstTime()
+        public async Task TheFirstSubmissionWritesTheMonthForTheFirstTime()
         {
-            RuleContext ledger = Context();
-            MemoryStore store = Drafted(ledger, October, 32000);
+            MemoryStore store = new();
+            RuleContext ledger = await Drafted(Context(store), October, 32000);
 
-            store.Apply(ledger, Input("months.submit", "c-1", """{ "by": "ann" }"""));
+            await ledger.ApplyAsync(Input("months.submit", "c-1", """{ "by": "ann" }"""));
 
             Assert.Equal(32000, Data(store[OctoberAddress]).GetProperty("used").GetInt32());
             Assert.Equal("review", Data(store[OctoberAddress.Child("claims", "c-1")]).GetProperty("stage").GetString());
         }
 
         [Fact]
-        public void EachMonthHasALimitOfItsOwn()
+        public async Task EachMonthHasALimitOfItsOwn()
         {
-            RuleContext ledger = Context();
-            MemoryStore store = Drafted(ledger, October, 50000);
-            store.Apply(ledger, Input("months.submit", "c-1", """{ "by": "ann" }"""));
-            store.Apply(ledger, Input("months.create", month: "2026-11"));
-            store.Apply(ledger, Input("months.claims.enterAmount", "c-2", """{ "amount": 50000 }""", "2026-11"));
+            MemoryStore store = new();
+            RuleContext ledger = await Drafted(Context(store), October, 50000);
+            await ledger.ApplyAsync(Input("months.submit", "c-1", """{ "by": "ann" }"""));
 
-            store.Apply(ledger, Input("months.submit", "c-2", """{ "by": "ann" }""", "2026-11"));
+            await ledger.ApplyAsync(Input("months.create", month: "2026-11"));
+            await ledger.ApplyAsync(Input("months.claims.enterAmount", "c-2", """{ "amount": 50000 }""", "2026-11"));
+            await ledger.ApplyAsync(Input("months.submit", "c-2", """{ "by": "ann" }""", "2026-11"));
 
             Assert.Equal(50000, Data(store[StateAddress.Of("months", "2026-11")]).GetProperty("used").GetInt32());
         }
 
         [Fact]
-        public void TwoFirstSubmissionsInOneMonthCollideOnTheMonth()
+        public async Task TwoFirstSubmissionsInOneMonthCollideOnTheMonth()
         {
-            RuleContext ledger = Context();
-            MemoryStore store = Drafted(ledger, October, 10000);
-            store.Apply(ledger, Input("months.create"));
-            store.Apply(ledger, Input("months.claims.enterAmount", "c-2", """{ "amount": 10000 }"""));
+            MemoryStore store = new();
+            RuleContext ledger = await Drafted(Context(store), October, 10000);
+            await ledger.ApplyAsync(Input("months.create"));
+            await ledger.ApplyAsync(Input("months.claims.enterAmount", "c-2", """{ "amount": 10000 }"""));
 
-            MemoryStore.Pending first = store.Begin(ledger, Input("months.submit", "c-1", """{ "by": "ann" }"""));
-            MemoryStore.Pending second = store.Begin(ledger, Input("months.submit", "c-2", """{ "by": "ann" }"""));
-            store.Commit(first);
+            store.BeforeNextCommit = () => ledger.ApplyAsync(Input("months.submit", "c-1", """{ "by": "ann" }"""));
+            StateConflictException stale = await Assert.ThrowsAsync<StateConflictException>(
+                () => ledger.ApplyAsync(Input("months.submit", "c-2", """{ "by": "ann" }""")));
 
-            InvalidOperationException stale = Assert.Throws<InvalidOperationException>(() => store.Commit(second));
-            Assert.Contains($"'months/{October}'", stale.Message, StringComparison.Ordinal);
+            Assert.Equal(OctoberAddress, stale.Address);
         }
 
         [Fact]
-        public void AClaimIsReachedOnlyInTheMonthItWasCreatedIn()
+        public async Task AClaimIsReachedOnlyInTheMonthItWasCreatedIn()
         {
-            RuleContext ledger = Context();
-            MemoryStore store = Drafted(ledger, October, 32000);
+            MemoryStore store = new();
+            RuleContext ledger = await Drafted(Context(store), October, 32000);
 
-            string input = Input("months.claims.enterAmount", "c-1", """{ "amount": 5 }""", "2026-11");
+            RuleDocumentException missing = await Assert.ThrowsAsync<RuleDocumentException>(
+                () => ledger.ApplyAsync(Input("months.claims.enterAmount", "c-1", """{ "amount": 5 }""", "2026-11")));
 
-            RuleDocumentException missing = Assert.Throws<RuleDocumentException>(
-                () => ledger.ApplyToState(input, store.Read(ledger, input)));
             Assert.Contains("months/2026-11/claims/c-1", missing.Message, StringComparison.Ordinal);
         }
 
         [Fact]
         public void AKeyTheSchemaRefusesIsNoMonth()
         {
-            RuleContext ledger = Context();
+            RuleContext ledger = Context(new MemoryStore());
 
             RuleDocumentException refused = Assert.Throws<RuleDocumentException>(
                 () => ledger.GetReads(Input("months.create", month: "2026-1")));
+
             Assert.Contains("not a key of 'months'", refused.Message, StringComparison.Ordinal);
         }
 
         [Fact]
         public void AnInputOfAClaimNeedsBothKeys()
         {
-            RuleContext ledger = Context();
+            RuleContext ledger = Context(new MemoryStore());
             const string input = """{ "input": "months.claims.enterAmount", "at": { "claims": "c-1" }, "args": { "amount": 5 } }""";
 
             RuleDocumentException refused = Assert.Throws<RuleDocumentException>(() => ledger.GetReads(input));
+
             Assert.Contains("one instance of 'months'", refused.Message, StringComparison.Ordinal);
         }
 
         [Fact]
-        public void AMonthIsOfferedCreationAtItsOwnAddress()
+        public async Task AMonthIsOfferedCreationAtItsOwnAddress()
         {
-            RuleContext ledger = Context();
-            MemoryStore store = MemoryStore.Opened(ledger);
+            RuleContext ledger = Context(new MemoryStore());
 
-            ValidInputSet offered = ledger.GetValidInputs(store.Snapshot(), OctoberAddress, 100);
+            ValidInputSet offered = await ledger.GetValidInputsAsync(OctoberAddress, 100);
 
             Assert.Equal(["months.create"], offered.Select(static input => input.ToString()));
         }
 
         [Fact]
-        public void TheLedgerOffersNothingAtItsOwnAddress()
+        public async Task TheLedgerOffersNothingAtItsOwnAddress()
         {
-            RuleContext ledger = Context();
+            RuleContext ledger = Context(new MemoryStore());
 
-            Assert.Empty(ledger.GetValidInputs(MemoryStore.Opened(ledger).Snapshot(), StateAddress.Root, 100));
+            Assert.Empty(await ledger.GetValidInputsAsync(100));
         }
 
         [Fact]
-        public void AClaimOfAMonthIsOfferedItsMovesAtItsOwnAddress()
+        public async Task AClaimOfAMonthIsOfferedItsMovesAtItsOwnAddress()
         {
-            RuleContext ledger = Context();
-            MemoryStore store = Drafted(ledger, October, 32000);
+            RuleContext ledger = await Drafted(Context(new MemoryStore()), October, 32000);
 
-            ValidInputSet offered = ledger.GetValidInputs(store.Snapshot(), OctoberAddress.Child("claims", "c-1"), 100);
+            ValidInputSet offered = await ledger.GetValidInputsAsync(OctoberAddress.Child("claims", "c-1"), 100);
 
             Assert.Equal(
                 [
@@ -224,24 +233,23 @@ namespace Rulealize.Tests
         }
 
         [Fact]
-        public void AMoveFoundAtAClaimOfAMonthIsWrittenWithBothKeys()
+        public async Task AMoveFoundAtAClaimOfAMonthIsWrittenWithBothKeys()
         {
-            RuleContext ledger = Context();
-            MemoryStore store = Drafted(ledger, October, 32000);
+            MemoryStore store = new();
+            RuleContext ledger = await Drafted(Context(store), October, 32000);
 
-            ValidInput submit = ledger.GetValidInputs(store.Snapshot(), OctoberAddress.Child("claims", "c-1"), 100)[0];
-            store.Apply(ledger, submit.ToInputDocument(ledger.RuleSet));
+            ValidInput submit = (await ledger.GetValidInputsAsync(OctoberAddress.Child("claims", "c-1"), 100))[0];
+            await ledger.ApplyAsync(submit.ToInputDocument(ledger.RuleSet));
 
             Assert.Equal(32000, Data(store[OctoberAddress]).GetProperty("used").GetInt32());
         }
 
         [Fact]
-        public void TheLedgerMayRefuseAMonthsInputByItsKey()
+        public async Task TheLedgerMayRefuseAMonthsInputByItsKey()
         {
-            RuleContext ledger = Context(Ledger.Replace(
+            RuleContext ledger = Context(new MemoryStore(), Ledger.Replace(
                 "\n  ]\n}",
                 """
-
                   ],
                   "held": {
                     "months": {
@@ -252,20 +260,67 @@ namespace Rulealize.Tests
                 }
                 """,
                 StringComparison.Ordinal));
-            MemoryStore store = MemoryStore.Opened(ledger);
 
-            Assert.Single(ledger.GetValidInputs(store.Snapshot(), OctoberAddress, 100));
-            Assert.Empty(ledger.GetValidInputs(store.Snapshot(), StateAddress.Of("months", "2026-11"), 100));
-            Assert.Throws<IllegalInputException>(() => store.Apply(ledger, Input("months.create", month: "2026-11")));
+            Assert.Single(await ledger.GetValidInputsAsync(OctoberAddress, 100));
+            Assert.Empty(await ledger.GetValidInputsAsync(StateAddress.Of("months", "2026-11"), 100));
+            await Assert.ThrowsAsync<IllegalInputException>(() => ledger.ApplyAsync(Input("months.create", month: "2026-11")));
+        }
+
+        [Fact]
+        public async Task AMonthKeptInAnotherStoreKeepsItsClaimsThere()
+        {
+            MemoryStore store = new();
+            MemoryStore other = new();
+            RuleContext ledger = Context(store, month: MonthElsewhere, other: other);
+
+            await ledger.ApplyAsync(Input("months.create"));
+
+            Assert.True(other.Holds(OctoberAddress.Child("claims", "c-1")));
+            Assert.False(store.Holds(OctoberAddress.Child("claims", "c-1")));
+        }
+
+        [Fact]
+        public async Task ATransitionAcrossTwoStoresIsNotCommittedWithoutACoordinator()
+        {
+            MemoryStore store = new();
+            MemoryStore other = new();
+            RuleContext ledger = await Drafted(Context(store, month: MonthElsewhere, other: other), October, 32000);
+
+            InvalidOperationException refused = await Assert.ThrowsAsync<InvalidOperationException>(
+                () => ledger.ApplyAsync(Input("months.submit", "c-1", """{ "by": "ann" }""")));
+
+            Assert.Contains("coordinator", refused.Message, StringComparison.Ordinal);
+            Assert.False(store.Holds(OctoberAddress));
+            Assert.Equal("draft", Data(other[OctoberAddress.Child("claims", "c-1")]).GetProperty("stage").GetString());
+        }
+
+        [Fact]
+        public async Task ACoordinatorIsHandedWhatEachStoreIsWritten()
+        {
+            MemoryStore store = new();
+            MemoryStore other = new();
+            Coordinator coordinator = new();
+            RuleContext ledger = await Drafted(
+                Context(store, month: MonthElsewhere, other: other, coordinator: coordinator),
+                October,
+                32000);
+
+            await ledger.ApplyAsync(Input("months.submit", "c-1", """{ "by": "ann" }"""));
+
+            IReadOnlyList<StoreWriteSet> handed = Assert.Single(coordinator.Handed);
+            Assert.Equal(
+                [(MemoryStore.Plugin, OctoberAddress), (MemoryStore.OtherPlugin, OctoberAddress.Child("claims", "c-1"))],
+                handed.Select(static set => (set.Store, Assert.Single(set.Writes).Address)));
+            Assert.Equal(32000, Data(store[OctoberAddress]).GetProperty("used").GetInt32());
+            Assert.Equal("review", Data(other[OctoberAddress.Child("claims", "c-1")]).GetProperty("stage").GetString());
         }
 
         [Fact]
         public void AKeyedCollectionCreatesNothing()
         {
-            RuleSetBuildException refused = Assert.Throws<RuleSetBuildException>(() => Context(Ledger.Replace(
+            RuleSetBuildException refused = Assert.Throws<RuleSetBuildException>(() => Context(new MemoryStore(), Ledger.Replace(
                 "\n  ]\n}",
                 """
-
                   ],
                   "inputs": { "open": { "creates": "months" } }
                 }
@@ -278,10 +333,9 @@ namespace Rulealize.Tests
         [Fact]
         public void EveryMonthIsNotASequenceAProjectionCanRead()
         {
-            RuleSetBuildException refused = Assert.Throws<RuleSetBuildException>(() => Context(Ledger.Replace(
+            RuleSetBuildException refused = Assert.Throws<RuleSetBuildException>(() => Context(new MemoryStore(), Ledger.Replace(
                 "\n  ]\n}",
                 """
-
                   ],
                   "projections": { "months": { "op": "seq.count", "source": "$months" } }
                 }
@@ -295,10 +349,10 @@ namespace Rulealize.Tests
         public void ARuleSetThatKeepsInstancesIsHeldOnlyMany()
         {
             int many = Ledger.IndexOf(",\n      \"many\"", StringComparison.Ordinal);
-            int end = Ledger.IndexOf(" }\n  ]", StringComparison.Ordinal);
+            int end = Ledger.IndexOf(" }\n  ]", many, StringComparison.Ordinal);
 
             RuleSetBuildException refused = Assert.Throws<RuleSetBuildException>(
-                () => Context(Ledger[..many] + Ledger[end..]));
+                () => Context(new MemoryStore(), Ledger[..many] + Ledger[end..]));
 
             Assert.Contains("held only 'many'", refused.Message, StringComparison.Ordinal);
         }
@@ -306,7 +360,7 @@ namespace Rulealize.Tests
         [Fact]
         public void ACollectionMayNotShareAnAliasWithOneItsInstancesKeep()
         {
-            RuleSetBuildException refused = Assert.Throws<RuleSetBuildException>(() => Context(Ledger.Replace(
+            RuleSetBuildException refused = Assert.Throws<RuleSetBuildException>(() => Context(new MemoryStore(), Ledger.Replace(
                 "\"as\": \"months\"",
                 "\"as\": \"claims\"",
                 StringComparison.Ordinal)));
@@ -317,10 +371,9 @@ namespace Rulealize.Tests
         [Fact]
         public void DrivingAMonthsInputAboutAClaimIsNotSupportedYet()
         {
-            RuleSetBuildException refused = Assert.Throws<RuleSetBuildException>(() => Context(Ledger.Replace(
+            RuleSetBuildException refused = Assert.Throws<RuleSetBuildException>(() => Context(new MemoryStore(), Ledger.Replace(
                 "\n  ]\n}",
                 """
-
                   ],
                   "inputs": {
                     "submit": {
@@ -335,23 +388,35 @@ namespace Rulealize.Tests
             Assert.Contains("/inputs/submit/fires[0]/input", refused.Message, StringComparison.Ordinal);
         }
 
-        private RuleContext Context(string ledger = Ledger) =>
-            standard.Runtime.CreateContext(
+        private static RuleContext Context(
+            MemoryStore store,
+            string ledger = Ledger,
+            string? month = null,
+            MemoryStore? other = null,
+            IStoreCoordinator? coordinator = null)
+        {
+            RuleRuntime runtime = MemoryStore.Runtime(store, other);
+            if (coordinator is not null)
+            {
+                runtime.UseCoordinator(coordinator);
+            }
+
+            return runtime.CreateContext(
                 ledger,
                 new Dictionary<string, string>(StringComparer.Ordinal)
                 {
-                    ["claim-month"] = InstanceTests.Month,
+                    ["claim-month"] = month ?? InstanceTests.Month,
                     ["claim"] = InstanceTests.Claim
                 },
                 new Dictionary<string, string>(StringComparer.Ordinal) { ["claim-start"] = InstanceTests.ClaimStart });
+        }
 
         /// <summary>A ledger with one claim, c-1, drafted at an amount in a month.</summary>
-        private static MemoryStore Drafted(RuleContext ledger, string month, int amount)
+        private static async Task<RuleContext> Drafted(RuleContext ledger, string month, int amount)
         {
-            MemoryStore store = MemoryStore.Opened(ledger);
-            store.Apply(ledger, Input("months.create", month: month));
-            store.Apply(ledger, Input("months.claims.enterAmount", "c-1", $$"""{ "amount": {{amount}} }""", month));
-            return store;
+            await ledger.ApplyAsync(Input("months.create", month: month));
+            await ledger.ApplyAsync(Input("months.claims.enterAmount", "c-1", $$"""{ "amount": {{amount}} }""", month));
+            return ledger;
         }
 
         private static string Input(string input, string? claim = null, string args = "{}", string month = October) =>
@@ -361,5 +426,29 @@ namespace Rulealize.Tests
 
         private static JsonElement Data(string state) =>
             JsonDocument.Parse(state).RootElement.GetProperty("data").Clone();
+
+        /// <summary>Commits each store in turn, and remembers what it was handed.</summary>
+        /// <remarks>Not all or none: a coordinator that is, is the host's to write with its stores.</remarks>
+        private sealed class Coordinator : IStoreCoordinator
+        {
+            public List<IReadOnlyList<StoreWriteSet>> Handed { get; } = [];
+
+            public async Task<IReadOnlyDictionary<string, string>> CommitAsync(
+                IReadOnlyList<StoreWriteSet> writes,
+                CancellationToken cancellationToken = default)
+            {
+                Handed.Add(writes);
+                Dictionary<string, string> created = new(StringComparer.Ordinal);
+                foreach (StoreWriteSet set in writes)
+                {
+                    foreach ((string temporary, string key) in await set.Session.CommitAsync(set.Writes, cancellationToken))
+                    {
+                        created[temporary] = key;
+                    }
+                }
+
+                return created;
+            }
+        }
     }
 }

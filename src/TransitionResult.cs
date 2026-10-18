@@ -4,6 +4,7 @@
 using System.Collections.Immutable;
 using System.Text;
 using System.Text.Json;
+using Rulealize.Abstraction.Store;
 
 namespace Rulealize
 {

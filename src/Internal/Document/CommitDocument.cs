@@ -11,7 +11,7 @@ namespace Rulealize.Internal.Document
     /// <param name="Created">The key the store assigned each temporary key, by temporary key.</param>
     internal sealed record CommitRequest(string Input, IReadOnlyDictionary<string, string> Created);
 
-    /// <summary>Reads the <c>rulealize/commit/v1</c> document.</summary>
+    /// <summary>Reads and writes the <c>rulealize/commit/v1</c> document.</summary>
     /// <remarks>
     /// <para>
     /// What the store did about a transition, recorded beside the input as an outcome is beside
@@ -71,6 +71,29 @@ namespace Rulealize.Internal.Document
             }
 
             return new CommitRequest(name.GetString()!, created);
+        }
+
+        /// <summary>Writes the commit of one transition: its input, and the key each new instance was assigned.</summary>
+        public static string Write(CompiledRuleSet ruleSet, string input, IReadOnlyDictionary<string, string> created)
+        {
+            using MemoryStream buffer = new();
+            using (Utf8JsonWriter writer = new(buffer, new JsonWriterOptions { Indented = true }))
+            {
+                writer.WriteStartObject();
+                writer.WriteString("$schema", SchemaId);
+                writer.WriteString("ruleSet", ruleSet.Qualified);
+                writer.WriteString("input", input);
+                writer.WriteStartObject("created");
+                foreach ((string temporary, string key) in created.OrderBy(static pair => pair.Key, StringComparer.Ordinal))
+                {
+                    writer.WriteString(temporary, key);
+                }
+
+                writer.WriteEndObject();
+                writer.WriteEndObject();
+            }
+
+            return System.Text.Encoding.UTF8.GetString(buffer.ToArray());
         }
     }
 }

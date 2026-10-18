@@ -53,6 +53,13 @@ namespace Rulealize.Internal.RuleSet
         /// <summary>Gets whether anything this rule set holds is held <c>many</c>, so a position is several documents.</summary>
         public bool KeepsInstances => Held.Any(static held => held.Many is not null);
 
+        /// <summary>Gets the store plugin <c>requires</c> names to keep instances in, or <see langword="null"/> when this keeps none.</summary>
+        /// <remarks>
+        /// The rule set's own document and every instance of each collection it declares are kept
+        /// there. An instance whose rule set keeps instances of its own keeps those in its store.
+        /// </remarks>
+        public string? Store { get; init; }
+
         /// <summary>Gets the alias of every collection this rule set keeps, and every one its instances keep, at any depth.</summary>
         /// <remarks>
         /// An input document's <c>at</c> names an instance of each collection on the way to an
