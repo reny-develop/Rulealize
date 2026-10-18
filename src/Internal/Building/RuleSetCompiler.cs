@@ -69,7 +69,7 @@ namespace Rulealize.Internal.Building
             // their state is part of the composite's and everything after this may read it.
             ImmutableArray<RuleSetRequirement> uses = ReadUses(document);
             ImmutableArray<CompiledRuleSet> components = CompileComponents(uses, id);
-            ImmutableArray<HeldMany?> many = ReadMany(document, uses, components);
+            ImmutableArray<HeldMany?> many = ReadMany(builder, document, uses, components);
 
             ImmutableArray<RuleValue> initial = CompileState(builder, schema, document, components.Length > 0);
             ImmutableArray<HeldRuleSet> held = DeclareHeld(uses, schema, components, many, ref initial);
@@ -180,19 +180,22 @@ namespace Rulealize.Internal.Building
         /// <summary>Reads each <c>uses</c> entry's <c>many</c>, if it has one.</summary>
         /// <remarks>
         /// <para>
-        /// Only <c>"key": "generated"</c> so far: the store assigns a key when an instance is
-        /// created, and a new one starts at the state document <c>start</c> names — handed in by
-        /// name, as the documents <c>uses</c> names are, and checked against the component the
-        /// way a stored state is. Without a <c>start</c>, at the component's own
+        /// <c>"key": "generated"</c> is a key the store assigns when an instance is created. A
+        /// schema instead makes every key it admits an instance already, which nothing creates.
+        /// Either way an instance starts at the state document <c>start</c> names — handed in
+        /// by name, as the documents <c>uses</c> names are, and checked against the component
+        /// the way a stored state is — or, without a <c>start</c>, at the component's own
         /// <c>state.initial</c>.
         /// </para>
         /// <para>
-        /// A rule set that keeps instances may not itself be held yet. Holding one inside
-        /// another is a position whose documents nest, and the addresses for that are not
-        /// written down.
+        /// A rule set that keeps instances may be held only <c>many</c>, so that its documents
+        /// nest under its instance's: <c>months/2026-10/claims/c-8</c>. Held once, its state
+        /// would be a field of a document and its instances documents under no instance, and
+        /// the addresses for that are not written down.
         /// </para>
         /// </remarks>
         private ImmutableArray<HeldMany?> ReadMany(
+            NodeBuilder builder,
             JsonElement document,
             ImmutableArray<RuleSetRequirement> uses,
             ImmutableArray<CompiledRuleSet> components)
@@ -211,18 +214,26 @@ namespace Rulealize.Internal.Building
                 RuleSetRequirement requirement = uses[index];
                 index++;
 
-                if (component.KeepsInstances)
-                {
-                    throw new RuleSetBuildException(
-                        path,
-                        $"'{component.Qualified}' keeps instances of what it holds, and a rule set that does "
-                        + "cannot be held yet.");
-                }
-
                 if (!entry.TryGetProperty("many", out JsonElement declared))
                 {
+                    if (component.KeepsInstances)
+                    {
+                        throw new RuleSetBuildException(
+                            path,
+                            $"'{component.Qualified}' keeps instances of what it holds, and a rule set that does "
+                            + "can be held only 'many', so that its instances' documents sit under its own.");
+                    }
+
                     many.Add(null);
                     continue;
+                }
+
+                if (component.CollectionsBelow.Contains(requirement.Alias, StringComparer.Ordinal))
+                {
+                    throw new RuleSetBuildException(
+                        path.Append("as"),
+                        $"'{requirement.Alias}' is also a collection '{component.Qualified}' keeps, and an input "
+                        + "document's 'at' names an instance of each collection on the way to an input by alias.");
                 }
 
                 SourcePath manyPath = path.Append("many");
@@ -234,14 +245,15 @@ namespace Rulealize.Internal.Building
                 OnlyTheseKeys(declared, manyPath, "a many", "key", "start");
 
                 JsonElement key = RequireProperty(declared, "key", manyPath);
-                if (key.ValueKind != JsonValueKind.String
-                    || !string.Equals(key.GetString(), "generated", StringComparison.Ordinal))
+                SchemaNode? keySchema = key.ValueKind switch
                 {
-                    throw new RuleSetBuildException(
+                    JsonValueKind.String when string.Equals(key.GetString(), "generated", StringComparison.Ordinal) => null,
+                    JsonValueKind.Object => builder.BuildSchema(key, manyPath.Append("key")),
+                    _ => throw new RuleSetBuildException(
                         manyPath.Append("key"),
-                        "must be \"generated\": a key the store assigns when an instance is created. "
-                        + "A key written as a schema is not supported yet.");
-                }
+                        "must be \"generated\", a key the store assigns when an instance is created, or a "
+                        + "schema admitting every key there is an instance at.")
+                };
 
                 ImmutableArray<RuleValue> start = component.InitialState;
                 if (declared.TryGetProperty("start", out _))
@@ -258,7 +270,7 @@ namespace Rulealize.Internal.Building
                     start = ReadStart(text, component, requirement, manyPath.Append("start"));
                 }
 
-                many.Add(new HeldMany { Start = start });
+                many.Add(new HeldMany { Start = start, Key = keySchema });
             }
 
             return many.MoveToImmutable();
@@ -446,7 +458,7 @@ namespace Rulealize.Internal.Building
                 HeldStateSchema node = new(components[index]);
                 if (many[index] is HeldMany kept)
                 {
-                    if (!schema.DeclareCollection(uses[index].Alias))
+                    if (!schema.DeclareCollection(uses[index].Alias, kept.Key is not null))
                     {
                         throw new RuleSetBuildException(
                             Root.Append("uses").Append(index).Append("as"),
@@ -1334,6 +1346,16 @@ namespace Rulealize.Internal.Building
                         entryPath.Append("input"),
                         $"'{inputName}' is not an input of '{target.Rules.Qualified}'.");
 
+                if (declared.At is not null || declared.Creates is not null)
+                {
+                    throw new RuleSetBuildException(
+                        entryPath.Append("input"),
+                        $"'{alias}.{inputName}' "
+                        + (declared.At is not null ? $"is at an instance of '{declared.At}'" : $"adds to '{declared.Creates}'")
+                        + ", and driving an input about instances further down is not supported yet. It is offered "
+                        + $"as '{alias}.{inputName}' on its own.");
+                }
+
                 fires.Add(new CompiledFire
                 {
                     Alias = alias,
@@ -1375,12 +1397,23 @@ namespace Rulealize.Internal.Building
                 candidate => string.Equals(candidate.Alias, alias, StringComparison.Ordinal))
                 ?? throw new RuleSetBuildException(path.Append(key), $"'{alias}' is not a rule set this one holds.");
 
-            return target.Many is not null
-                ? target
-                : throw new RuleSetBuildException(
+            if (target.Many is null)
+            {
+                throw new RuleSetBuildException(
                     path.Append(key),
                     $"'{alias}' is held once, inside this rule set's state, and has no instances. "
                     + "Only a 'many' in 'uses' is a collection.");
+            }
+
+            if (key == "creates" && target.Many.Key is not null)
+            {
+                throw new RuleSetBuildException(
+                    path.Append(key),
+                    $"'{alias}' has an instance at every key its schema admits already, so there is none to "
+                    + "create. An input at one is written \"at\": \"" + alias + "\".");
+            }
+
+            return target;
         }
 
         private static ImmutableArray<ExpressionNode> CompileFireArguments(

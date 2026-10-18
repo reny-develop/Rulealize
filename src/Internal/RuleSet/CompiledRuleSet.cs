@@ -53,6 +53,15 @@ namespace Rulealize.Internal.RuleSet
         /// <summary>Gets whether anything this rule set holds is held <c>many</c>, so a position is several documents.</summary>
         public bool KeepsInstances => Held.Any(static held => held.Many is not null);
 
+        /// <summary>Gets the alias of every collection this rule set keeps, and every one its instances keep, at any depth.</summary>
+        /// <remarks>
+        /// An input document's <c>at</c> names an instance of each collection on the way to an
+        /// input by alias alone, so no two collections on one way down may share one.
+        /// </remarks>
+        public IEnumerable<string> CollectionsBelow =>
+            Held.Where(static held => held.Many is not null)
+                .SelectMany(static held => held.Rules.CollectionsBelow.Prepend(held.Alias));
+
         /// <summary>Finds an input by the name an input document gives.</summary>
         /// <param name="name">The input name.</param>
         /// <returns>The input, or <see langword="null"/> when the rule set has none by that name.</returns>

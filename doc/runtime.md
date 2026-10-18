@@ -61,13 +61,13 @@ opens itself, and what it takes from each.
 | --- | --- | --- |
 | the document | `$schema` `id` `version` `requires` `uses` `state` `definitions` `held` `inputs` `projections` `terminal` | `id` and `version` are required; so are `state` and `inputs` unless `uses` declares something. `$schema` is reserved and not read |
 | `requires[]` | `plugin` `version` | a constraint omitted means any version will do |
-| `uses[]` | `ruleSet` `version` `as` `many` | `ruleSet` is required; `as` defaults to it and may not contain `.` |
-| `uses[].many` | `key` `start` | `key` is required and is `"generated"`; `start` names a state document handed to `CreateContext` |
+| `uses[]` | `ruleSet` `version` `as` `many` | `ruleSet` is required; `as` defaults to it and may not contain `.`. A rule set that keeps instances may be held only with a `many` |
+| `uses[].many` | `key` `start` | `key` is required, and is `"generated"` or a schema node; `start` names a state document handed to `CreateContext` |
 | `state` | `schema` `initial` | both required, and a schema declaring no fields is refused |
 | `state.initial` | one value per declared field | every field, and no field the schema did not declare |
 | `definitions.<name>` | `body` `params` | only where `body` is written. Otherwise the value **is** the body, so a definition can be a node, a record, or a plain named constant |
 | `held.<alias>.<input>` | `when` | required. The alias has to be one `uses` declares and the input one that rule set has |
-| `inputs.<name>` | `params` `actor` `when` `validate` `effects` `fires` `at` `creates` | `effects` is required unless `fires` or `creates` is written; the rest are not. `validate` only where a parameter is `open`; `at` and `creates` only naming a `many`. A name may not contain `.` |
+| `inputs.<name>` | `params` `actor` `when` `validate` `effects` `fires` `at` `creates` | `effects` is required unless `fires` or `creates` is written; the rest are not. `validate` only where a parameter is `open`; `at` only naming a `many`, and `creates` only a generated one. A name may not contain `.` |
 | `inputs.<name>.fires[]` | `held` `input` `args` | `held` and `input` are required; `args` gives one value per parameter of the input named, and no other |
 | `inputs.<name>.params.<name>` | `domain` `open` `invalid` | exactly one of `domain` and `open`; `invalid` only beside `open` |
 | `inputs.<name>.params.<name>.open` | a schema node, or `field` | `field` names a state field and is the whole of that form |
@@ -407,7 +407,8 @@ compiled, in three places:
 **Moves are found one place at a time.** At the holder, the inputs offered are the holder's
 that are at no instance and what it holds once; at an instance, the holder's inputs `at` that
 collection and the instance's own under its alias, each written with the `at` it was found at.
-Nothing offers every instance's moves at once, because that would read every instance.
+An address further down is the same question asked of the instance above it. Nothing offers
+every instance's moves at once, because that would read every instance.
 
 **Every instance is read by a projection, and by nothing else.** In a projection, `$claims`
 is every instance of `claims`: a sequence in the ordinal order of their keys, each element the
@@ -437,8 +438,29 @@ asked for every instance of those before anything is evaluated. The projection i
 translated into a query: the store loads the instances and the runtime reads them in memory,
 which needs nothing from Abstraction it does not already have.
 
-Not yet: the store contract and naming the store in `requires`, a key written as a schema, a
-rule set that keeps instances being held itself, and an input that draws.
+**A key written as a schema has an instance at every key it admits.** `"many": { "key": {
+"op": "type.string", "minLength": 7, "maxLength": 7 } }` holds a month at every seven-character
+key, whether or not anything was ever written there, so nothing creates one and `creates` on it
+is refused. An instance the store has no document for is at its collection's `start`: it is
+still on what `GetReads` lists, the store leaves it out of what it supplies, and it is stored
+the first time a transition writes it. Two transitions that both found it unwritten and both
+write it collide on that, as two that read one version of any document do. A key is text, an
+`at` naming one the schema does not admit is refused, and `$months` is refused everywhere —
+most of the instances were never written, so there is no sequence of every one.
+
+**A rule set that keeps instances can itself be held `many`**, and only that way, so its
+instances' documents sit under its own. A ledger holding a month per key, each holding its
+claims, keeps a claim at `months/2026-10/claims/c-8`, and which month it belongs to is where it
+is kept. The month's inputs are offered as `months.create` and `months.submit`, the claim's as
+`months.claims.enterAmount`, and an input document's `at` names an instance of each collection
+on the way down, by alias — which is why no two collections on one way down may share one.
+`GetReads` lists every document on the way, outermost first; `months.create` writes its new
+claim under the month it is at, and the month itself only when it writes it. What `held` says
+about the months' inputs is asked at whatever depth they are offered.
+
+Not yet: the store contract and naming the store in `requires`, an input of the ledger's that
+drives a month's input that is itself at a claim, a held rule set's projections, and an input
+that draws.
 
 ## Snapshot semantics
 

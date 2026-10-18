@@ -27,6 +27,7 @@ namespace Rulealize.Internal.Building
         private readonly Dictionary<string, string> _ops = new(StringComparer.Ordinal);
         private readonly List<StatePath> _fields = [];
         private readonly List<string> _collections = [];
+        private readonly HashSet<string> _keyed = new(StringComparer.Ordinal);
         private readonly Dictionary<string, StatePath> _collectionPaths = new(StringComparer.Ordinal);
         private HashSet<string>? _collectionsRead;
 
@@ -61,6 +62,7 @@ namespace Rulealize.Internal.Building
 
         /// <summary>Declares a collection: the alias of a <c>uses</c> entry held <c>many</c>.</summary>
         /// <param name="alias">The alias.</param>
+        /// <param name="keyed">Whether its key is written as a schema, so that every key admitted is an instance.</param>
         /// <returns><see langword="false"/> when the name is already a field.</returns>
         /// <remarks>
         /// <para>
@@ -74,8 +76,12 @@ namespace Rulealize.Internal.Building
         /// projection fills and no other snapshot has. Resolving it anywhere else is refused
         /// while the document is compiled, so the position is never read where it is missing.
         /// </para>
+        /// <para>
+        /// A keyed collection cannot be read that way at all. Every key its schema admits is an
+        /// instance, most of them never written, so there is no sequence of all of them to give.
+        /// </para>
         /// </remarks>
-        public bool DeclareCollection(string alias)
+        public bool DeclareCollection(string alias, bool keyed)
         {
             if (_byName.ContainsKey(alias))
             {
@@ -83,6 +89,11 @@ namespace Rulealize.Internal.Building
             }
 
             _collections.Add(alias);
+            if (keyed)
+            {
+                _keyed.Add(alias);
+            }
+
             return true;
         }
 
@@ -157,6 +168,15 @@ namespace Rulealize.Internal.Building
                     + "A guard or an effect reading it would read documents its transition does not write, "
                     + "which no store's version check would see move. "
                     + $"An input at one instance reads that one as '@{alias}'.");
+            }
+
+            if (_keyed.Contains(alias))
+            {
+                throw new RuleSetBuildException(
+                    CurrentPath?.Invoke() ?? SourcePath.Root,
+                    $"'{alias}' has an instance at every key its schema admits, most of them never written, so "
+                    + "there is no sequence of every one to read. An input at one instance reads that one as "
+                    + $"'@{alias}'.");
             }
 
             if (!_collectionPaths.TryGetValue(alias, out resolved))

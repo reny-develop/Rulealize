@@ -68,17 +68,28 @@ namespace Rulealize.Internal.RuleSet
 
     /// <summary>What <c>many</c> says about a held rule set: any number of instances, each a document.</summary>
     /// <remarks>
-    /// Only the generated form so far — a key the store assigns when an instance is created —
-    /// and so only a collection that grows by <c>creates</c>.
+    /// <para>
+    /// Two forms. A generated key is one the store assigns when an instance is created, so the
+    /// collection grows by <c>creates</c>. A key written as a schema makes every key it admits
+    /// an instance already: one nobody has written is at <see cref="Start"/>, and nothing
+    /// creates one.
+    /// </para>
+    /// <para>
+    /// A key is text either way. The schema says which texts are keys.
+    /// </para>
     /// </remarks>
     internal sealed class HeldMany
     {
-        /// <summary>Gets the state every new instance starts at, in the component's schema order.</summary>
+        /// <summary>Gets the state an instance starts at, in the component's schema order.</summary>
         /// <remarks>
         /// The state document <c>start</c> names, or the component's own <c>state.initial</c>
-        /// where it names none.
+        /// where it names none. A new instance is written at it; an instance of a keyed
+        /// collection that has no document yet is read as it.
         /// </remarks>
         public required ImmutableArray<RuleValue> Start { get; init; }
+
+        /// <summary>Gets the schema a key has to satisfy, or null when the store generates keys.</summary>
+        public SchemaNode? Key { get; init; }
     }
 
     /// <summary>One held rule set's input, driven by an input of the composite.</summary>

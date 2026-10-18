@@ -511,7 +511,7 @@ namespace Rulealize
         /// <param name="inputDocument">A <c>rulealize/input/v1</c> document.</param>
         /// <returns>
         /// The addresses: <see cref="StateAddress.Root"/> first, then each instance the input
-        /// document's <c>at</c> names.
+        /// document's <c>at</c> names, outermost first.
         /// </returns>
         /// <exception cref="RuleDocumentException">
         /// The document is malformed, names no input of this rule set, or its <c>at</c> does
@@ -526,7 +526,9 @@ namespace Rulealize
         /// </para>
         /// <para>
         /// The rule set's own document is always on it. A new instance is not, because there is
-        /// nothing to read: it starts where its collection's <c>start</c> says.
+        /// nothing to read: it starts where its collection's <c>start</c> says. An instance of a
+        /// keyed collection is on it whether or not it was ever written; one the store has no
+        /// document for is left out of what it supplies, and is read as its <c>start</c>.
         /// </para>
         /// </remarks>
         internal ImmutableArray<StateAddress> GetReads(string inputDocument)
@@ -535,14 +537,14 @@ namespace Rulealize
 
             using JsonDocument input = Parse(inputDocument, "input");
             Located located = Locate(InputDocument.Read(_ruleSet, input.RootElement));
-            return [StateAddress.Root, .. located.Instances.Select(static instance => StateAddress.Of(instance.Alias, instance.Key))];
+            return [StateAddress.Root, .. located.Instances.Select(static step => step.Address)];
         }
 
         /// <summary>Applies an input to a position of several documents.</summary>
         /// <param name="inputDocument">A <c>rulealize/input/v1</c> document.</param>
         /// <param name="states">
-        /// The state documents, by address — at least every one
-        /// <see cref="GetReads(string)"/> lists for this input.
+        /// The state documents, by address — every one <see cref="GetReads(string)"/> lists for
+        /// this input, except an instance of a keyed collection that was never written.
         /// </param>
         /// <param name="cancellationToken">Cancels a long evaluation.</param>
         /// <returns>
@@ -630,7 +632,7 @@ namespace Rulealize
 
             string temporary = $"{TemporaryKeyPrefix}1";
             string? assigned = null;
-            if (located.Path.IsEmpty && located.Declared.Creates is not null)
+            if (located.Declared.Creates is not null)
             {
                 if (committed.Created.Count != 1 || !committed.Created.TryGetValue(temporary, out assigned))
                 {
@@ -656,10 +658,13 @@ namespace Rulealize
         }
 
         /// <summary>Lists the inputs the rules allow at one address of a position.</summary>
-        /// <param name="states">The state documents, by address: the rule set's own, and the instance <paramref name="at"/> names.</param>
+        /// <param name="states">
+        /// The state documents, by address: the rule set's own, and the instance
+        /// <paramref name="at"/> names and each it is held under.
+        /// </param>
         /// <param name="at">
         /// Where to look. <see cref="StateAddress.Root"/> offers the rule set's own inputs that
-        /// are at no instance; an instance offers the inputs about it.
+        /// are at no instance; an instance offers the inputs about it, at whatever depth.
         /// </param>
         /// <param name="validationLimit">The most candidates whose guard may be evaluated.</param>
         /// <param name="cancellationToken">Cancels a long search.</param>
@@ -680,25 +685,35 @@ namespace Rulealize
             ArgumentNullException.ThrowIfNull(at);
             ArgumentOutOfRangeException.ThrowIfNegativeOrZero(validationLimit);
 
-            HeldRuleSet? held = null;
-            ImmutableArray<Instance> instances = [];
-            if (!at.IsRoot)
+            // The address is followed down one collection at a time, each alias resolved against
+            // the rule set of the instance before it.
+            ImmutableArray<Step>.Builder steps = ImmutableArray.CreateBuilder<Step>();
+            CompiledRuleSet rules = _ruleSet;
+            StateAddress address = StateAddress.Root;
+            for (int i = 0; i < at.Segments.Length; i += 2)
             {
-                held = at.Segments.Length == 2 ? _ruleSet.FindHeld(at.Segments[0]) : null;
-                if (held?.Many is null)
+                HeldRuleSet? held = rules.FindHeld(at.Segments[i]);
+                if (held?.Many is null || i + 1 >= at.Segments.Length)
                 {
                     throw new ArgumentException(
                         $"'{at}' is not the address of an instance of '{_ruleSet.Qualified}'.", nameof(at));
                 }
 
-                instances = [new Instance(held.Alias, at.Segments[1], ReadAt(states, at, held.Rules))];
+                if (KeyFault(held, at.Segments[i + 1]) is string fault)
+                {
+                    throw new ArgumentException(fault, nameof(at));
+                }
+
+                address = address.Child(held.Alias, at.Segments[i + 1]);
+                steps.Add(new Step(address, held));
+                rules = held.Rules;
             }
 
             ImmutableArray<RuleValue> fields = ReadAt(states, StateAddress.Root, _ruleSet);
-            Part root = Part.Of(_ruleSet, new Position(fields, instances), "inputs", cancellationToken);
+            Part root = Part.Of(_ruleSet, new Position(fields, Read(states, steps.ToImmutable())), "inputs", cancellationToken);
 
             Search search = new(validationLimit, at);
-            OfferedAt(root, held, search, cancellationToken);
+            OfferedAt(root, null, null, string.Empty, [.. steps.Select(static step => step.Held.Alias)], search, cancellationToken);
 
             return new ValidInputSet(search.Found.ToImmutable(), search.Evaluated, search.Exhausted);
         }
@@ -719,15 +734,52 @@ namespace Rulealize
             }
 
             ImmutableArray<RuleValue> root = ReadAt(states, StateAddress.Root, _ruleSet);
-            ImmutableArray<Instance> instances =
-            [
-                .. located.Instances.Select(instance => new Instance(
-                    instance.Alias,
-                    instance.Key,
-                    ReadAt(states, StateAddress.Of(instance.Alias, instance.Key), _ruleSet.FindHeld(instance.Alias)!.Rules)))
-            ];
+            return (request, located, new Position(root, Read(states, located.Instances)));
+        }
 
-            return (request, located, new Position(root, instances));
+        /// <summary>Reads each instance on the way to an input, outermost first.</summary>
+        /// <remarks>
+        /// An instance of a keyed collection that the store has no document for was never
+        /// written, and is at its collection's start. Any other missing document is one the
+        /// transition reads and was not given.
+        /// </remarks>
+        private static ImmutableArray<Instance> Read(
+            IReadOnlyDictionary<StateAddress, string> states,
+            ImmutableArray<Step> steps) =>
+        [
+            .. steps.Select(step => new Instance(
+                step.Address,
+                step.Held,
+                step.Held.Many!.Key is not null && !states.ContainsKey(step.Address)
+                    ? step.Held.Many.Start
+                    : ReadAt(states, step.Address, step.Held.Rules)))
+        ];
+
+        /// <summary>Says what is wrong with a key for one collection, or <see langword="null"/> when nothing is.</summary>
+        /// <remarks>
+        /// A temporary key names a write not yet committed and is never where an input is, in
+        /// either kind of collection. A keyed collection's key has to be one its schema admits,
+        /// because that is what makes it an instance.
+        /// </remarks>
+        private static string? KeyFault(HeldRuleSet held, string key)
+        {
+            if (key.StartsWith(TemporaryKeyPrefix, StringComparison.Ordinal))
+            {
+                return $"'{key}' is a temporary key, which only a transition that creates an instance writes. "
+                    + "The instance is reached by the key the store assigned it.";
+            }
+
+            if (held.Many!.Key is SchemaNode schema)
+            {
+                SchemaViolations violations = new();
+                schema.Validate(RuleValue.Text(key), violations.For(held.Alias));
+                if (violations.Any)
+                {
+                    return $"'{key}' is not a key of '{held.Alias}'. {string.Join(" ", violations.Messages)}";
+                }
+            }
+
+            return null;
         }
 
         /// <summary>Reads the state document at one address against the rule set that is there.</summary>
@@ -867,55 +919,61 @@ namespace Rulealize
                 throw new RuleDocumentException($"'{request.Input}' is not an input of '{_ruleSet.Qualified}'.");
             }
 
-            List<string> needed = [];
-            if (path.IsEmpty)
+            // Every collection on the way down to the rule set that declares the input, and the
+            // one the input is at, in that order — which is the order the addresses nest in.
+            List<HeldRuleSet> needed = [];
+            CompiledRuleSet rules = _ruleSet;
+            foreach (string alias in path)
             {
-                if (declared!.At is string at)
+                HeldRuleSet step = rules.FindHeld(alias)!;
+                if (step.Many is not null)
                 {
-                    needed.Add(at);
+                    needed.Add(step);
                 }
-            }
-            else if (_ruleSet.FindHeld(path[0])!.Many is not null)
-            {
-                needed.Add(path[0]);
+
+                rules = step.Rules;
             }
 
-            ImmutableArray<(string Alias, string Key)>.Builder instances =
-                ImmutableArray.CreateBuilder<(string Alias, string Key)>(needed.Count);
-
-            foreach (string alias in needed)
+            if (declared!.At is string at)
             {
-                if (!request.At.TryGetValue(alias, out string? key))
+                needed.Add(rules.FindHeld(at)!);
+            }
+
+            ImmutableArray<Step>.Builder instances = ImmutableArray.CreateBuilder<Step>(needed.Count);
+            StateAddress address = StateAddress.Root;
+
+            foreach (HeldRuleSet collection in needed)
+            {
+                if (!request.At.TryGetValue(collection.Alias, out string? key))
                 {
                     throw new RuleDocumentException(
-                        $"'{request.Input}' is about one instance of '{alias}', and the input document's 'at' "
-                        + "does not say which.");
+                        $"'{request.Input}' is about one instance of '{collection.Alias}', and the input document's "
+                        + "'at' does not say which.");
                 }
 
-                if (key.StartsWith(TemporaryKeyPrefix, StringComparison.Ordinal))
+                if (KeyFault(collection, key) is string fault)
                 {
-                    throw new RuleDocumentException(
-                        $"'{key}' is a temporary key, which only a transition that creates an instance writes. "
-                        + "The instance is reached by the key the store assigned it.");
+                    throw new RuleDocumentException(fault);
                 }
 
-                instances.Add((alias, key));
+                address = address.Child(collection.Alias, key);
+                instances.Add(new Step(address, collection));
             }
 
             foreach (string alias in request.At.Keys)
             {
-                if (!needed.Contains(alias, StringComparer.Ordinal))
+                if (!needed.Any(collection => string.Equals(collection.Alias, alias, StringComparison.Ordinal)))
                 {
                     throw new RuleDocumentException(
-                        _ruleSet.FindHeld(alias)?.Many is null
-                            ? $"The input document's 'at' names '{alias}', which is not a collection of "
-                              + $"'{_ruleSet.Qualified}'."
-                            : $"The input document's 'at' names an instance of '{alias}', and '{request.Input}' "
-                              + "is not about one.");
+                        _ruleSet.CollectionsBelow.Contains(alias, StringComparer.Ordinal)
+                            ? $"The input document's 'at' names an instance of '{alias}', and '{request.Input}' "
+                              + "is not about one."
+                            : $"The input document's 'at' names '{alias}', which is not a collection of "
+                              + $"'{_ruleSet.Qualified}'.");
                 }
             }
 
-            return new Located(path, declared!, held, instances.MoveToImmutable());
+            return new Located(path, declared, held, instances.MoveToImmutable());
         }
 
         private Prepared Begin(
@@ -1026,8 +1084,9 @@ namespace Rulealize
         /// <summary>Lists the documents a transition over a position of several documents writes.</summary>
         /// <remarks>
         /// The holder's document when its own inputs wrote to it, each instance an input drove,
-        /// and a new instance where the input creates one — at the state its collection starts
-        /// at, under the temporary key or the one a commit document assigned.
+        /// outermost first, and a new instance where the input creates one — at the state its
+        /// collection starts at, under the temporary key or the one a commit document assigned,
+        /// beneath the instance whose rule set declared the input.
         /// </remarks>
         private ImmutableArray<StateWrite> Writes(Part root, ImmutableArray<RuleValue> next, Prepared prepared)
         {
@@ -1037,28 +1096,34 @@ namespace Rulealize
                 writes.Add(new StateWrite(StateAddress.Root, StateDocument.Write(_ruleSet, next), false));
             }
 
-            foreach ((string alias, Part instance) in root.Instances)
-            {
-                ImmutableArray<RuleValue> fields = instance.Commit();
-                if (instance.Written)
-                {
-                    writes.Add(new StateWrite(
-                        StateAddress.Of(alias, instance.Key!),
-                        StateDocument.Write(instance.Rules, fields),
-                        false));
-                }
-            }
+            WriteInstances(root, writes);
 
             if (prepared.Declared.Creates is string creates)
             {
-                HeldRuleSet held = _ruleSet.FindHeld(creates)!;
+                Part declaring = root.Descend(prepared.Path);
+                HeldRuleSet held = declaring.Rules.FindHeld(creates)!;
                 writes.Add(new StateWrite(
-                    StateAddress.Of(creates, prepared.CreatedKey),
+                    declaring.Address!.Child(creates, prepared.CreatedKey),
                     StateDocument.Write(held.Rules, held.Many!.Start),
                     true));
             }
 
             return writes.ToImmutable();
+        }
+
+        /// <summary>Commits each instance bound under a part, and every one under those, and lists the ones written.</summary>
+        private static void WriteInstances(Part part, ImmutableArray<StateWrite>.Builder writes)
+        {
+            foreach (Part instance in part.Instances)
+            {
+                ImmutableArray<RuleValue> fields = instance.Commit();
+                if (instance.Written)
+                {
+                    writes.Add(new StateWrite(instance.Address!, StateDocument.Write(instance.Rules, fields), false));
+                }
+
+                WriteInstances(instance, writes);
+            }
         }
 
         /// <summary>Runs one input's effects, and then everything it drives.</summary>
@@ -1266,7 +1331,10 @@ namespace Rulealize
             ImmutableArray<string> Path,
             CompiledInput Declared,
             HeldRuleSet? Held,
-            ImmutableArray<(string Alias, string Key)> Instances);
+            ImmutableArray<Step> Instances);
+
+        /// <summary>One instance on the way to an input: where it is, and the collection it belongs to.</summary>
+        private readonly record struct Step(StateAddress Address, HeldRuleSet Held);
 
         /// <summary>The key a new instance is written under until the store assigns its real one.</summary>
         /// <remarks>
@@ -1587,34 +1655,50 @@ namespace Rulealize
         }
 
         /// <summary>Sifts what is offered at one address of a rule set that keeps instances.</summary>
+        /// <param name="part">The rule set's part, or an instance's on the way down.</param>
+        /// <param name="holder">The part holding <paramref name="part"/>, whose <c>held</c> guard reads it.</param>
+        /// <param name="through">What <paramref name="holder"/> holds <paramref name="part"/> as.</param>
+        /// <param name="prefix">What the inputs of <paramref name="part"/> are qualified with.</param>
+        /// <param name="below">The collections still to go down through to the address, outermost first.</param>
+        /// <param name="search">The search.</param>
+        /// <param name="cancellationToken">Cancels a long search.</param>
         /// <remarks>
-        /// At the root: this rule set's own inputs that are at no instance, and what it holds
-        /// once. At an instance: this rule set's inputs that are at that collection, and then
-        /// the instance's own, under its alias — sifted by the instance's rules and by what
-        /// <c>held</c> says, as a held rule set's always are.
+        /// At the address itself: the inputs of its rule set that are at no instance, and what
+        /// it holds once. One level above it: the inputs that are at its collection. Each is
+        /// sifted by its own rules and by what <c>held</c> says, as a held rule set's always
+        /// is, so <c>months.submit</c> is offered at a claim of a month with whatever holds the
+        /// months asked as well.
         /// </remarks>
         private static void OfferedAt(
-            Part root,
-            HeldRuleSet? at,
+            Part part,
+            Part? holder,
+            HeldRuleSet? through,
+            string prefix,
+            ImmutableArray<string> below,
             Search search,
             CancellationToken cancellationToken)
         {
-            foreach (CompiledInput input in root.Rules.Inputs)
+            string? at = below.IsEmpty ? null : below[0];
+            if (below.Length <= 1)
             {
-                if (search.Exhausted)
+                foreach (CompiledInput input in part.Rules.Inputs)
                 {
-                    return;
-                }
+                    if (search.Exhausted)
+                    {
+                        return;
+                    }
 
-                if (string.Equals(input.At, at?.Alias, StringComparison.Ordinal))
-                {
-                    Collect(new Offer(input.Name, input, root, null, null), search, cancellationToken);
+                    HeldConstraint? constraint = through?.FindConstraint(input.Name);
+                    if (string.Equals(input.At, at, StringComparison.Ordinal) && constraint?.Never != true)
+                    {
+                        Collect(new Offer(prefix + input.Name, input, part, constraint, holder), search, cancellationToken);
+                    }
                 }
             }
 
             if (at is null)
             {
-                foreach (HeldRuleSet held in root.Rules.Held)
+                foreach (HeldRuleSet held in part.Rules.Held)
                 {
                     if (search.Exhausted)
                     {
@@ -1623,7 +1707,7 @@ namespace Rulealize
 
                     if (held.Many is null)
                     {
-                        Offered(root.Held(held.Alias), root, held, held.Alias + ".", search, cancellationToken);
+                        Offered(part.Held(held.Alias), part, held, prefix + held.Alias + ".", search, cancellationToken);
                     }
                 }
 
@@ -1632,7 +1716,14 @@ namespace Rulealize
 
             if (!search.Exhausted)
             {
-                Offered(root.Held(at.Alias), root, at, at.Alias + ".", search, cancellationToken);
+                OfferedAt(
+                    part.Held(at),
+                    part,
+                    part.Rules.FindHeld(at),
+                    prefix + at + ".",
+                    below.RemoveAt(0),
+                    search,
+                    cancellationToken);
             }
         }
 
@@ -1800,7 +1891,7 @@ namespace Rulealize
         private sealed record Position(ImmutableArray<RuleValue> Root, ImmutableArray<Instance> Instances);
 
         /// <summary>One instance of a collection, read from its document.</summary>
-        private readonly record struct Instance(string Alias, string Key, ImmutableArray<RuleValue> Fields);
+        private readonly record struct Instance(StateAddress Address, HeldRuleSet Held, ImmutableArray<RuleValue> Fields);
 
         /// <summary>One rule set's part of a composite state, and what is happening to it.</summary>
         /// <remarks>
@@ -1861,13 +1952,17 @@ namespace Rulealize
             /// </remarks>
             public bool Written { get; set; }
 
-            /// <summary>Gets the key of the instance this part is, or null when it is not an instance of a collection.</summary>
-            public string? Key { get; private init; }
+            /// <summary>Gets where this part's document is, or null when its state is a field of another's.</summary>
+            /// <remarks>
+            /// <see cref="StateAddress.Root"/> for the rule set a position is read for, and an
+            /// instance's own address for each instance read with it.
+            /// </remarks>
+            public StateAddress? Address { get; private init; }
 
             /// <summary>Gets what <c>@alias</c> reads for this instance: its key and its state, as found.</summary>
             public RuleValue AtValue => _atValue ??= RuleValue.Record(new Dictionary<string, RuleValue>(StringComparer.Ordinal)
             {
-                ["key"] = RuleValue.Text(Key!),
+                ["key"] = RuleValue.Text(Address!.Segments[^1]),
                 ["state"] = _packing!.Pack(Snapshot.Fields)
             });
 
@@ -1883,6 +1978,10 @@ namespace Rulealize
                 new(rules, fields, origin, cancellationToken, trail);
 
             /// <summary>Makes the part a position is, with the instances it was read with bound under their aliases.</summary>
+            /// <remarks>
+            /// The instances come outermost first, so each one's holder is bound before it is:
+            /// a claim of a month goes under the month it was read with.
+            /// </remarks>
             public static Part Of(
                 CompiledRuleSet rules,
                 Position position,
@@ -1890,25 +1989,30 @@ namespace Rulealize
                 CancellationToken cancellationToken,
                 DrawTrail? trail = null)
             {
-                Part root = new(rules, position.Root, origin, cancellationToken, trail);
+                Part root = new(rules, position.Root, origin, cancellationToken, trail) { Address = StateAddress.Root };
                 foreach (Instance instance in position.Instances)
                 {
-                    HeldRuleSet held = rules.FindHeld(instance.Alias)!;
-                    root._held.Add(
-                        instance.Alias,
-                        new Part(held.Rules, instance.Fields, origin, cancellationToken, trail)
+                    Part holder = root;
+                    ImmutableArray<string> segments = instance.Address.Segments;
+                    for (int i = 0; i + 2 < segments.Length; i += 2)
+                    {
+                        holder = holder._held[segments[i]];
+                    }
+
+                    holder._held.Add(
+                        instance.Held.Alias,
+                        new Part(instance.Held.Rules, instance.Fields, origin, cancellationToken, trail)
                         {
-                            Key = instance.Key,
-                            _packing = held.Schema
+                            Address = instance.Address,
+                            _packing = instance.Held.Schema
                         });
                 }
 
                 return root;
             }
 
-            /// <summary>Gets the instances bound into this part, by alias.</summary>
-            public IEnumerable<(string Alias, Part Part)> Instances =>
-                _held.Where(entry => entry.Value.Key is not null).Select(entry => (entry.Key, entry.Value));
+            /// <summary>Gets the instances bound directly under this part.</summary>
+            public IEnumerable<Part> Instances => _held.Values.Where(static part => part.Address is not null);
 
             /// <summary>Gets the part a held rule set occupies, making it the first time.</summary>
             /// <remarks>

@@ -1301,11 +1301,39 @@ A guard, an effect or a definition that read it would read documents its transit
 write, so the compiler refuses it there. A rule across instances is kept as state, as `used`
 is, and a projection is how the rule set shows it holds.
 
+**A key written as a schema** is the other kind of `many`. Every key the schema admits is an
+instance already, so nothing creates one and `creates` is refused on it; an instance nobody has
+written is at its `start`, and is stored the first time something writes it. That is how every
+month is held — asking about next month needs nothing done first:
+
+```jsonc
+"uses": [
+  { "ruleSet": "claim-month", "version": "^0.1", "as": "months",
+    "many": { "key": { "op": "type.string", "minLength": 7, "maxLength": 7 } } }
+]
+```
+
+A key is text either way, and the schema says which texts are keys; an `at` naming one it does
+not admit is refused. Most of those instances are never written, so there is no sequence of
+every one: `$months` is refused, in a projection too.
+
+**A rule set that keeps instances can be held `many` itself**, and only that way. The month
+above is the one with its claims, unchanged, so a claim is kept at `months/2026-10/claims/c-8`
+and which month it belongs to is where it is kept. The ledger offers the month's inputs under
+its alias — `months.create`, `months.submit`, `months.claims.enterAmount` — and an input
+document names an instance of each collection on the way down:
+
+```json
+{ "input": "months.submit", "at": { "months": "2026-10", "claims": "c-8" }, "args": { "by": "ann" } }
+```
+
+Because `at` names them by alias, no two collections on one way down may share one. Driving a
+month's input that is itself at a claim, from an input of the ledger's, is not supported yet.
+
 The instances are read and written by a store plugin the rule set names in `requires`, and
 Rulealize calls it as it calls any plugin; a host does not fetch them. That contract is not in
-Abstraction yet, so a rule set like this compiles but cannot be run by a host yet. A key written
-as a schema, and holding a rule set that itself keeps instances, are not supported yet either.
-How the runtime treats the documents is
+Abstraction yet, so a rule set like this compiles but cannot be run by a host yet. How the
+runtime treats the documents is
 [`many`](runtime.md#many-instances-kept-as-documents-of-their-own).
 
 ---
