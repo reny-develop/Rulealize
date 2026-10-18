@@ -66,8 +66,25 @@ namespace Rulealize.Internal.Building
         /// </remarks>
         public string? OpOf(string name) => _ops.GetValueOrDefault(name);
 
+        /// <summary>Gets how many references to a field have been resolved so far.</summary>
+        /// <remarks>
+        /// Every read of the state is resolved here while the rule set is built, so a count
+        /// that moved across the building of an expression says that expression reads the
+        /// state. That is how the compiler tells which documents a transition reads before
+        /// anything is evaluated. See <see cref="ReadTrace"/>.
+        /// </remarks>
+        public int Resolved { get; private set; }
+
         /// <inheritdoc />
-        public bool TryResolve(string path, [NotNullWhen(true)] out StatePath? resolved) =>
-            _byName.TryGetValue(path, out resolved);
+        public bool TryResolve(string path, [NotNullWhen(true)] out StatePath? resolved)
+        {
+            if (!_byName.TryGetValue(path, out resolved))
+            {
+                return false;
+            }
+
+            Resolved++;
+            return true;
+        }
     }
 }

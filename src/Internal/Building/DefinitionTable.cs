@@ -27,6 +27,7 @@ namespace Rulealize.Internal.Building
         private readonly List<DefinitionDescriptor> _ordered = [];
         private readonly List<HashSet<int>> _dependencies = [];
         private int _current = -1;
+        private bool[]? _readsState;
 
         /// <summary>Gets the descriptors, in declaration order.</summary>
         public ImmutableArray<DefinitionDescriptor> Descriptors => [.. _ordered];
@@ -65,9 +66,49 @@ namespace Rulealize.Internal.Building
             {
                 _dependencies[_current].Add(definition.Index);
             }
+            else
+            {
+                Traced?.Add(definition.Index);
+            }
 
             return true;
         }
+
+        /// <summary>Gets or sets where the definitions referred to from outside any body are collected.</summary>
+        public HashSet<int>? Traced { get; set; }
+
+        /// <summary>Records which bodies read the state themselves, and settles which read it through another.</summary>
+        /// <param name="direct">Per definition, in declaration order, whether its own body reads the state.</param>
+        /// <remarks>Called once every body is built and the graph is known to be acyclic.</remarks>
+        public void SettleReads(bool[] direct)
+        {
+            bool[] reads = new bool[_ordered.Count];
+            bool[] settled = new bool[_ordered.Count];
+
+            bool Settle(int index)
+            {
+                if (!settled[index])
+                {
+                    settled[index] = true;
+                    reads[index] = direct[index] || _dependencies[index].Any(Settle);
+                }
+
+                return reads[index];
+            }
+
+            for (int i = 0; i < _ordered.Count; i++)
+            {
+                Settle(i);
+            }
+
+            _readsState = reads;
+        }
+
+        /// <summary>Whether calling any of these definitions reads the state.</summary>
+        /// <param name="indices">The definitions, by position.</param>
+        /// <returns><see langword="true"/> when one of them, or something it calls, reads the state.</returns>
+        public bool AnyReadsState(IEnumerable<int> indices) =>
+            _readsState is bool[] reads && indices.Any(index => reads[index]);
 
         /// <summary>Looks for a cycle in the reference graph.</summary>
         /// <returns>

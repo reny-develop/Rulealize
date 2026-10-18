@@ -549,7 +549,7 @@ ends the game at two. The redundancy is deliberate and the two say different thi
 
 ## 6. `inputs` — what may be done
 
-An input is a named thing somebody may do. It takes six keys and all but one are optional.
+An input is a named thing somebody may do. It takes eight keys and all but one are optional.
 
 ```jsonc
 "inputs": {
@@ -559,12 +559,14 @@ An input is a named thing somebody may do. It takes six keys and all but one are
     "when":     /* whether it is allowed */,
     "validate": [ /* what an argument from outside is held to */ ],
     "effects":  [ /* what it does */ ],
-    "fires":    [ /* component inputs it drives — §11 */ ]
+    "fires":    [ /* component inputs it drives — §11 */ ],
+    "at":       /* the collection whose instance it is about — §11 */,
+    "creates":  /* the collection it adds an instance to — §11 */
   }
 }
 ```
 
-`effects` is required unless `fires` is written. An input's name may not contain `.`; the
+`effects` is required unless `fires` or `creates` is written. An input's name may not contain `.`; the
 character is reserved for the qualified names a composite offers (§11).
 
 ### `params` — a domain, and what comes of it
@@ -1238,6 +1240,54 @@ by identifier. The rest — where those documents come from, how a version is ch
 stored composite state carries, and what a composite deliberately does not get — is
 [`uses` and `held`](runtime.md#uses-and-held-a-rule-set-that-holds-others).
 
+### `many` — any number of instances, each its own document
+
+A month holds the claims made in it, and there is no saying in advance how many. A `uses`
+entry with a `many` holds any number of instances of the component, and each is kept as a
+document of its own rather than as a field of the holder's state:
+
+```jsonc
+"uses": [
+  { "ruleSet": "claim", "version": "^1.0", "as": "claims",
+    "many": { "key": "generated", "start": "claim-start" } }
+],
+
+"inputs": {
+  "create": { "creates": "claims" },
+  "submit": {
+    "at": "claims",
+    "params": { "by": { "domain": { "op": "seq.of", "of": ["ann", "bo", "cy"] } } },
+    "when": { "op": "cmp.lte", "right": "$limit",
+              "left": { "op": "math.add", "of": ["$used", { "op": "def.call", "def": "amountOf", "args": { "claim": "@claims" } }] } },
+    "fires": [ { "held": "claims", "input": "submit", "args": { "by": "@by" } } ],
+    "effects": [ /* add the claim's amount to $used */ ]
+  }
+}
+```
+
+`"key": "generated"` is the store's key, assigned when an instance is created. `start` names
+the state document a new instance starts at, handed to `CreateContext` by that name; without
+one, a new instance starts at the component's own `state.initial`.
+
+**`creates` adds an instance**, and **`at` is about one that exists** — which one is the input
+document's to say, in its `at`. Inside an input that is `at` a collection, `@claims` is that
+instance: a record with its `key` and its `state`. A component's own inputs are offered at the
+instance as `claims.enterAmount`, and `held` constrains them as it does any held input, with
+`@claims` in scope there too.
+
+**A guard reads only documents its transition writes**, because that is what lets the store
+check versions on what is written and nothing else; two moves each legal alone could otherwise
+commit together into a position no rule allows. Three refusals follow from it. An input at an
+instance fires at least one of its inputs, since that is how a transition writes one. An input
+that writes nothing of the holder's own — `create` above — may not read `$limit` or `$used`
+to decide anything, directly or through a definition. And a `held` guard over an instance's
+input may read `@claims` but not the holder's state, since that input never writes it.
+
+So far this is the generated key only. A key written as a schema, reading every instance at
+once, and holding a rule set that itself keeps instances are not supported yet. What a
+position of several documents looks like to a host is
+[`many`](runtime.md#many-instances-kept-as-documents-of-their-own).
+
 ---
 
 ## 12. The three documents that travel
@@ -1313,7 +1363,7 @@ message carries the path of the offending node:
 /inputs/submit/when/left: 'stagee' is not a field of the state schema.
 /inputs/reject/effects[0]/path: 'staeg' is not a field of the state schema.
 /inputs/submit/effects[0]: 'cmp.eq' is an expression and cannot appear where an effect is expected.
-/inputs/submit/whn: is not a key an input takes; those are 'params', 'actor', 'when', 'validate', 'effects' and 'fires'.
+/inputs/submit/whn: is not a key an input takes; those are 'params', 'actor', 'when', 'validate', 'effects', 'fires', 'at' and 'creates'.
 ```
 
 **That path is the runtime's own, and it is not a JSON pointer.** A member is `/name` and an
@@ -1352,7 +1402,7 @@ Reading past the end of a sequence and reading a square off the board are **not*
 They produce null, and rule sets are built on their doing so (§2).
 
 Each exception says which class of thing went wrong: `RuleSetBuildException` for a document
-that is not a valid rule set, `RuleDocumentException` for a state, input or outcome document
+that is not a valid rule set, `RuleDocumentException` for a state, input, outcome or commit document
 this rule set cannot accept, `IllegalInputException` for a move the rules do not allow —
 including a value a parameter's `open` schema does not admit —
 `RuleEvaluationException` for values that make an operation meaningless, and

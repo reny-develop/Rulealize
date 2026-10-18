@@ -50,6 +50,9 @@ namespace Rulealize.Internal.RuleSet
         /// </remarks>
         public ImmutableArray<HeldRuleSet> Held { get; init; } = [];
 
+        /// <summary>Gets whether anything this rule set holds is held <c>many</c>, so a position is several documents.</summary>
+        public bool KeepsInstances => Held.Any(static held => held.Many is not null);
+
         /// <summary>Finds an input by the name an input document gives.</summary>
         /// <param name="name">The input name.</param>
         /// <returns>The input, or <see langword="null"/> when the rule set has none by that name.</returns>
@@ -143,6 +146,19 @@ namespace Rulealize.Internal.RuleSet
         /// author writing that guard a second time and writing it differently.
         /// </remarks>
         public ImmutableArray<CompiledFire> Fires { get; init; } = [];
+
+        /// <summary>Gets the collection this input is at, or null when it is about this rule set's own document.</summary>
+        /// <remarks>
+        /// Which instance is the input document's to say, in its <c>at</c>. The instance is
+        /// read before anything is evaluated, because the document names it.
+        /// </remarks>
+        public string? At { get; init; }
+
+        /// <summary>Gets the slot <c>@alias</c> was given, where <see cref="At"/> names a collection.</summary>
+        public LocalSlot? AtSlot { get; init; }
+
+        /// <summary>Gets the collection this input adds an instance to, or null when it creates nothing.</summary>
+        public string? Creates { get; init; }
 
         /// <summary>Gets whether anything in this input's effects resolves a chance event.</summary>
         /// <remarks>

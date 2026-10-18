@@ -44,6 +44,8 @@ Create a `RuleRuntime` instance and load the required plugins into it.
 
 `RuleContext` provides an `ApplyToState` method. This method accepts an input document and a state document, applies the input to the state, and returns where the transition arrived.
 
+A rule set whose `uses` holds something `many` keeps each instance as its own document, so a position is several documents, passed by `StateAddress`. `GetReads` says which an input reads before any is fetched, `ApplyToState(input, states)` returns what it wrote in `TransitionResult.Writes`, and versions and keys are the store's: the runtime stays pure (`doc/runtime.md#many-instances-kept-as-documents-of-their-own`).
+
 Asynchrony belongs at the boundary only. Evaluation is pure computation over in-memory documents, so the `string` overloads are synchronous; the `Async` suffix is reserved for the `Stream` overloads, where reading a document genuinely is I/O (`CreateContextAsync`, `ApplyToStateAsync`).
 
 ### What May Happen Next

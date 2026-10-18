@@ -61,12 +61,13 @@ opens itself, and what it takes from each.
 | --- | --- | --- |
 | the document | `$schema` `id` `version` `requires` `uses` `state` `definitions` `held` `inputs` `projections` `terminal` | `id` and `version` are required; so are `state` and `inputs` unless `uses` declares something. `$schema` is reserved and not read |
 | `requires[]` | `plugin` `version` | a constraint omitted means any version will do |
-| `uses[]` | `ruleSet` `version` `as` | `ruleSet` is required; `as` defaults to it and may not contain `.` |
+| `uses[]` | `ruleSet` `version` `as` `many` | `ruleSet` is required; `as` defaults to it and may not contain `.` |
+| `uses[].many` | `key` `start` | `key` is required and is `"generated"`; `start` names a state document handed to `CreateContext` |
 | `state` | `schema` `initial` | both required, and a schema declaring no fields is refused |
 | `state.initial` | one value per declared field | every field, and no field the schema did not declare |
 | `definitions.<name>` | `body` `params` | only where `body` is written. Otherwise the value **is** the body, so a definition can be a node, a record, or a plain named constant |
 | `held.<alias>.<input>` | `when` | required. The alias has to be one `uses` declares and the input one that rule set has |
-| `inputs.<name>` | `params` `actor` `when` `validate` `effects` `fires` | `effects` is required unless `fires` is written; the rest are not. `validate` only where a parameter is `open`. A name may not contain `.` |
+| `inputs.<name>` | `params` `actor` `when` `validate` `effects` `fires` `at` `creates` | `effects` is required unless `fires` or `creates` is written; the rest are not. `validate` only where a parameter is `open`; `at` and `creates` only naming a `many`. A name may not contain `.` |
 | `inputs.<name>.fires[]` | `held` `input` `args` | `held` and `input` are required; `args` gives one value per parameter of the input named, and no other |
 | `inputs.<name>.params.<name>` | `domain` `open` `invalid` | exactly one of `domain` and `open`; `invalid` only beside `open` |
 | `inputs.<name>.params.<name>.open` | a schema node, or `field` | `field` names a state field and is the whole of that form |
@@ -342,6 +343,72 @@ version without the composite being touched at all, so a stored state that named
 `process@1.0.0` would go on being read after the thing it holds had stopped meaning what it
 said. Migration compounds under composition, and the runtime still declines to guess at it;
 what it will not do is fail to notice.
+
+## `many`: instances kept as documents of their own
+
+A `uses` entry with a `many` holds any number of instances of the component, and each is a
+document of its own. The holder's state does not contain them, so a position is no longer one
+document: it is the holder's, at `StateAddress.Root`, and an instance's, at
+`StateAddress.Of("claims", "c-8")`. An input document says which instance it is about in its
+`at`:
+
+```json
+{ "input": "submit", "at": { "claims": "c-8" }, "args": { "by": "ann" } }
+```
+
+**What is read is settled before anything is evaluated.** `GetReads(input)` lists it from the
+input document and the rule set alone — the holder's document, and each instance `at` names —
+and `ApplyToState(input, states)` reads exactly those, by address. Nothing is fetched while a
+transition runs.
+
+**What is written comes back, document by document.** `TransitionResult.Writes` holds the
+holder's document only where one of its own inputs wrote to it, each instance an input drove,
+and a new instance where the input `creates` one. A new instance is written under the
+temporary key `~1`, because its real key does not exist until the store assigns one; a
+`rulealize/commit/v1` document records that key —
+
+```json
+{ "$schema": "rulealize/commit/v1", "ruleSet": "claim-month@0.1.0",
+  "input": "create", "created": { "~1": "c-8" } }
+```
+
+— and `ApplyToState(input, states, commit)` replays the pair into the same instance under the
+same key, as an outcome replays a draw. A temporary key is refused in an input document's
+`at` and in what a commit assigns.
+
+**The runtime stays pure.** It knows no versions and stores nothing: checking each written
+document against the version it was read at, and assigning keys, is the store's. Two
+submissions in one month both write the month's document and collide there; a claim created
+or edited meanwhile writes neither and does not.
+
+**A guard reads only documents its transition writes**, and that is what makes checking the
+written documents enough: whatever a move was decided on is something it writes, so a
+transition that raced it moved a version this one checks. Without it, two moves each legal
+alone can commit together into a position no rule allows. It is enforced when the rule set is
+compiled, in three places:
+
+- An input `at` an instance has to fire one of that instance's inputs, because firing is how
+  a transition writes an instance.
+- An input of the holder's that writes the holder's document neither by its effects nor by
+  driving something held once — `create`, or an input that only drives an instance — may not
+  read the holder's state in its domains, `when`, `fires` arguments or `validate`. A read
+  through a definition counts; `actor` decides nothing written and is not asked.
+- A `held` guard over a collection's input may not read the holder's state at all, because an
+  instance's own input writes the instance and never the holder. It may read `@alias` and the
+  input's arguments.
+
+**Moves are asked about one address at a time.** `GetValidInputs(states, at, limit)` offers,
+at the root, the holder's inputs that are at no instance and what it holds once; at an
+instance, the holder's inputs `at` that collection and the instance's own under its alias.
+Each `ValidInput` carries the `At` it was found at and writes it into its input document. No
+call offers every instance's moves at once, because that would read every instance.
+
+The one-document methods — `ApplyToState`, `GetOutcomes`, `GetValidInputs` taking a single
+state — refuse a rule set that keeps instances with `InvalidOperationException`.
+`InitialState`, `Project` and `GetTerminalStatus` take the holder's own document as before.
+
+Not yet: a key written as a schema, reading every instance from a projection, a rule set that
+keeps instances being held itself, an input that draws, and naming the store in `requires`.
 
 ## Snapshot semantics
 

@@ -8,6 +8,7 @@ using Rulealize.Abstraction.Building;
 using Rulealize.Abstraction.Node;
 using Rulealize.Abstraction.Plugin;
 using Rulealize.Abstraction.Value;
+using Rulealize.Internal.Document;
 using Rulealize.Internal.Plugin;
 using Rulealize.Internal.RuleSet;
 
@@ -33,7 +34,8 @@ namespace Rulealize.Internal.Building
     internal sealed class RuleSetCompiler(
         OperationTable operations,
         IReadOnlyDictionary<string, string>? heldDocuments = null,
-        ImmutableArray<string> ancestry = default)
+        ImmutableArray<string> ancestry = default,
+        IReadOnlyDictionary<string, string>? startDocuments = null)
     {
         private static readonly SourcePath Root = SourcePath.Root;
 
@@ -67,9 +69,10 @@ namespace Rulealize.Internal.Building
             // their state is part of the composite's and everything after this may read it.
             ImmutableArray<RuleSetRequirement> uses = ReadUses(document);
             ImmutableArray<CompiledRuleSet> components = CompileComponents(uses, id);
+            ImmutableArray<HeldMany?> many = ReadMany(document, uses, components);
 
             ImmutableArray<RuleValue> initial = CompileState(builder, schema, document, components.Length > 0);
-            ImmutableArray<HeldRuleSet> held = DeclareHeld(uses, schema, components, ref initial);
+            ImmutableArray<HeldRuleSet> held = DeclareHeld(uses, schema, components, many, ref initial);
 
             CompiledDefinitions compiledDefinitions = CompileDefinitions(builder, definitions, document);
             ImmutableArray<CompiledInput> inputs = CompileInputs(builder, document, held);
@@ -142,7 +145,7 @@ namespace Rulealize.Internal.Building
                 CompiledRuleSet compiled;
                 try
                 {
-                    compiled = new RuleSetCompiler(operations, heldDocuments, _ancestry.Add(id))
+                    compiled = new RuleSetCompiler(operations, heldDocuments, _ancestry.Add(id), startDocuments)
                         .Compile(component.RootElement);
                 }
                 catch (RuleSetBuildException exception)
@@ -172,6 +175,153 @@ namespace Rulealize.Internal.Building
             }
 
             return components.MoveToImmutable();
+        }
+
+        /// <summary>Reads each <c>uses</c> entry's <c>many</c>, if it has one.</summary>
+        /// <remarks>
+        /// <para>
+        /// Only <c>"key": "generated"</c> so far: the store assigns a key when an instance is
+        /// created, and a new one starts at the state document <c>start</c> names — handed in by
+        /// name, as the documents <c>uses</c> names are, and checked against the component the
+        /// way a stored state is. Without a <c>start</c>, at the component's own
+        /// <c>state.initial</c>.
+        /// </para>
+        /// <para>
+        /// A rule set that keeps instances may not itself be held yet. Holding one inside
+        /// another is a position whose documents nest, and the addresses for that are not
+        /// written down.
+        /// </para>
+        /// </remarks>
+        private ImmutableArray<HeldMany?> ReadMany(
+            JsonElement document,
+            ImmutableArray<RuleSetRequirement> uses,
+            ImmutableArray<CompiledRuleSet> components)
+        {
+            if (uses.Length == 0)
+            {
+                return [];
+            }
+
+            ImmutableArray<HeldMany?>.Builder many = ImmutableArray.CreateBuilder<HeldMany?>(uses.Length);
+            int index = 0;
+            foreach (JsonElement entry in document.GetProperty("uses").EnumerateArray())
+            {
+                SourcePath path = Root.Append("uses").Append(index);
+                CompiledRuleSet component = components[index];
+                RuleSetRequirement requirement = uses[index];
+                index++;
+
+                if (component.KeepsInstances)
+                {
+                    throw new RuleSetBuildException(
+                        path,
+                        $"'{component.Qualified}' keeps instances of what it holds, and a rule set that does "
+                        + "cannot be held yet.");
+                }
+
+                if (!entry.TryGetProperty("many", out JsonElement declared))
+                {
+                    many.Add(null);
+                    continue;
+                }
+
+                SourcePath manyPath = path.Append("many");
+                if (declared.ValueKind != JsonValueKind.Object)
+                {
+                    throw new RuleSetBuildException(manyPath, "must be an object with a 'key'.");
+                }
+
+                OnlyTheseKeys(declared, manyPath, "a many", "key", "start");
+
+                JsonElement key = RequireProperty(declared, "key", manyPath);
+                if (key.ValueKind != JsonValueKind.String
+                    || !string.Equals(key.GetString(), "generated", StringComparison.Ordinal))
+                {
+                    throw new RuleSetBuildException(
+                        manyPath.Append("key"),
+                        "must be \"generated\": a key the store assigns when an instance is created. "
+                        + "A key written as a schema is not supported yet.");
+                }
+
+                ImmutableArray<RuleValue> start = component.InitialState;
+                if (declared.TryGetProperty("start", out _))
+                {
+                    string name = RequireString(declared, "start", manyPath);
+                    if (startDocuments is null || !startDocuments.TryGetValue(name, out string? text))
+                    {
+                        throw new RuleSetBuildException(
+                            manyPath.Append("start"),
+                            $"names '{name}', whose document was not supplied. "
+                            + "CreateContext takes the documents instances start at, by name.");
+                    }
+
+                    start = ReadStart(text, component, requirement, manyPath.Append("start"));
+                }
+
+                many.Add(new HeldMany { Start = start });
+            }
+
+            return many.MoveToImmutable();
+        }
+
+        /// <summary>Reads the state document a new instance starts at.</summary>
+        /// <remarks>
+        /// The <c>ruleSet</c> it claims has to satisfy what <c>uses</c> asks for, and then the
+        /// document is read the way any state of the component is — which is the check a stored
+        /// state's frame gets, applied before there is anything stored.
+        /// </remarks>
+        private static ImmutableArray<RuleValue> ReadStart(
+            string text,
+            CompiledRuleSet component,
+            RuleSetRequirement requirement,
+            SourcePath path)
+        {
+            JsonDocument start;
+            try
+            {
+                start = JsonDocument.Parse(text, RuleRuntime.ParseOptions);
+            }
+            catch (JsonException exception)
+            {
+                throw new RuleSetBuildException(path, "names a document that is not valid JSON.", exception);
+            }
+
+            using (start)
+            {
+                return ReadStart(start.RootElement, component, requirement, path);
+            }
+        }
+
+        private static ImmutableArray<RuleValue> ReadStart(
+            JsonElement start,
+            CompiledRuleSet component,
+            RuleSetRequirement requirement,
+            SourcePath path)
+        {
+            if (start.ValueKind == JsonValueKind.Object
+                && start.TryGetProperty("ruleSet", out JsonElement claimed)
+                && claimed.ValueKind == JsonValueKind.String
+                && claimed.GetString() is string written
+                && written.LastIndexOf('@') is int separator and > 0
+                && Version.TryParse(written[(separator + 1)..], out Version? version)
+                && !requirement.IsSatisfiedBy(version))
+            {
+                throw new RuleSetBuildException(path, $"was written for '{written}', and this rule set needs {requirement}.");
+            }
+
+            try
+            {
+                return StateDocument.Read(component, start);
+            }
+            catch (RuleDocumentException exception)
+            {
+                throw new RuleSetBuildException(
+                    path,
+                    exception.Violations.IsEmpty
+                        ? exception.Message
+                        : $"{exception.Message} {string.Join(" ", exception.Violations)}",
+                    exception);
+            }
         }
 
         /// <summary>Reads <c>id</c> and <c>version</c>, without compiling anything.</summary>
@@ -226,7 +376,7 @@ namespace Rulealize.Internal.Building
                     throw new RuleSetBuildException(entryPath, "must be an object naming a rule set.");
                 }
 
-                OnlyTheseKeys(entry, entryPath, "a use", "ruleSet", "version", "as");
+                OnlyTheseKeys(entry, entryPath, "a use", "ruleSet", "version", "as", "many");
 
                 string ruleSet = RequireString(entry, "ruleSet", entryPath);
                 string alias = entry.TryGetProperty("as", out JsonElement named)
@@ -280,6 +430,7 @@ namespace Rulealize.Internal.Building
             ImmutableArray<RuleSetRequirement> uses,
             StateSchema schema,
             ImmutableArray<CompiledRuleSet> components,
+            ImmutableArray<HeldMany?> many,
             ref ImmutableArray<RuleValue> initial)
         {
             if (components.Length == 0)
@@ -293,6 +444,21 @@ namespace Rulealize.Internal.Building
             for (int index = 0; index < components.Length; index++)
             {
                 HeldStateSchema node = new(components[index]);
+                if (many[index] is HeldMany kept)
+                {
+                    held.Add(new HeldRuleSet
+                    {
+                        Alias = uses[index].Alias,
+                        Rules = components[index],
+                        Field = null,
+                        Schema = node,
+                        Many = kept,
+                        Constraints = []
+                    });
+
+                    continue;
+                }
+
                 StatePath? field = schema.Declare(uses[index].Alias, node)
                     ?? throw new RuleSetBuildException(
                         Root.Append("uses").Append(index).Append("as"),
@@ -304,6 +470,7 @@ namespace Rulealize.Internal.Building
                     Alias = uses[index].Alias,
                     Rules = components[index],
                     Field = field,
+                    Schema = node,
                     Constraints = []
                 });
             }
@@ -577,6 +744,7 @@ namespace Rulealize.Internal.Building
             ImmutableArray<int>.Builder frameSizes = ImmutableArray.CreateBuilder<int>(pending.Count);
             ImmutableArray<ImmutableArray<LocalSlot>>.Builder slots =
                 ImmutableArray.CreateBuilder<ImmutableArray<LocalSlot>>(pending.Count);
+            bool[] readsState = new bool[pending.Count];
 
             for (int index = 0; index < pending.Count; index++)
             {
@@ -599,7 +767,9 @@ namespace Rulealize.Internal.Building
                             parameterSlots.Add(builder.Scope.Declare(parameter));
                         }
 
+                        int resolved = builder.State.Resolved;
                         bodies.Add(builder.BuildExpression(body, bodyPath));
+                        readsState[index] = builder.State.Resolved > resolved;
                         slots.Add(parameterSlots.MoveToImmutable());
                     }
                 }
@@ -617,6 +787,8 @@ namespace Rulealize.Internal.Building
                     path,
                     $"definitions must not be recursive, but {string.Join(" -> ", cycle)}.");
             }
+
+            table.SettleReads(readsState);
 
             return new CompiledDefinitions(
                 bodies.MoveToImmutable(),
@@ -691,7 +863,18 @@ namespace Rulealize.Internal.Building
             SourcePath path,
             ImmutableArray<HeldRuleSet> held)
         {
-            OnlyTheseKeys(element, path, "an input", "params", "actor", "when", "validate", "effects", "fires");
+            OnlyTheseKeys(
+                element, path, "an input", "params", "actor", "when", "validate", "effects", "fires", "at", "creates");
+
+            HeldRuleSet? at = ReadCollection(element, "at", path, held);
+            HeldRuleSet? creates = ReadCollection(element, "creates", path, held);
+            if (at is not null && creates is not null && ReferenceEquals(at, creates))
+            {
+                throw new RuleSetBuildException(
+                    path.Append("creates"),
+                    $"adds to '{at.Alias}' and is also at one of its instances. An input is about an instance that "
+                    + "exists, or makes one that does not.");
+            }
 
             builder.Scope.BeginFrame();
             int drawsBefore = builder.Draws;
@@ -706,6 +889,14 @@ namespace Rulealize.Internal.Building
             // an open parameter's 'invalid' and a validate clause's 'code' are read off the same
             // refusal by the same host, so one name may not stand for two of them.
             Dictionary<string, string> codes = new(StringComparer.Ordinal);
+
+            // What decides whether this input applies, and with what: everything but `actor`,
+            // which names whose move it is and decides nothing written, and the effects, which
+            // write. Each is asked below whether it reads this rule set's own state.
+            ReadTrace domainReads = new(builder.State, builder.Definitions);
+            ReadTrace guardReads = new(builder.State, builder.Definitions);
+            ReadTrace fireReads = new(builder.State, builder.Definitions);
+            ReadTrace validateReads = new(builder.State, builder.Definitions);
 
             if (element.TryGetProperty("params", out JsonElement parameters))
             {
@@ -758,13 +949,17 @@ namespace Rulealize.Internal.Building
                         Claim(codes, invalid, $"params.{parameter.Name}.invalid", parameterPath.Append("invalid"));
                     }
 
+                    ExpressionNode? built = null;
+                    if (hasDomain)
+                    {
+                        using (domainReads.Watch())
+                        {
+                            built = builder.BuildExpression(domain, parameterPath.Append("domain"));
+                        }
+                    }
+
                     declared.Add(hasDomain
-                        ? new DeclaredParameter(
-                            parameter.Name,
-                            builder.BuildExpression(domain, parameterPath.Append("domain")),
-                            null,
-                            null,
-                            null)
+                        ? new DeclaredParameter(parameter.Name, built, null, null, null)
                         : CompileOpen(builder, parameter.Name, open, parameterPath.Append("open")) with
                         {
                             Invalid = invalid
@@ -777,6 +972,7 @@ namespace Rulealize.Internal.Building
             ImmutableArray<EffectNode> effects;
             ImmutableArray<CompiledFire> fires;
             ImmutableArray<CompiledValidation> validations;
+            LocalSlot? atSlot;
             ImmutableArray<CompiledParameter>.Builder compiled =
                 ImmutableArray.CreateBuilder<CompiledParameter>(declared.Count);
 
@@ -798,6 +994,11 @@ namespace Rulealize.Internal.Building
                     });
                 }
 
+                // After the parameters, whose slots come first in the frame. The instance is
+                // the input document's to name, as an argument is, so it is bound beside them
+                // and read the same way: `@claims`.
+                atSlot = at is null ? null : builder.Scope.Declare(at.Alias);
+
                 // Everything a candidate is sifted by is built with the open parameters
                 // unreadable, because a candidate is formed before their arguments exist.
                 using (builder.Scope.BarOpen())
@@ -806,21 +1007,55 @@ namespace Rulealize.Internal.Building
                         ? builder.BuildExpression(actorElement, path.Append("actor"))
                         : null;
 
-                    guard = element.TryGetProperty("when", out JsonElement whenElement)
-                        ? builder.BuildExpression(whenElement, path.Append("when"))
-                        : null;
+                    using (guardReads.Watch())
+                    {
+                        guard = element.TryGetProperty("when", out JsonElement whenElement)
+                            ? builder.BuildExpression(whenElement, path.Append("when"))
+                            : null;
+                    }
 
-                    fires = CompileFires(builder, element, path, held);
+                    using (fireReads.Watch())
+                    {
+                        fires = CompileFires(builder, element, path, held, at, creates);
+                    }
                 }
 
-                validations = CompileValidations(
-                    builder,
-                    element,
-                    path,
-                    declared.Any(static parameter => parameter.Open is not null),
-                    codes);
+                using (validateReads.Watch())
+                {
+                    validations = CompileValidations(
+                        builder,
+                        element,
+                        path,
+                        declared.Any(static parameter => parameter.Open is not null),
+                        codes);
+                }
 
-                effects = CompileEffects(builder, element, path, fires.Length > 0);
+                effects = CompileEffects(builder, element, path, fires.Length > 0 || creates is not null);
+            }
+
+            // A transition writes this rule set's document when its own effects do, or when it
+            // drives something held once, whose state is a field of it. Where neither is so
+            // (creating an instance, or driving one) nothing that decided the transition may
+            // read the document, or a store checking versions on what is written would not see
+            // it move.
+            if (held.Any(static one => one.Many is not null)
+                && effects.IsEmpty
+                && !fires.Any(fire => held.First(one => string.Equals(one.Alias, fire.Alias, StringComparison.Ordinal)).Many is null))
+            {
+                foreach ((ReadTrace trace, string part) in new[]
+                {
+                    (domainReads, "params"), (guardReads, "when"), (fireReads, "fires"), (validateReads, "validate")
+                })
+                {
+                    if (trace.ReadsState)
+                    {
+                        throw new RuleSetBuildException(
+                            path.Append(part),
+                            $"reads this rule set's own state, and '{name}' does not write this rule set's document. "
+                            + "A guard reads only documents its transition writes, so a store checking versions on "
+                            + "what is written sees everything the move was decided on.");
+                    }
+                }
             }
 
             return new CompiledInput
@@ -832,6 +1067,9 @@ namespace Rulealize.Internal.Building
                 Validations = validations,
                 Effects = effects,
                 Fires = fires,
+                At = at?.Alias,
+                AtSlot = atSlot,
+                Creates = creates?.Alias,
 
                 // A component input that draws makes the composite input that drives it one
                 // that draws, because what it arrives at is not settled by the move alone.
@@ -1030,11 +1268,18 @@ namespace Rulealize.Internal.Building
             NodeBuilder builder,
             JsonElement element,
             SourcePath path,
-            ImmutableArray<HeldRuleSet> held)
+            ImmutableArray<HeldRuleSet> held,
+            HeldRuleSet? at,
+            HeldRuleSet? creates)
         {
             if (!element.TryGetProperty("fires", out JsonElement section))
             {
-                return [];
+                // An input at an instance reads it, and a guard may read only the documents its
+                // transition writes — that is what lets a store check versions on what it writes
+                // and nothing else. Writing to an instance is done by firing one of its inputs.
+                return at is null
+                    ? []
+                    : throw DrivesNothing(at, path);
             }
 
             SourcePath firesPath = path.Append("fires");
@@ -1064,6 +1309,18 @@ namespace Rulealize.Internal.Building
                         entryPath.Append("held"),
                         $"'{alias}' is not a rule set this one holds.");
 
+                if (target.Many is not null && !ReferenceEquals(target, at))
+                {
+                    throw new RuleSetBuildException(
+                        entryPath.Append("held"),
+                        ReferenceEquals(target, creates)
+                            ? $"'{alias}' is the collection this input adds to, and the new instance has no key "
+                              + "until the store assigns one. Driving it in the transition that creates it is "
+                              + "not supported yet."
+                            : $"'{alias}' holds any number of instances, so which one is driven is the input "
+                              + $"document's to say. Write \"at\": \"{alias}\" on this input.");
+                }
+
                 string inputName = RequireString(entry, "input", entryPath);
                 CompiledInput declared = target.Rules.FindInput(inputName)
                     ?? throw new RuleSetBuildException(
@@ -1079,7 +1336,44 @@ namespace Rulealize.Internal.Building
                 });
             }
 
+            if (at is not null && !fires.Any(fire => string.Equals(fire.Alias, at.Alias, StringComparison.Ordinal)))
+            {
+                throw DrivesNothing(at, path);
+            }
+
             return fires.ToImmutable();
+        }
+
+        private static RuleSetBuildException DrivesNothing(HeldRuleSet at, SourcePath path) =>
+            new(
+                path.Append("at"),
+                $"is at an instance of '{at.Alias}' and drives none of its inputs, so it would read a "
+                + "document it does not write. An input at an instance fires at least one of that "
+                + "instance's inputs.");
+
+        /// <summary>Reads an input's <c>at</c> or <c>creates</c>, each naming a collection this rule set holds.</summary>
+        private static HeldRuleSet? ReadCollection(
+            JsonElement element,
+            string key,
+            SourcePath path,
+            ImmutableArray<HeldRuleSet> held)
+        {
+            if (!element.TryGetProperty(key, out _))
+            {
+                return null;
+            }
+
+            string alias = RequireString(element, key, path);
+            HeldRuleSet target = held.FirstOrDefault(
+                candidate => string.Equals(candidate.Alias, alias, StringComparison.Ordinal))
+                ?? throw new RuleSetBuildException(path.Append(key), $"'{alias}' is not a rule set this one holds.");
+
+            return target.Many is not null
+                ? target
+                : throw new RuleSetBuildException(
+                    path.Append(key),
+                    $"'{alias}' is held once, inside this rule set's state, and has no instances. "
+                    + "Only a 'many' in 'uses' is a collection.");
         }
 
         private static ImmutableArray<ExpressionNode> CompileFireArguments(
@@ -1245,16 +1539,33 @@ namespace Rulealize.Internal.Building
                             : builder.Scope.Declare(parameter.Name));
                     }
 
+                    // A guard over one instance of a collection sees that instance as `@alias`,
+                    // as an input of this rule set's own that is at it does.
+                    LocalSlot? atSlot = target.Many is null ? null : builder.Scope.Declare(target.Alias);
+
                     // Evaluated per candidate, exactly as the component's own guard is, so an
                     // open parameter is no more readable here than there. Whether a parameter
                     // is open is part of what an input is, and it crosses the `uses` boundary
                     // with the rest of its shape.
                     ExpressionNode when;
+                    ReadTrace reads = new(builder.State, builder.Definitions);
                     using (builder.Scope.BarOpen())
+                    using (reads.Watch())
                     {
                         when = builder.BuildExpression(
                             RequireProperty(input.Value, "when", inputPath),
                             inputPath.Append("when"));
+                    }
+
+                    // An instance's own input writes the instance and never this rule set's
+                    // document, so a guard over it may read the instance and its arguments only.
+                    if (target.Many is not null && reads.ReadsState)
+                    {
+                        throw new RuleSetBuildException(
+                            inputPath.Append("when"),
+                            $"reads this rule set's own state, and '{entry.Name}.{input.Name}' writes an instance of "
+                            + $"'{entry.Name}', never this rule set's document. A guard reads only documents its "
+                            + $"transition writes; @{entry.Name} is the instance.");
                     }
 
                     constraints.Add(new HeldConstraint
@@ -1263,6 +1574,7 @@ namespace Rulealize.Internal.Building
                         When = when,
                         Never = when is LiteralNode literal && literal.Value.Equals(RuleValue.False),
                         ParameterSlots = slots.MoveToImmutable(),
+                        AtSlot = atSlot,
                         FrameSize = builder.Scope.FrameSize
                     });
                 }
@@ -1278,6 +1590,8 @@ namespace Rulealize.Internal.Building
                         Alias = one.Alias,
                         Rules = one.Rules,
                         Field = one.Field,
+                        Schema = one.Schema,
+                        Many = one.Many,
                         Constraints = constraints
                     }
                     : one)

@@ -315,7 +315,7 @@ which is **not** a JSON pointer and does not parse as one:
 /inputs/submit/when/left: 'stagee' is not a field of the state schema.
 /inputs/reject/effects[0]/path: 'staeg' is not a field of the state schema.
 /inputs/submit/effects[0]: 'cmp.eq' is an expression and cannot appear where an effect is expected.
-/inputs/submit/whn: is not a key an input takes; those are 'params', 'actor', 'when', 'validate', 'effects' and 'fires'.
+/inputs/submit/whn: is not a key an input takes; those are 'params', 'actor', 'when', 'validate', 'effects', 'fires', 'at' and 'creates'.
 ```
 
 Unknown operations, missing keys, unbound locals, undefined or cyclic definitions, an
@@ -394,7 +394,7 @@ the version's.
 | --- | --- |
 | `RuleRuntime.AddPlugin` / `LoadPlugins` / `LoadPluginsFrom` | build the vocabulary |
 | `RuleRuntime.Plugins` / `RuleRuntime.Operations` | which vocabularies are loaded, and every operation they provide |
-| `RuleRuntime.CreateContext` / `CreateContextAsync` | compile a rule set |
+| `RuleRuntime.CreateContext` / `CreateContextAsync` | compile a rule set, with the documents it holds and the states its instances start at |
 | `RuleContext.Id` / `Version` / `RuleSet` / `Inputs` | what was compiled: the identifier, the version, the `id@version` a document carries, and the names of the inputs |
 | `RuleContext.InitialState` | the opening position, as a state document |
 | `RuleContext.ApplyToState` / `ApplyToStateAsync` | apply an input to a state, and an outcome with it where the rules draw |
@@ -402,6 +402,9 @@ the version's.
 | `RuleContext.GetOutcomes` | what could happen when one of them is applied, and how likely each of those is |
 | `RuleContext.GetTerminalStatus` | whether a state is final, and its outcome |
 | `RuleContext.Projections` / `Project` | what else the rule set will say about a position, and its answer for one |
+| `RuleContext.GetReads` / `StateAddress` | for a rule set that keeps instances, which documents an input reads, by address, before any is fetched |
+| `RuleContext.ApplyToState(input, states)` / `GetValidInputs(states, at, limit)` | the same questions over a position of several documents |
+| `TransitionResult.Writes` / `StateWrite` / `ValidInput.At` | what a transition wrote, document by document, and where a move was found |
 | `ValidInput.Input` / `Arguments` / `Actor` | one legal move: what it is, what it was called with — by name or in declared parameter order — and whose it is where a rule set says |
 | `ValidInput.Open` / `IsComplete` / `ValidInputSet.HasOpenParameters` | what a move is still waiting for, where a rule set leaves a parameter `open`, and whether anything in the answer is |
 | `OpenParameter.Description` / `Field` / `Op` | the bounds the admitting schema declares, the state field it is edited into, and the operation to read both against |
@@ -424,7 +427,7 @@ walk that stays the fetcher's
 ([why](doc/runtime.md#uses-and-held-a-rule-set-that-holds-others)).
 
 Exceptions: `RuleSetBuildException` for a document that is not a valid rule set,
-`RuleDocumentException` for a state, input or outcome document this rule set cannot accept,
+`RuleDocumentException` for a state, input, outcome or commit document this rule set cannot accept,
 `IllegalInputException` for a move the rules do not allow — `InputRejectedException` is the
 kind of that one meaning the move *was* on offer and the value supplied for an open parameter
 is what is wrong, and it carries a code per refusal the rule set named — `RuleEvaluationException` for
@@ -433,7 +436,8 @@ be used or a set of them that cannot be used together — two claiming one ident
 namespace, but never two reserving one shorthand character, which is recorded rather than
 owned. `InvalidOperationException` is the wrong method rather than a bad
 document, and is refused before anything is evaluated: applying an input that draws without
-saying what it drew, or writing out a move that is still waiting for an argument.
+saying what it drew, writing out a move that is still waiting for an argument, or handing one
+state document to a rule set that keeps instances as documents of their own.
 
 A context is immutable and holds no position, so one serves any number of concurrent games.
 
@@ -509,7 +513,7 @@ $schema  id  version  requires  uses  state  definitions  held  inputs  projecti
 ```
 
 Inside those eleven the core reads a little further — `state` has a `schema` and an `initial`,
-an input has `params`, `actor`, `when`, `validate`, `effects` and `fires` — and where it does, it fixes
+an input has `params`, `actor`, `when`, `validate`, `effects`, `fires`, `at` and `creates` — and where it does, it fixes
 the key set and refuses anything else.
 [The keys the core reads](doc/runtime.md#the-keys-the-core-reads) is all of it, on one page.
 

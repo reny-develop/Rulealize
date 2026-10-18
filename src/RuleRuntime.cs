@@ -243,7 +243,9 @@ namespace Rulealize
         /// <see cref="RuleContext.GetOutcomes(string, string, int, CancellationToken)"/> and
         /// <see cref="RuleContext.GetTerminalStatus(string, CancellationToken)"/> are
         /// unchanged, and so is what a case is: one state document, one string, storable in a
-        /// column and resumable on another machine.
+        /// column and resumable on another machine. The exception is a <c>uses</c> entry with a
+        /// <c>many</c>, whose instances are documents of their own; the overload taking start
+        /// documents is the one such a rule set is compiled with.
         /// </para>
         /// <para>
         /// A dictionary rather than a callback, because fetching a document is somebody
@@ -255,12 +257,47 @@ namespace Rulealize
         /// </remarks>
         public RuleContext CreateContext(
             string ruleSetDocument,
-            IReadOnlyDictionary<string, string>? heldDocuments)
+            IReadOnlyDictionary<string, string>? heldDocuments) =>
+            CreateContext(ruleSetDocument, heldDocuments, null);
+
+        /// <summary>Compiles a rule set document, the documents it holds, and the states its instances start at.</summary>
+        /// <param name="ruleSetDocument">The document.</param>
+        /// <param name="heldDocuments">
+        /// The document of every rule set reachable through <c>uses</c>, by identifier.
+        /// </param>
+        /// <param name="startDocuments">
+        /// The state document each <c>many</c> names as its <c>start</c>, by that name.
+        /// </param>
+        /// <returns>A context that states can be run through.</returns>
+        /// <exception cref="RuleSetBuildException">
+        /// The document is not a valid rule set, a document it holds or starts an instance at
+        /// was not supplied, or one that was is not one the rule set can take.
+        /// </exception>
+        /// <remarks>
+        /// <para>
+        /// A rule set that keeps instances says where a new one starts, by name, rather than
+        /// writing the state out a second time: who may sign and what kinds of expense there
+        /// are belong to no rule set, so they are said in one state document and handed in
+        /// here, on the terms a held document is.
+        /// </para>
+        /// <para>
+        /// The document is read when the context is built — its <c>ruleSet</c> checked against
+        /// what <c>uses</c> asks for, its data against the component's schema — so a start
+        /// that could not be a state of the component is refused before any instance is made
+        /// from it.
+        /// </para>
+        /// </remarks>
+        public RuleContext CreateContext(
+            string ruleSetDocument,
+            IReadOnlyDictionary<string, string>? heldDocuments,
+            IReadOnlyDictionary<string, string>? startDocuments)
         {
             ArgumentNullException.ThrowIfNull(ruleSetDocument);
 
             using JsonDocument document = Parse(ruleSetDocument);
-            return new RuleContext(new RuleSetCompiler(_operations, heldDocuments).Compile(document.RootElement));
+            return new RuleContext(
+                new RuleSetCompiler(_operations, heldDocuments, startDocuments: startDocuments)
+                    .Compile(document.RootElement));
         }
 
         /// <summary>Compiles a rule set document read from a stream.</summary>
