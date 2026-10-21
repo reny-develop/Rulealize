@@ -385,6 +385,15 @@ would say which of them keeps which collection. A plugin is a store by declaring
 `UseStore` takes an opened store of the type it declared, under the plugin's identifier. Stores are given before
 the context is created, as plugins are.
 
+**A `MemoryStateStore` stands in for any store.** Evaluation is pure, so where the documents
+are kept changes no answer, and a walk over a rule set or a test of a host need not open the
+store its `requires` names. `UseStore` takes one under any store plugin's identifier, and
+`UseStore(memoryStore)` keeps every store's documents in it at once — one store, so a
+transition that writes to two plugins' stores is one commit and no coordinator is asked. The
+plugin is still loaded, because the rule set is built against it. A new instance gets the key
+`1`, `2`, … — one more than its collection holds — and `Documents` and `Load` read a position
+out and put it back, instances in the order they were created.
+
 **Every state document such a rule set has is in its store**, its own included. Its own
 document, before anything has written it, is its `state.initial`, so nothing is set up first;
 a holder with no fields of its own, like a ledger, is never written at all. An instance is in

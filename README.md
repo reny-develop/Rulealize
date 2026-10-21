@@ -402,7 +402,7 @@ the version's.
 | `RuleContext.GetOutcomes` | what could happen when one of them is applied, and how likely each of those is |
 | `RuleContext.GetTerminalStatus` | whether a state is final, and its outcome |
 | `RuleContext.Projections` / `Project` | what else the rule set will say about a position, and its answer for one |
-| `RuleRuntime.UseStore` / `UseCoordinator` | give the runtime the opened store a rule set that keeps instances names, and what keeps a transition that writes to two stores |
+| `RuleRuntime.UseStore` / `UseCoordinator` | give the runtime the opened store a rule set that keeps instances names, and what keeps a transition that writes to two stores; a `MemoryStateStore` stands in for any store, for a walk or a test |
 | `RuleContext.ApplyAsync` / `GetValidInputsAsync` / `ProjectAsync` | the same three questions, for a rule set whose documents a store keeps — the host hands over an input, never a state |
 | `CommittedTransition.Commit` | what the store did about a transition, to record beside its input and replay with it |
 | `ValidInput.Input` / `Arguments` / `Actor` | one legal move: what it is, what it was called with — by name or in declared parameter order — and whose it is where a rule set says |
