@@ -944,29 +944,20 @@ namespace Rulealize
         }
 
         /// <summary>The sessions one call opened, one per store, disposed of together.</summary>
+        /// <remarks>
+        /// A store is the instance a host gave, not the plugin it was given for: two plugins
+        /// given one store — a <see cref="MemoryStateStore"/> standing in for both, say — are one
+        /// store, read and committed through one session.
+        /// </remarks>
         private sealed class StoreSessions(RuleContext context) : IAsyncDisposable
         {
-            private readonly Dictionary<string, IStateStoreSession> _open = new(StringComparer.OrdinalIgnoreCase);
+            private static readonly IEqualityComparer<IStateStore> SameStore = ReferenceEqualityComparer.Instance;
 
-            /// <summary>Gets the session for one store, opening it the first time.</summary>
-            public async Task<IStateStoreSession> ForAsync(string store, CancellationToken cancellationToken)
-            {
-                if (_open.TryGetValue(store, out IStateStoreSession? session))
-                {
-                    return session;
-                }
+            private readonly Dictionary<IStateStore, IStateStoreSession> _open = new(SameStore);
 
-                if (!context._stores.Stores.TryGetValue(store, out IStateStore? opened))
-                {
-                    throw new InvalidOperationException(
-                        $"'{context._ruleSet.Qualified}' keeps documents in {store}, and the runtime was given no such store. "
-                        + "RuleRuntime.UseStore gives one, before the context is created.");
-                }
-
-                session = await opened.OpenSessionAsync(cancellationToken).ConfigureAwait(false);
-                _open[store] = session;
-                return session;
-            }
+            /// <summary>Gets the session for one store plugin's store, opening it the first time.</summary>
+            public Task<IStateStoreSession> ForAsync(string store, CancellationToken cancellationToken) =>
+                OpenAsync(Opened(store), cancellationToken);
 
             /// <summary>Reads documents from whichever stores keep them.</summary>
             /// <remarks>The rule set's own document, when no store has it yet, is its initial state.</remarks>
@@ -975,10 +966,10 @@ namespace Rulealize
                 CancellationToken cancellationToken)
             {
                 Dictionary<StateAddress, string> states = [];
-                foreach (IGrouping<string, StateAddress> group in
-                    addresses.GroupBy(context.StoreOf, StringComparer.OrdinalIgnoreCase))
+                foreach (IGrouping<IStateStore, StateAddress> group in
+                    addresses.GroupBy(address => Opened(context.StoreOf(address)), SameStore))
                 {
-                    IStateStoreSession session = await ForAsync(group.Key, cancellationToken).ConfigureAwait(false);
+                    IStateStoreSession session = await OpenAsync(group.Key, cancellationToken).ConfigureAwait(false);
                     foreach ((StateAddress address, string state) in
                         await session.ReadAsync([.. group], cancellationToken).ConfigureAwait(false))
                     {
@@ -995,8 +986,12 @@ namespace Rulealize
                 ImmutableArray<StateWrite> writes,
                 CancellationToken cancellationToken)
             {
-                List<IGrouping<string, StateWrite>> stores =
-                    [.. writes.GroupBy(write => context.StoreOf(write.Address), StringComparer.OrdinalIgnoreCase)];
+                List<IGrouping<IStateStore, (string Plugin, StateWrite Write)>> stores =
+                [
+                    .. writes
+                        .Select(write => (Plugin: context.StoreOf(write.Address), Write: write))
+                        .GroupBy(each => Opened(each.Plugin), SameStore),
+                ];
 
                 if (stores.Count == 0)
                 {
@@ -1005,23 +1000,41 @@ namespace Rulealize
 
                 if (stores.Count == 1)
                 {
-                    IStateStoreSession session = await ForAsync(stores[0].Key, cancellationToken).ConfigureAwait(false);
-                    return await session.CommitAsync([.. stores[0]], cancellationToken).ConfigureAwait(false);
+                    IStateStoreSession session = await OpenAsync(stores[0].Key, cancellationToken).ConfigureAwait(false);
+                    return await session.CommitAsync([.. stores[0].Select(static each => each.Write)], cancellationToken)
+                        .ConfigureAwait(false);
                 }
 
                 IStoreCoordinator coordinator = context._stores.Coordinator
                     ?? throw new InvalidOperationException(
-                        $"The transition writes to {string.Join(" and ", stores.Select(static store => store.Key))}, and the "
+                        $"The transition writes to {string.Join(" and ", stores.Select(static store => store.First().Plugin))}, and the "
                         + "runtime was given no coordinator to keep all of it or none. RuleRuntime.UseCoordinator gives one.");
 
                 List<StoreWriteSet> sets = [];
-                foreach (IGrouping<string, StateWrite> store in stores)
+                foreach (IGrouping<IStateStore, (string Plugin, StateWrite Write)> store in stores)
                 {
-                    IStateStoreSession session = await ForAsync(store.Key, cancellationToken).ConfigureAwait(false);
-                    sets.Add(new StoreWriteSet(store.Key, session, [.. store]));
+                    IStateStoreSession session = await OpenAsync(store.Key, cancellationToken).ConfigureAwait(false);
+                    sets.Add(new StoreWriteSet(store.First().Plugin, session, [.. store.Select(static each => each.Write)]));
                 }
 
                 return await coordinator.CommitAsync(sets, cancellationToken).ConfigureAwait(false);
+            }
+
+            private IStateStore Opened(string store) =>
+                context._stores.Find(store)
+                ?? throw new InvalidOperationException(
+                    $"'{context._ruleSet.Qualified}' keeps documents in {store}, and the runtime was given no such store. "
+                    + "RuleRuntime.UseStore gives one, before the context is created.");
+
+            private async Task<IStateStoreSession> OpenAsync(IStateStore store, CancellationToken cancellationToken)
+            {
+                if (!_open.TryGetValue(store, out IStateStoreSession? session))
+                {
+                    session = await store.OpenSessionAsync(cancellationToken).ConfigureAwait(false);
+                    _open[store] = session;
+                }
+
+                return session;
             }
 
             public async ValueTask DisposeAsync()

@@ -13,9 +13,16 @@ namespace Rulealize.Internal.Plugin
     /// </remarks>
     /// <param name="Stores">Each opened store, by the identifier of the plugin that declared it.</param>
     /// <param name="Coordinator">Commits a transition that writes to more than one store, when the host gave one.</param>
-    internal sealed record StoreBinding(ImmutableDictionary<string, IStateStore> Stores, IStoreCoordinator? Coordinator)
+    /// <param name="Memory">Keeps the documents of every store plugin that was given no store of its own, when the host gave one.</param>
+    internal sealed record StoreBinding(
+        ImmutableDictionary<string, IStateStore> Stores,
+        IStoreCoordinator? Coordinator,
+        MemoryStateStore? Memory)
     {
         /// <summary>Gets a binding with no store and no coordinator.</summary>
-        public static StoreBinding None { get; } = new(ImmutableDictionary.Create<string, IStateStore>(StringComparer.OrdinalIgnoreCase), null);
+        public static StoreBinding None { get; } = new(ImmutableDictionary.Create<string, IStateStore>(StringComparer.OrdinalIgnoreCase), null, null);
+
+        /// <summary>Finds the store that keeps a store plugin's documents.</summary>
+        public IStateStore? Find(string plugin) => Stores.TryGetValue(plugin, out IStateStore? store) ? store : Memory;
     }
 }

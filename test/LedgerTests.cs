@@ -29,7 +29,7 @@ namespace Rulealize.Tests
         private const string Requires = MemoryStore.Requires;
 
         /// <summary>Every month. It has no state and no inputs of its own: it offers what the months offer.</summary>
-        private const string Ledger = $$"""
+        internal const string Ledger = $$"""
             {
               "id": "claim-ledger", "version": "0.1.0",
             {{Requires}}
@@ -49,7 +49,7 @@ namespace Rulealize.Tests
         private static readonly StateAddress OctoberAddress = StateAddress.Of("months", October);
 
         /// <summary>The month, keeping its claims in the other store rather than the ledger's.</summary>
-        private static readonly string MonthElsewhere = InstanceTests.Month.Replace(
+        internal static readonly string MonthElsewhere = InstanceTests.Month.Replace(
             $$"""{ "plugin": "{{MemoryStore.Plugin}}" }""",
             $$"""{ "plugin": "{{MemoryStore.OtherPlugin}}" }""",
             StringComparison.Ordinal);

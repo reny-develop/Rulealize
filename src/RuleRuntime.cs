@@ -221,7 +221,7 @@ namespace Rulealize
         /// <returns>This runtime, so calls can be chained.</returns>
         /// <exception cref="InvalidOperationException">
         /// No plugin of that identifier is loaded, it is not a store, or this is not the kind of
-        /// store it declared.
+        /// store it declared and not a <see cref="MemoryStateStore"/>, which stands in for any.
         /// </exception>
         /// <remarks>
         /// <para>
@@ -252,13 +252,40 @@ namespace Rulealize
                 throw new InvalidOperationException($"{manifest.Id} is not a store.");
             }
 
-            if (!declared!.IsInstanceOfType(store))
+            // A store kept in memory stands in for any: evaluation is pure, so where the
+            // documents are kept changes no answer.
+            if (store is not MemoryStateStore && !declared!.IsInstanceOfType(store))
             {
                 throw new InvalidOperationException(
                     $"{manifest.Id} keeps documents in a '{declared.FullName}', and this is a '{store.GetType().FullName}'.");
             }
 
             _stores = _stores with { Stores = _stores.Stores.SetItem(manifest.Id, store) };
+            return this;
+        }
+
+        /// <summary>Keeps the documents of every store a rule set names in memory, in place of the stores themselves.</summary>
+        /// <param name="store">The store to keep them in.</param>
+        /// <returns>This runtime, so calls can be chained.</returns>
+        /// <remarks>
+        /// <para>
+        /// For walking a rule set, or testing a host, without the store its <c>requires</c>
+        /// names: evaluation is pure, so where the documents are kept changes no answer. The
+        /// store plugins are still loaded, because a rule set is built against them, and a store
+        /// given to <see cref="UseStore(string, IStateStore)"/> for one of them is still used for
+        /// that one.
+        /// </para>
+        /// <para>
+        /// Every store plugin kept here is one store, so a transition that writes to two of them
+        /// is committed through one session and no coordinator is asked. Taken when a context is
+        /// created, as the stores are.
+        /// </para>
+        /// </remarks>
+        public RuleRuntime UseStore(MemoryStateStore store)
+        {
+            ArgumentNullException.ThrowIfNull(store);
+
+            _stores = _stores with { Memory = store };
             return this;
         }
 
