@@ -1136,6 +1136,7 @@ namespace Rulealize.Internal.Building
                 Fires = fires,
                 At = at?.Alias,
                 AtSlot = atSlot,
+                Reach = ReachOf(at, fires, path),
                 Creates = creates?.Alias,
 
                 // A component input that draws makes the composite input that drives it one
@@ -1376,16 +1377,15 @@ namespace Rulealize.Internal.Building
                         entryPath.Append("held"),
                         $"'{alias}' is not a rule set this one holds.");
 
-                if (target.Many is not null && !ReferenceEquals(target, at))
+                // An instance is driven where the input is at one, or where it is the one the
+                // input creates: there is no other instance the transition has in hand.
+                bool created = ReferenceEquals(target, creates);
+                if (target.Many is not null && !ReferenceEquals(target, at) && !created)
                 {
                     throw new RuleSetBuildException(
                         entryPath.Append("held"),
-                        ReferenceEquals(target, creates)
-                            ? $"'{alias}' is the collection this input adds to, and the new instance has no key "
-                              + "until the store assigns one. Driving it in the transition that creates it is "
-                              + "not supported yet."
-                            : $"'{alias}' holds any number of instances, so which one is driven is the input "
-                              + $"document's to say. Write \"at\": \"{alias}\" on this input.");
+                        $"'{alias}' holds any number of instances, so which one is driven is the input "
+                        + $"document's to say. Write \"at\": \"{alias}\" on this input.");
                 }
 
                 string inputName = RequireString(entry, "input", entryPath);
@@ -1394,14 +1394,17 @@ namespace Rulealize.Internal.Building
                         entryPath.Append("input"),
                         $"'{inputName}' is not an input of '{target.Rules.Qualified}'.");
 
-                if (declared.At is not null || declared.Creates is not null)
+                // The instance being created holds nothing yet, and has no key for anything
+                // to be kept under until the store assigns one. What goes into it goes in by a
+                // transition of its own, once it exists.
+                if (created && (declared.At is not null || declared.Creates is not null))
                 {
                     throw new RuleSetBuildException(
                         entryPath.Append("input"),
                         $"'{alias}.{inputName}' "
                         + (declared.At is not null ? $"is at an instance of '{declared.At}'" : $"adds to '{declared.Creates}'")
-                        + ", and driving an input about instances further down is not supported yet. It is offered "
-                        + $"as '{alias}.{inputName}' on its own.");
+                        + $", and the '{alias}' this input creates holds no instances yet: nothing can be kept "
+                        + "under it until the store has given it a key. Add to it in a transition of its own.");
                 }
 
                 fires.Add(new CompiledFire
@@ -1419,6 +1422,50 @@ namespace Rulealize.Internal.Building
             }
 
             return fires.ToImmutable();
+        }
+
+        /// <summary>Works out which collections an input's <c>at</c> names an instance of.</summary>
+        /// <remarks>
+        /// The collection the input is at, and then the one each input it drives there is at,
+        /// all the way down. Two inputs driven at one instance that are at instances of two
+        /// different collections would make the input about two instances below it, and an
+        /// input is offered at one address; so they are refused rather than offered nowhere.
+        /// </remarks>
+        private static ImmutableArray<string> ReachOf(
+            HeldRuleSet? at,
+            ImmutableArray<CompiledFire> fires,
+            SourcePath path)
+        {
+            if (at is null)
+            {
+                return [];
+            }
+
+            ImmutableArray<string> below = [];
+            int index = -1;
+            foreach (CompiledFire fire in fires)
+            {
+                index++;
+                if (!string.Equals(fire.Alias, at.Alias, StringComparison.Ordinal) || fire.Declared.Reach.IsEmpty)
+                {
+                    continue;
+                }
+
+                if (below.IsEmpty)
+                {
+                    below = fire.Declared.Reach;
+                }
+                else if (!below.SequenceEqual(fire.Declared.Reach, StringComparer.Ordinal))
+                {
+                    throw new RuleSetBuildException(
+                        path.Append("fires").Append(index),
+                        $"drives '{fire.Name}', which is at an instance of '{fire.Declared.Reach[0]}', and another "
+                        + $"input at an instance of '{below[0]}'. An input is about one instance on each way down, "
+                        + "so the input document's 'at' can name each, and the input is offered at one address.");
+                }
+            }
+
+            return [at.Alias, .. below];
         }
 
         private static RuleSetBuildException DrivesNothing(HeldRuleSet at, SourcePath path) =>

@@ -1283,6 +1283,23 @@ instance: a record with its `key` and its `state`. A component's own inputs are 
 instance as `claims.enterAmount`, and `held` constrains them as it does any held input, with
 `@claims` in scope there too.
 
+**An input that creates an instance may drive it** in the same transition — a claim filed with
+its amount already entered:
+
+```jsonc
+"file": {
+  "creates": "claims",
+  "params": { "amount": { "domain": { "op": "seq.of", "of": [100, 32000] } } },
+  "fires": [ { "held": "claims", "input": "enterAmount", "args": { "amount": "@amount" } } ]
+}
+```
+
+What it drives is asked of the new instance as it starts, so a `fires` the claim's own rules
+would refuse at its `start` makes the input one that is never offered. The new instance holds
+nothing yet — nothing can be kept under it before the store has given it a key — so what it
+drives may not itself be `at` or create an instance; that is a transition of its own, once it
+exists.
+
 **A guard reads only documents its transition writes**, because that is what lets the store
 check versions on what is written and nothing else; two moves each legal alone could otherwise
 commit together into a position no rule allows. Three refusals follow from it. An input at an
@@ -1335,13 +1352,32 @@ document names an instance of each collection on the way down:
 { "input": "months.submit", "at": { "months": "2026-10", "claims": "c-8" }, "args": { "by": "ann" } }
 ```
 
-Because `at` names them by alias, no two collections on one way down may share one. Driving a
-month's input that is itself at a claim, from an input of the ledger's, is not supported yet.
+Because `at` names them by alias, no two collections on one way down may share one.
+
+**An input of the ledger's may drive a month's input that is at a claim.** It is `at` the
+month, and its input document names the claim too, because the month's input needs one:
+
+```jsonc
+"submit": {
+  "at": "months",
+  "params": { "by": { "domain": { "op": "seq.of", "of": ["ann", "bo"] } } },
+  "fires": [ { "held": "months", "input": "submit", "args": { "by": "@by" } } ]
+}
+```
+
+```json
+{ "input": "submit", "at": { "months": "2026-10", "claims": "c-8" }, "args": { "by": "ann" } }
+```
+
+It is offered at the claim, beside `months.submit`, and refused wherever the month would refuse
+what it drives. An input is about one instance on each way down, so two inputs it drives at one
+month that are at instances of two different collections are refused.
 
 Every state document of a rule set like this is in its store, its own included, and Rulealize
 reads and writes them as it calls any plugin; a host gives the runtime the opened store and
 then hands over input documents alone, through `ApplyAsync`, `GetValidInputsAsync`,
-`ProjectAsync` and `GetTerminalStatusAsync`. What a claim's own `projections` and `terminal`
+`ProjectAsync` and `GetTerminalStatusAsync`. An input that draws is asked `GetOutcomesAsync` and
+applied with the outcome the host chose, and its commit records what was drawn. What a claim's own `projections` and `terminal`
 say is asked of one claim, at its address: `ProjectAsync(StateAddress.Of("claims", "c-8"),
 "claims.summary")`. How the runtime treats the documents, and what happens when two
 transitions race or one writes to two stores, is
