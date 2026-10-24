@@ -1734,9 +1734,9 @@ namespace Rulealize.Internal.Building
                     throw new RuleSetBuildException(entryPath, $"'{entry.Name}' is declared more than once.");
                 }
 
-                // Reserved on the terms an input's name is: a rule set that holds another may
-                // come to offer its projections under a qualified name, and a name that could
-                // be either would make which one a caller meant depend on the document.
+                // Spent on the terms an input's name is: a rule set that holds another offers
+                // its projections under a qualified name, and a name that could be either
+                // would make which one a caller meant depend on the document.
                 if (entry.Name.Contains('.', StringComparison.Ordinal))
                 {
                     throw new RuleSetBuildException(
