@@ -173,6 +173,16 @@ namespace Rulealize.Internal.RuleSet
         /// <summary>Gets the slot <c>@alias</c> was given, where <see cref="At"/> names a collection.</summary>
         public LocalSlot? AtSlot { get; init; }
 
+        /// <summary>Gets the collections the input document's <c>at</c> names an instance of, outermost first.</summary>
+        /// <remarks>
+        /// <see cref="At"/>, and then whatever the inputs this one drives at that instance are
+        /// at in turn: a ledger's input at a month that drives the month's input at a claim
+        /// reaches <c>months</c> and then <c>claims</c>. Empty for an input about this rule
+        /// set's own document. It is one way down, never two, so the input is offered at one
+        /// address.
+        /// </remarks>
+        public ImmutableArray<string> Reach { get; init; } = [];
+
         /// <summary>Gets the collection this input adds an instance to, or null when it creates nothing.</summary>
         public string? Creates { get; init; }
 

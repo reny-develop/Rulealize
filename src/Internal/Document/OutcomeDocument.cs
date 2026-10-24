@@ -85,7 +85,7 @@ namespace Rulealize.Internal.Document
         /// write this value out before anyone could write it back, and a record has no
         /// canonical text to be written as.
         /// </remarks>
-        private static RuleValue ReadValue(JsonElement element, int index) => element.ValueKind switch
+        internal static RuleValue ReadValue(JsonElement element, int index) => element.ValueKind switch
         {
             JsonValueKind.String => RuleValue.Text(element.GetString()!),
             JsonValueKind.Number => RuleValue.Number(element.GetDecimal()),
@@ -96,5 +96,36 @@ namespace Rulealize.Internal.Document
                 $"The draw at index {index} is {element.ValueKind.ToString().ToLowerInvariant()}, "
                 + "and a drawn value is written as the runtime wrote it: a scalar or its canonical text.")
         };
+
+        /// <summary>Writes drawn values as an array, each the way <see cref="ReadValue"/> reads it back.</summary>
+        internal static void WriteValues(Utf8JsonWriter writer, ImmutableArray<RuleValue> values)
+        {
+            writer.WriteStartArray();
+            foreach (RuleValue value in values)
+            {
+                switch (value)
+                {
+                    case NullValue:
+                        writer.WriteNullValue();
+                        break;
+
+                    case BooleanValue boolean:
+                        writer.WriteBooleanValue(boolean.Value);
+                        break;
+
+                    case NumberValue number:
+                        writer.WriteNumberValue(number.Value);
+                        break;
+
+                    default:
+                        // Text, and everything opaque, which the value model requires to
+                        // have a text form precisely so that it can be written here.
+                        writer.WriteStringValue(value.GetCanonicalText());
+                        break;
+                }
+            }
+
+            writer.WriteEndArray();
+        }
     }
 }

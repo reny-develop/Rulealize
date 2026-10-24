@@ -5,6 +5,7 @@ using System.Collections.Immutable;
 using System.Text;
 using System.Text.Json;
 using Rulealize.Abstraction.Store;
+using Rulealize.Abstraction.Value;
 
 namespace Rulealize
 {
@@ -66,6 +67,10 @@ namespace Rulealize
 
         /// <summary>Gets whether the document at <see cref="At"/> is final now, by its own rule set's <c>terminal</c>.</summary>
         internal TerminalStatus AtStatus { get; init; }
+
+        /// <summary>Gets what was drawn, in order, for an input that can draw; null for one that cannot.</summary>
+        /// <remarks>What a commit document records beside the keys, so that the pair replays the transition.</remarks>
+        internal ImmutableArray<RuleValue>? Drawn { get; init; }
 
         /// <summary>Writes the result as the document a caller passes on.</summary>
         /// <returns>An object with <c>data</c>, <c>terminal</c>, and <c>result</c> when there is one.</returns>

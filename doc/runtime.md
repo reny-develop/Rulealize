@@ -380,12 +380,17 @@ CommittedTransition done = await ledger.ApplyAsync(
     """{ "input": "months.submit", "at": { "months": "2026-10", "claims": "c-8" }, "args": { "by": "ann" } }""");
 ```
 
-The calls that go through the store are `ApplyAsync`, `GetValidInputsAsync`, `ProjectAsync`
-and `GetTerminalStatusAsync`, and only those: reading a document is I/O there, so they are
+The calls that go through the store are `ApplyAsync`, `GetValidInputsAsync`, `GetOutcomesAsync`,
+`ProjectAsync` and `GetTerminalStatusAsync`, and only those: reading a document is I/O there, so they are
 asynchronous, and the ones that take a state document refuse such a rule set with
 `InvalidOperationException`, because its position is not one document. `ApplyAsync` returns
 where the transition arrived and the commit document below, and no state document, because
 the documents are the store's.
+
+**A rule set that holds nothing `many` is kept in no store.** Its position is one document, so
+there is no instance to read by address and no key for a store to assign; the host keeps that
+document, and the methods that take a state document take it. The calls that go through a
+store refuse it the other way round, with `InvalidOperationException`.
 
 **The rule set names its store, exactly one.** A document whose `uses` declares a `many` names
 the store plugin its instances are kept in, in `requires`, the way it names any vocabulary it
@@ -417,19 +422,20 @@ and the rule set alone — the holder's document, and each instance `at` names �
 is opened per store, asked for exactly those, and nothing is fetched while a transition runs.
 
 **What is written is committed document by document**: the holder's document only where one of
-its own inputs wrote to it, each instance an input drove, and a new instance where the input
+its own inputs wrote to it, each instance an input drove, and a new instance where an input
 `creates` one, all through the session that read them. A new instance is written under the
 temporary key `~1`, because its real key does not exist until the store assigns one; a key is
 text, and no key a store assigns begins with `~`. The `rulealize/commit/v1` document
-`ApplyAsync` returns records the key —
+`ApplyAsync` returns records the key, and for an input that can draw what was drawn, in a
+`draws` array written as an outcome document writes it —
 
 ```json
 { "$schema": "rulealize/commit/v1", "ruleSet": "claim-month@0.1.0",
   "input": "create", "created": { "~1": "c-8" } }
 ```
 
-— and the input and the commit together replay into the same instance under the same key, as
-an outcome replays a draw. `ApplyAsync(input, commit)` is that replay, for a store rebuilt from
+— and the input and the commit together replay into the same instance under the same key, and
+draw what was drawn, as an outcome replays a draw. `ApplyAsync(input, commit)` is that replay, for a store rebuilt from
 a history: the new instance is handed to the store under the key it was assigned, and the store
 keeps it there rather than assign another. A temporary key is refused in an input document's
 `at` and in what a commit assigns.
@@ -467,6 +473,8 @@ compiled, in three places:
 **Moves are found one place at a time.** At the holder, the inputs offered are the holder's
 that are at no instance and what it holds once; at an instance, the holder's inputs `at` that
 collection and the instance's own under its alias, each written with the `at` it was found at.
+An input whose `at` names instances further down — one that drives an input at an instance of
+its own, below — is offered at the deepest of them.
 An address further down is the same question asked of the instance above it. Nothing offers
 every instance's moves at once, because that would read every instance.
 
@@ -545,9 +553,36 @@ What a transition reads is every document on the way, outermost first; `months.c
 claim under the month it is at, and the month itself only when it writes it. What `held` says
 about the months' inputs is asked at whatever depth they are offered.
 
-Not yet: an input of the ledger's that drives a month's input that is itself at a claim, an
-input that draws, and keeping a rule set that holds nothing `many` in a store — its state is
-one document, and the host keeps it.
+**An input of the ledger's may drive a month's input that is at a claim.** The ledger's input is
+`at` the month and fires the month's `submit`, which is `at` a claim, so the input document names
+both — `"at": { "months": "2026-10", "claims": "c-8" }` — and the transition reads the ledger's
+document, the month's and the claim's, and writes what the month's input writes. It is offered
+at the claim, sifted by the month's rules as any input it drives is, and `@claims` in the
+month's input is that claim. An input is about one instance on each way down: two inputs driven
+at one month that are at instances of two different collections are refused, because the input
+would then be offered nowhere. A ledger input at a month that fires the month's `create` makes a
+claim in that month.
+
+**An input that creates an instance may drive it.** `"creates": "claims"` and a `fires` naming
+`claims` drive the new claim: it is made at its `start` under its temporary key, what is driven
+in it is asked of it as it starts and applied, and it is written once, as it arrived. Nothing
+reads the temporary key — the creating input is not at the instance, so `@claims` is not bound
+for it. The instance being made holds nothing, and nothing can be kept under it before the
+store has assigned it a key, so what is driven in it may not be `at` or create an instance:
+**an instance's own instances are made by transitions of their own**, once it exists. Where a
+transition makes more than one instance — its own and one an input it drives creates — they
+are `~1`, `~2`, … in the order the inputs run, and `CommittedTransition.At` is the first.
+
+**An input that draws is asked what may happen through the store too.**
+`GetOutcomesAsync(input, limit)` reads what the input reads and enumerates its outcomes, most
+likely first, as `GetOutcomes` does for a state document, and writes nothing. Each
+`StoreOutcome` says what `CommittedTransition` would — `IsTerminal`, `Result`, `At` (a new
+instance under its temporary key), `AtStatus` — and carries no state document, because the
+documents are the store's. The host picks one and hands it to `ApplyAsync(input, outcome)`,
+which reads the documents again, applies the input with those draws and commits it; an outcome
+the position no longer allows is refused rather than kept. `ApplyAsync(input)` refuses an input
+that draws, as the two-document `ApplyToState` does. The commit records what was drawn, so
+`ApplyAsync(input, commit)` replays it.
 
 ## Snapshot semantics
 
@@ -659,6 +694,10 @@ turns thirteen times.
 
 An `Outcome` carries where it leads, so nothing else has to be applied. Enumerating the
 alternatives and applying one is the same work, and asking twice would do it twice.
+
+A rule set whose instances a store keeps asks the same question through the store, with
+`GetOutcomesAsync`, and applies the outcome the host chose with `ApplyAsync(input, outcome)`;
+[`many`](#many-instances-kept-as-documents-of-their-own) says how.
 
 ### Where a draw may be written
 
@@ -787,7 +826,10 @@ about where it may yield.
 Reading a document off a stream genuinely is I/O, and that is what the asynchronous
 overloads are for: `CreateContextAsync(Stream)`, `ApplyToStateAsync(Stream, Stream)` and
 `ApplyToStateAsync(Stream, Stream, Stream)`.
-They await the read and then run the same synchronous evaluation.
+They await the read and then run the same synchronous evaluation. So do the calls that go
+through a store, for a rule set that keeps instances —
+[`many`](#many-instances-kept-as-documents-of-their-own) lists them — because there reading
+the documents is I/O as well.
 
 ## `requires` is the scope
 

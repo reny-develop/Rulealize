@@ -113,35 +113,13 @@ namespace Rulealize
             writer.WriteEndObject();
         }
 
-        private void WriteDraws(Utf8JsonWriter writer)
-        {
-            writer.WriteStartArray();
-            foreach (RuleValue value in _values)
-            {
-                switch (value)
-                {
-                    case NullValue:
-                        writer.WriteNullValue();
-                        break;
+        /// <summary>Gets the input this is an outcome of.</summary>
+        internal string Input => _input;
 
-                    case BooleanValue boolean:
-                        writer.WriteBooleanValue(boolean.Value);
-                        break;
+        /// <summary>Gets what was drawn, in order, as values.</summary>
+        internal ImmutableArray<RuleValue> Values => _values;
 
-                    case NumberValue number:
-                        writer.WriteNumberValue(number.Value);
-                        break;
-
-                    default:
-                        // Text, and everything opaque, which the value model requires to
-                        // have a text form precisely so that it can be written here.
-                        writer.WriteStringValue(value.GetCanonicalText());
-                        break;
-                }
-            }
-
-            writer.WriteEndArray();
-        }
+        private void WriteDraws(Utf8JsonWriter writer) => Internal.Document.OutcomeDocument.WriteValues(writer, _values);
     }
 
     /// <summary>Everything that can happen to one input, and how much of it the search saw.</summary>

@@ -762,6 +762,104 @@ namespace Rulealize.Tests
             Assert.Contains("approver", refused.Message, StringComparison.Ordinal);
         }
 
+        /// <summary>The month, with an input that creates a claim and enters its amount in one transition.</summary>
+        internal static readonly string Filing = Month.Replace(
+            "\"create\": { \"creates\": \"claims\" },",
+            """
+            "create": { "creates": "claims" },
+                            "file": {
+                              "creates": "claims",
+                              "params": { "amount": { "domain": { "op": "seq.of", "of": [100, 32000] } } },
+                              "fires": [ { "held": "claims", "input": "enterAmount", "args": { "amount": "@amount" } } ]
+                            },
+                            "fileEmpty": {
+                              "creates": "claims",
+                              "fires": [ { "held": "claims", "input": "submit", "args": { "by": "ann" } } ]
+                            },
+            """,
+            StringComparison.Ordinal);
+
+        [Fact]
+        public void CreatingAClaimAndEnteringItsAmountWritesTheNewClaimOnce()
+        {
+            MemoryStore store = new();
+            RuleContext month = Context(store, Filing);
+            string input = Input("file", args: """{ "amount": 32000 }""");
+
+            TransitionResult result = month.ApplyToState(input, store.Read(month, input));
+
+            StateWrite write = Assert.Single(result.Writes);
+            Assert.True(write.IsInsert);
+            Assert.Equal(StateAddress.Of("claims", "~1"), write.Address);
+            Assert.Equal(32000, Data(write.State).GetProperty("amount").GetInt32());
+            Assert.Equal("bo", Data(write.State).GetProperty("approver").GetString());
+        }
+
+        [Fact]
+        public async Task AClaimCreatedAndDrivenIsKeptUnderTheKeyTheStoreAssigns()
+        {
+            MemoryStore store = new();
+            RuleContext month = Context(store, Filing);
+
+            CommittedTransition filed = await month.ApplyAsync(Input("file", args: """{ "amount": 32000 }"""));
+
+            Assert.Equal(StateAddress.Of("claims", "c-1"), filed.At);
+            Assert.Equal(32000, Data(store[StateAddress.Of("claims", "c-1")]).GetProperty("amount").GetInt32());
+            Assert.False(store.Holds(MonthAddress));
+        }
+
+        [Fact]
+        public async Task ACreationThatDrovePlaysBackFromItsCommit()
+        {
+            MemoryStore store = new();
+            RuleContext month = Context(store, Filing);
+            string input = Input("file", args: """{ "amount": 32000 }""");
+            CommittedTransition filed = await month.ApplyAsync(input);
+
+            MemoryStore rebuilt = new();
+            RuleContext again = Context(rebuilt, Filing);
+            await again.ApplyAsync(input, filed.Commit);
+
+            Assert.Equal(store[StateAddress.Of("claims", "c-1")], rebuilt[StateAddress.Of("claims", "c-1")]);
+        }
+
+        [Fact]
+        public async Task WhatACreationDrivesIsAskedOfTheInstanceAsItStarts()
+        {
+            MemoryStore store = new();
+            RuleContext month = Context(store, Filing);
+
+            ValidInputSet offered = await month.GetValidInputsAsync(100);
+
+            Assert.Contains("file(amount: 32000)", offered.Select(static input => input.ToString()));
+            Assert.DoesNotContain("fileEmpty", offered.Select(static input => input.Input));
+            await Assert.ThrowsAsync<IllegalInputException>(() => month.ApplyAsync(Input("fileEmpty")));
+            Assert.False(store.Holds(StateAddress.Of("claims", "c-1")));
+        }
+
+        [Fact]
+        public void AnInstanceBeingCreatedHoldsNothingToBeAt()
+        {
+            RuleSetBuildException refused = Assert.Throws<RuleSetBuildException>(() => MemoryStore.Runtime(new MemoryStore()).CreateContext(
+                $$"""
+                {
+                  "id": "claim-year", "version": "0.1.0",
+                {{MemoryStore.Requires}}
+                  "uses": [
+                    { "ruleSet": "claim-month", "version": "^0.1", "as": "months", "many": { "key": "generated" } }
+                  ],
+                  "inputs": {
+                    "open": { "creates": "months", "fires": [ { "held": "months", "input": "create" } ] }
+                  }
+                }
+                """,
+                new Dictionary<string, string>(StringComparer.Ordinal) { ["claim-month"] = Month, ["claim"] = Claim },
+                Starts()));
+
+            Assert.Contains("/inputs/open/fires[0]/input", refused.Message, StringComparison.Ordinal);
+            Assert.Contains("holds no instances yet", refused.Message, StringComparison.Ordinal);
+        }
+
         private static readonly Dictionary<string, string> Held = new(StringComparer.Ordinal) { ["claim"] = Claim };
 
         private static Dictionary<string, string> Starts(string start = ClaimStart) =>

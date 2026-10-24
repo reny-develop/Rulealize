@@ -372,24 +372,161 @@ namespace Rulealize.Tests
             Assert.Contains("/uses[0]/as", refused.Message, StringComparison.Ordinal);
         }
 
-        [Fact]
-        public void DrivingAMonthsInputAboutAClaimIsNotSupportedYet()
-        {
-            RuleSetBuildException refused = Assert.Throws<RuleSetBuildException>(() => Context(new MemoryStore(), Spliced.Replace(
-                "\n  ]\n}",
-                """
-                  ],
-                  "inputs": {
-                    "submit": {
-                      "at": "months",
-                      "fires": [ { "held": "months", "input": "submit", "args": { "by": "ann" } } ]
-                    }
-                  }
+        /// <summary>The ledger, with inputs of its own that drive a month's: one at a claim, one that creates one.</summary>
+        private static readonly string Driving = Spliced.Replace(
+            "\n  ]\n}",
+            """
+              ],
+              "inputs": {
+                "submit": {
+                  "at": "months",
+                  "params": { "by": { "domain": { "op": "seq.of", "of": ["ann", "bo"] } } },
+                  "fires": [ { "held": "months", "input": "submit", "args": { "by": "@by" } } ]
+                },
+                "open": {
+                  "at": "months",
+                  "fires": [ { "held": "months", "input": "create" } ]
                 }
-                """,
-                StringComparison.Ordinal)));
+              }
+            }
+            """,
+            StringComparison.Ordinal);
 
-            Assert.Contains("/inputs/submit/fires[0]/input", refused.Message, StringComparison.Ordinal);
+        [Fact]
+        public void AnInputDrivingAMonthsInputAtAClaimReadsTheMonthAndTheClaim()
+        {
+            RuleContext ledger = Context(new MemoryStore(), Driving);
+
+            Assert.Equal(
+                [StateAddress.Root, OctoberAddress, OctoberAddress.Child("claims", "c-1")],
+                ledger.GetReads(Input("submit", "c-1", """{ "by": "ann" }""")).AsEnumerable());
+        }
+
+        [Fact]
+        public void AnInputDrivingAMonthsInputAtAClaimNeedsTheClaimsKey()
+        {
+            RuleContext ledger = Context(new MemoryStore(), Driving);
+
+            RuleDocumentException refused = Assert.Throws<RuleDocumentException>(
+                () => ledger.GetReads(Input("submit", args: """{ "by": "ann" }""")));
+
+            Assert.Contains("one instance of 'claims'", refused.Message, StringComparison.Ordinal);
+        }
+
+        [Fact]
+        public async Task TheLedgerSubmitsAClaimThroughItsMonth()
+        {
+            MemoryStore store = new();
+            RuleContext ledger = await Drafted(Context(store, Driving), October, 32000);
+
+            CommittedTransition submitted = await ledger.ApplyAsync(Input("submit", "c-1", """{ "by": "ann" }"""));
+
+            Assert.Equal(OctoberAddress.Child("claims", "c-1"), submitted.At);
+            Assert.Equal(32000, Data(store[OctoberAddress]).GetProperty("used").GetInt32());
+            Assert.Equal("review", Data(store[OctoberAddress.Child("claims", "c-1")]).GetProperty("stage").GetString());
+            Assert.False(store.Holds(StateAddress.Root));
+        }
+
+        [Fact]
+        public async Task TheLedgerIsRefusedWhatTheMonthWouldRefuse()
+        {
+            MemoryStore store = new();
+            RuleContext ledger = await Drafted(Context(store, Driving), October, 60000);
+
+            await Assert.ThrowsAsync<IllegalInputException>(
+                () => ledger.ApplyAsync(Input("submit", "c-1", """{ "by": "ann" }""")));
+            Assert.Equal("draft", Data(store[OctoberAddress.Child("claims", "c-1")]).GetProperty("stage").GetString());
+        }
+
+        [Fact]
+        public async Task AnInputDrivingAMonthsInputAtAClaimIsOfferedAtTheClaim()
+        {
+            RuleContext ledger = await Drafted(Context(new MemoryStore(), Driving), October, 32000);
+
+            ValidInputSet atClaim = await ledger.GetValidInputsAsync(OctoberAddress.Child("claims", "c-1"), 100);
+            ValidInputSet atMonth = await ledger.GetValidInputsAsync(OctoberAddress, 100);
+
+            Assert.Equal(
+                [
+                    "submit(by: ann)", "submit(by: bo)",
+                    "months.submit(by: ann)", "months.submit(by: bo)", "months.submit(by: cy)",
+                    "months.claims.enterAmount(amount: <type.int>)"
+                ],
+                atClaim.Select(static input => input.ToString()));
+            Assert.Equal(["open", "months.create"], atMonth.Select(static input => input.ToString()));
+        }
+
+        [Fact]
+        public async Task AMoveFoundAtTheClaimIsWrittenWithBothKeys()
+        {
+            MemoryStore store = new();
+            RuleContext ledger = await Drafted(Context(store, Driving), October, 32000);
+
+            ValidInput submit = (await ledger.GetValidInputsAsync(OctoberAddress.Child("claims", "c-1"), 100))[0];
+            await ledger.ApplyAsync(submit.ToInputDocument(ledger.RuleSet));
+
+            Assert.Equal("review", Data(store[OctoberAddress.Child("claims", "c-1")]).GetProperty("stage").GetString());
+        }
+
+        [Fact]
+        public async Task TheLedgerCreatesAClaimThroughItsMonth()
+        {
+            MemoryStore store = new();
+            RuleContext ledger = Context(store, Driving);
+
+            CommittedTransition opened = await ledger.ApplyAsync(Input("open"));
+
+            Assert.Equal(OctoberAddress.Child("claims", "c-1"), opened.At);
+            Assert.True(store.Holds(OctoberAddress.Child("claims", "c-1")));
+            Assert.False(store.Holds(OctoberAddress));
+        }
+
+        [Fact]
+        public void AnInputIsAboutOneInstanceOnEachWayDown()
+        {
+            string month = InstanceTests.Month
+                .Replace(
+                    "\"start\": \"claim-start\" } }",
+                    """
+                    "start": "claim-start" } },
+                        { "ruleSet": "claim", "version": "^1.0", "as": "receipts",
+                          "many": { "key": "generated", "start": "claim-start" } }
+                    """,
+                    StringComparison.Ordinal)
+                .Replace(
+                    "\"create\": { \"creates\": \"claims\" },",
+                    """
+                    "create": { "creates": "claims" },
+                        "file": {
+                          "at": "receipts",
+                          "params": { "by": { "domain": { "op": "seq.of", "of": ["ann"] } } },
+                          "fires": [ { "held": "receipts", "input": "submit", "args": { "by": "@by" } } ]
+                        },
+                    """,
+                    StringComparison.Ordinal);
+
+            RuleSetBuildException refused = Assert.Throws<RuleSetBuildException>(() => Context(
+                new MemoryStore(),
+                Spliced.Replace(
+                    "\n  ]\n}",
+                    """
+                      ],
+                      "inputs": {
+                        "both": {
+                          "at": "months",
+                          "fires": [
+                            { "held": "months", "input": "submit", "args": { "by": "ann" } },
+                            { "held": "months", "input": "file", "args": { "by": "ann" } }
+                          ]
+                        }
+                      }
+                    }
+                    """,
+                    StringComparison.Ordinal),
+                month));
+
+            Assert.Contains("/inputs/both/fires[1]", refused.Message, StringComparison.Ordinal);
+            Assert.Contains("one instance on each way down", refused.Message, StringComparison.Ordinal);
         }
 
         private static RuleContext Context(

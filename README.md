@@ -408,9 +408,10 @@ the version's.
 | `RuleContext.GetTerminalStatus` | whether a state is final, and its outcome |
 | `RuleContext.Projections` / `Project` | what else the rule set will say about a position, and its answer for one; what it holds once is listed under its alias |
 | `RuleRuntime.UseStore` / `UseCoordinator` | give the runtime the opened store a rule set that keeps instances names, and what keeps a transition that writes to two stores; a `MemoryStateStore` stands in for any store, for a walk or a test |
-| `RuleContext.ApplyAsync` / `GetValidInputsAsync` / `ProjectAsync` / `GetTerminalStatusAsync` | the same questions, for a rule set whose documents a store keeps — the host hands over an input or an address, never a state |
+| `RuleContext.ApplyAsync` / `GetValidInputsAsync` / `GetOutcomesAsync` / `ProjectAsync` / `GetTerminalStatusAsync` | the same questions, for a rule set whose documents a store keeps — the host hands over an input or an address, never a state |
+| `StoreOutcome` / `StoreOutcomeSet` / `ApplyAsync(input, outcome)` | one thing that may happen to an input applied through a store, with no state document, and keeping the one the host chose |
 | `RuleContext.InstanceProjections` / `ProjectAsync(at, name)` | what a rule set held `many` says about one instance, and its answer at that instance's address |
-| `CommittedTransition.Commit` | what the store did about a transition, to record beside its input and replay with it |
+| `CommittedTransition.Commit` | what the store did about a transition, and what was drawn, to record beside its input and replay with it |
 | `CommittedTransition.At` / `AtStatus` | the instance the input was about, under the key the store assigned, and whether it is final now |
 | `InstanceNotFoundException.At` | an address, in a collection whose keys a store generates, that no instance is at |
 | `ValidInput.Input` / `Arguments` / `Actor` | one legal move: what it is, what it was called with — by name or in declared parameter order — and whose it is where a rule set says |
