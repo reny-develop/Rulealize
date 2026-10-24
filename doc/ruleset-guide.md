@@ -1246,10 +1246,12 @@ A month holds the claims made in it, and there is no saying in advance how many.
 entry with a `many` holds any number of instances of the component, and each is kept as a
 document of its own rather than as a field of the holder's state. Those documents are kept by a
 store, and the document names the store plugin in `requires`, exactly one, as it names any
-vocabulary it draws on:
+vocabulary it draws on. [Rulealize.Plugin.SqliteStore](https://github.com/reny-develop/Rulealize.Plugin.SqliteStore)
+keeps them in a SQLite database; any other store written to the same contract is named the
+same way:
 
 ```jsonc
-"requires": [ /* … */, { "plugin": "Acme.Plugin.PostgreSqlStore" } ],
+"requires": [ /* … */, { "plugin": "Rulealize.Plugin.SqliteStore" } ],
 
 "uses": [
   { "ruleSet": "claim", "version": "^1.0", "as": "claims",
