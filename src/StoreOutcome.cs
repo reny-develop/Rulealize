@@ -4,6 +4,8 @@
 using System.Collections;
 using System.Collections.Immutable;
 using System.Globalization;
+using System.Text;
+using System.Text.Json;
 using Rulealize.Abstraction.Store;
 using Rulealize.Abstraction.Value;
 
@@ -80,6 +82,30 @@ namespace Rulealize
 
         /// <summary>Gets what is drawn, in order, as values.</summary>
         internal ImmutableArray<RuleValue> Script { get; }
+
+        /// <summary>Writes what is drawn as an outcome document, to record or show beside the input.</summary>
+        /// <returns>A <c>rulealize/outcome/v1</c> document, stamped with the rule set the outcome is of.</returns>
+        /// <remarks>
+        /// The document <see cref="Outcome.ToOutcomeDocument(string)"/> writes, where a number is a
+        /// number. What replays a kept transition is its commit document, which records the same
+        /// draws beside the keys the store assigned.
+        /// </remarks>
+        public string ToOutcomeDocument()
+        {
+            using MemoryStream buffer = new();
+            using (Utf8JsonWriter writer = new(buffer, new JsonWriterOptions { Indented = true }))
+            {
+                writer.WriteStartObject();
+                writer.WriteString("$schema", Internal.Document.OutcomeDocument.SchemaId);
+                writer.WriteString("ruleSet", RuleSet);
+                writer.WriteString("input", Input);
+                writer.WritePropertyName("draws");
+                Internal.Document.OutcomeDocument.WriteValues(writer, Script);
+                writer.WriteEndObject();
+            }
+
+            return Encoding.UTF8.GetString(buffer.ToArray());
+        }
 
         /// <inheritdoc />
         public override string ToString()

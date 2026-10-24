@@ -578,7 +578,7 @@ are `~1`, `~2`, … in the order the inputs run, and `CommittedTransition.At` is
 likely first, as `GetOutcomes` does for a state document, and writes nothing. Each
 `StoreOutcome` says what `CommittedTransition` would — `IsTerminal`, `Result`, `At` (a new
 instance under its temporary key), `AtStatus` — and carries no state document, because the
-documents are the store's. The host picks one and hands it to `ApplyAsync(input, outcome)`,
+documents are the store's; `ToOutcomeDocument` writes what it draws as an outcome document, to show or record. The host picks one and hands it to `ApplyAsync(input, outcome)`,
 which reads the documents again, applies the input with those draws and commits it; an outcome
 the position no longer allows is refused rather than kept. `ApplyAsync(input)` refuses an input
 that draws, as the two-document `ApplyToState` does. The commit records what was drawn, so

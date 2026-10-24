@@ -49,6 +49,20 @@ namespace Rulealize.Tests
         }
 
         [Fact]
+        public async Task AnOutcomeIsWrittenAsTheOutcomeDocumentAStateDocumentWouldGive()
+        {
+            RuleContext month = await Created(new MemoryStore());
+
+            StoreOutcome bo = (await month.GetOutcomesAsync(Assign, 10))[1];
+
+            using JsonDocument written = JsonDocument.Parse(bo.ToOutcomeDocument());
+            Assert.Equal("rulealize/outcome/v1", written.RootElement.GetProperty("$schema").GetString());
+            Assert.Equal("claim-month@0.1.0", written.RootElement.GetProperty("ruleSet").GetString());
+            Assert.Equal("claims.assign", written.RootElement.GetProperty("input").GetString());
+            Assert.Equal(["bo"], written.RootElement.GetProperty("draws").EnumerateArray().Select(static draw => draw.GetString()));
+        }
+
+        [Fact]
         public async Task AnInputThatDrawsIsNotAppliedWithoutAnOutcome()
         {
             RuleContext month = await Created(new MemoryStore());
