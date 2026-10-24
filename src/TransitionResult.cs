@@ -33,6 +33,7 @@ namespace Rulealize
             IsTerminal = isTerminal;
             Result = result;
             _writes = writes;
+            AtStatus = new TerminalStatus(isTerminal, result);
         }
 
         /// <summary>Gets a value indicating whether the rule set considers the new state final.</summary>
@@ -58,6 +59,13 @@ namespace Rulealize
         /// input at one instance leaves its holder's document out unless it wrote to it.
         /// </remarks>
         internal ImmutableArray<StateWrite> Writes => _writes ?? [new StateWrite(StateAddress.Root, State, false)];
+
+        /// <summary>Gets the document the input was about: the instance it created or is at, or the rule set's own.</summary>
+        /// <remarks>A created instance is under the key <see cref="Writes"/> writes it under, temporary until a store assigns one.</remarks>
+        internal StateAddress At { get; init; } = StateAddress.Root;
+
+        /// <summary>Gets whether the document at <see cref="At"/> is final now, by its own rule set's <c>terminal</c>.</summary>
+        internal TerminalStatus AtStatus { get; init; }
 
         /// <summary>Writes the result as the document a caller passes on.</summary>
         /// <returns>An object with <c>data</c>, <c>terminal</c>, and <c>result</c> when there is one.</returns>

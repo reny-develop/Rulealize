@@ -175,10 +175,10 @@ namespace Rulealize.Tests
             MemoryStore store = new();
             RuleContext ledger = await Drafted(Context(store), October, 32000);
 
-            RuleDocumentException missing = await Assert.ThrowsAsync<RuleDocumentException>(
+            InstanceNotFoundException missing = await Assert.ThrowsAsync<InstanceNotFoundException>(
                 () => ledger.ApplyAsync(Input("months.claims.enterAmount", "c-1", """{ "amount": 5 }""", "2026-11")));
 
-            Assert.Contains("months/2026-11/claims/c-1", missing.Message, StringComparison.Ordinal);
+            Assert.Equal("months/2026-11/claims/c-1", missing.At.ToString());
         }
 
         [Fact]

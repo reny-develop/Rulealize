@@ -44,9 +44,9 @@ Create a `RuleRuntime` instance and load the required plugins into it.
 
 `RuleContext` provides an `ApplyToState` method. This method accepts an input document and a state document, applies the input to the state, and returns where the transition arrived.
 
-A rule set whose `uses` holds something `many` keeps each instance as its own document. Those documents are read and written by a store plugin the rule set names in `requires`, and Rulealize calls it as it calls every plugin; a host never fetches or writes them. Evaluation stays pure: what is read is settled before anything is evaluated, versions and keys are the store's, and every instance at once (`$alias`) is read by projections only, because a guard that read it would read documents its transition does not write. The store contract is in Abstraction (`Rulealize.Abstraction.Store`): a host opens the store and gives it to `RuleRuntime.UseStore`, then calls `ApplyAsync`, `GetValidInputsAsync` and `ProjectAsync` with input documents alone. A `MemoryStateStore` stands in for any store, since a store changes no answer; it is how a walk (Ruledger) or a test runs such a rule set without opening the real one. The pure by-address members underneath stay internal (`doc/runtime.md#many-instances-kept-as-documents-of-their-own`).
+A rule set whose `uses` holds something `many` keeps each instance as its own document. Those documents are read and written by a store plugin the rule set names in `requires`, and Rulealize calls it as it calls every plugin; a host never fetches or writes them. Evaluation stays pure: what is read is settled before anything is evaluated, versions and keys are the store's, and every instance at once (`$alias`) is read by projections only, because a guard that read it would read documents its transition does not write. The store contract is in Abstraction (`Rulealize.Abstraction.Store`): a host opens the store and gives it to `RuleRuntime.UseStore`, then calls `ApplyAsync`, `GetValidInputsAsync`, `ProjectAsync` and `GetTerminalStatusAsync` with input documents or addresses alone. What a held rule set says about one instance (its `projections`, its `terminal`) is asked at that instance's address, under the qualified name `InstanceProjections` lists; `CommittedTransition.At` / `AtStatus` say which instance a transition was about and whether it is final, and an address with no instance in a generated collection is an `InstanceNotFoundException`. A `MemoryStateStore` stands in for any store, since a store changes no answer; it is how a walk (Ruledger) or a test runs such a rule set without opening the real one. The pure by-address members underneath stay internal (`doc/runtime.md#many-instances-kept-as-documents-of-their-own`).
 
-Asynchrony belongs at the boundary only. Evaluation is pure computation over in-memory documents, so the `string` overloads are synchronous; the `Async` suffix is reserved for where reading a document genuinely is I/O — the `Stream` overloads (`CreateContextAsync`, `ApplyToStateAsync`) and the calls that go through a store (`ApplyAsync`, `GetValidInputsAsync`, `ProjectAsync`).
+Asynchrony belongs at the boundary only. Evaluation is pure computation over in-memory documents, so the `string` overloads are synchronous; the `Async` suffix is reserved for where reading a document genuinely is I/O — the `Stream` overloads (`CreateContextAsync`, `ApplyToStateAsync`) and the calls that go through a store (`ApplyAsync`, `GetValidInputsAsync`, `ProjectAsync`, `GetTerminalStatusAsync`).
 
 ### What May Happen Next
 
@@ -91,6 +91,9 @@ account of the rules outside them.
 will answer and `RuleContext.Project(name, state)` returns one answer as JSON. A projection
 takes no arguments and cannot draw, so it is a function of the position: ask twice about one
 position and the answer is the same one, and it may be cached against the state document.
+What a held rule set says is offered under its alias: held once, it is in `Projections` and
+asked of the same state; held `many`, it is in `InstanceProjections` and asked of one instance,
+at its address (`ProjectAsync(at, name)`).
 
 An object in the document with no `op` in it is not a node, and the value model has exactly
 one thing it can be — so a projection assembles a record out of computed parts in the

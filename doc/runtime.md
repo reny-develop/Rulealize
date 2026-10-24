@@ -133,8 +133,17 @@ form is a fault rather than a field that quietly went missing — a caller readi
 that vanished cannot tell it from a field the projection meant to leave out.
 
 A name may not contain `.`, on the terms an input's name may not: a rule set that holds
-another may come to offer its projections under a qualified name, and a name that could be
-either would make which one a caller meant depend on the document.
+another offers its projections under a qualified name, and a name that could be either would
+make which one a caller meant depend on the document.
+
+**What a held rule set says is offered under its alias**, as its inputs are. A rule set held
+once is a field of its holder's state, so `roster.filled` is asked of the holder's state
+document and answers about that field; `Projections` lists it after the holder's own, and
+every name there can be asked of the position. A rule set held
+[`many`](#many-instances-kept-as-documents-of-their-own) answers about one instance, not
+about the position, so its projections are listed apart, by `InstanceProjections`, and asked
+at an instance's address. Either way the component's projection runs against its own state,
+as its guards do: what it says does not depend on who holds it.
 
 ### `terminal`
 
@@ -371,11 +380,12 @@ CommittedTransition done = await ledger.ApplyAsync(
     """{ "input": "months.submit", "at": { "months": "2026-10", "claims": "c-8" }, "args": { "by": "ann" } }""");
 ```
 
-The calls that go through the store are `ApplyAsync`, `GetValidInputsAsync` and `ProjectAsync`,
-and only those: reading a document is I/O there, so they are asynchronous, and the ones that
-take a state document refuse such a rule set with `InvalidOperationException`, because its
-position is not one document. `ApplyAsync` returns where the transition arrived and the commit
-document below, and no state document, because the documents are the store's.
+The calls that go through the store are `ApplyAsync`, `GetValidInputsAsync`, `ProjectAsync`
+and `GetTerminalStatusAsync`, and only those: reading a document is I/O there, so they are
+asynchronous, and the ones that take a state document refuse such a rule set with
+`InvalidOperationException`, because its position is not one document. `ApplyAsync` returns
+where the transition arrived and the commit document below, and no state document, because
+the documents are the store's.
 
 **The rule set names its store, exactly one.** A document whose `uses` declares a `many` names
 the store plugin its instances are kept in, in `requires`, the way it names any vocabulary it
@@ -490,6 +500,31 @@ asked for every instance of those before anything is evaluated. The projection i
 translated into a query: the store loads the instances and the runtime reads them in memory,
 which needs nothing from Abstraction it does not already have.
 
+**One instance is asked about at its address.** What a claim says about itself — its
+`projections`, its `terminal` — is the claim's, and is asked of one claim, by the address that
+names it. The name is qualified as the claim's inputs are, and listed by `InstanceProjections`:
+
+```csharp
+StateAddress claim = StateAddress.Of("claims", "c-8");
+
+string summary = await month.ProjectAsync(claim, "claims.summary");
+TerminalStatus decided = await month.GetTerminalStatusAsync(claim);
+```
+
+What is read is that instance's document, and every instance under it of a collection its
+projection reads as `$alias`; the holder's document is not, because nothing the claim says
+reads it. The address is not an argument: a projection still takes none, and the same claim
+gives the same answer wherever it is held. `ApplyAsync` says the same of the instance a
+transition was about: `CommittedTransition.At` is the instance it created, under the key the
+store assigned, or else the innermost one its `at` named, or else `/`, and `AtStatus` is that
+document's own `terminal` about the state the transition left it in. `IsTerminal` and
+`Result` stay the holder's.
+
+An address in a collection whose keys a store generates, with no document there, is refused
+with `InstanceNotFoundException` — a `RuleDocumentException`, carrying the address — by every
+call that goes through the store, so a host has a "not found" to give. A keyed collection has
+none: every key its schema admits is an instance.
+
 **A key written as a schema has an instance at every key it admits.** `"many": { "key": {
 "op": "type.string", "minLength": 7, "maxLength": 7 } }` holds a month at every seven-character
 key, whether or not anything was ever written there, so nothing creates one and `creates` on it
@@ -510,9 +545,9 @@ What a transition reads is every document on the way, outermost first; `months.c
 claim under the month it is at, and the month itself only when it writes it. What `held` says
 about the months' inputs is asked at whatever depth they are offered.
 
-Not yet: an input of the ledger's that drives a month's input that is itself at a claim, a
-held rule set's projections, an input that draws, and keeping a rule set that holds nothing
-`many` in a store — its state is one document, and the host keeps it.
+Not yet: an input of the ledger's that drives a month's input that is itself at a claim, an
+input that draws, and keeping a rule set that holds nothing `many` in a store — its state is
+one document, and the host keeps it.
 
 ## Snapshot semantics
 

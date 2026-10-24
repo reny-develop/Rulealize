@@ -1027,8 +1027,10 @@ A definition is reuse inside the rules; a projection is an answer out of them. A
 that wants both writes the rule once as a definition and returns `#name` from the projection.
 
 A name may not contain `.`, on the terms an input's name may not
-([§11](#11-uses-and-held--a-rule-set-made-of-rule-sets)): a rule set that holds another may come
-to offer its projections under a qualified name.
+([§11](#11-uses-and-held--a-rule-set-made-of-rule-sets)): a rule set that holds another offers
+its projections under a qualified name. `roster.filled` is what the rule set held as `roster`
+says, asked of the holder's state; one held `many` answers about one instance instead, at its
+address.
 
 ---
 
@@ -1338,9 +1340,11 @@ month's input that is itself at a claim, from an input of the ledger's, is not s
 
 Every state document of a rule set like this is in its store, its own included, and Rulealize
 reads and writes them as it calls any plugin; a host gives the runtime the opened store and
-then hands over input documents alone, through `ApplyAsync`, `GetValidInputsAsync` and
-`ProjectAsync`. How the runtime treats the documents, and what happens when two transitions
-race or one writes to two stores, is
+then hands over input documents alone, through `ApplyAsync`, `GetValidInputsAsync`,
+`ProjectAsync` and `GetTerminalStatusAsync`. What a claim's own `projections` and `terminal`
+say is asked of one claim, at its address: `ProjectAsync(StateAddress.Of("claims", "c-8"),
+"claims.summary")`. How the runtime treats the documents, and what happens when two
+transitions race or one writes to two stores, is
 [`many`](runtime.md#many-instances-kept-as-documents-of-their-own).
 
 ---
@@ -1458,7 +1462,8 @@ They produce null, and rule sets are built on their doing so (§2).
 
 Each exception says which class of thing went wrong: `RuleSetBuildException` for a document
 that is not a valid rule set, `RuleDocumentException` for a state, input, outcome or commit document
-this rule set cannot accept, `IllegalInputException` for a move the rules do not allow —
+this rule set cannot accept — including an address no instance is at, as
+`InstanceNotFoundException` — `IllegalInputException` for a move the rules do not allow —
 including a value a parameter's `open` schema does not admit —
 `RuleEvaluationException` for values that make an operation meaningless,
 `StateConflictException` for a transition another committed ahead of, against a document a store

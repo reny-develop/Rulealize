@@ -305,6 +305,11 @@ nothing else. Ask twice about one position and the answer is the same one, which
 it be cached against the position, compared with the answer for another, or handed to
 something that will only ever read it.
 
+What a held rule set says is offered under its alias, so the loop above asks it too: one held
+once answers about its part of this position. One held `many` answers about one instance, not
+the position, and is listed apart, by `InstanceProjections`, to be asked at that instance's
+address.
+
 ## What is checked, and when
 
 Everything the document can settle on its own is settled in `CreateContext`, and the
@@ -401,10 +406,13 @@ the version's.
 | `RuleContext.GetValidInputs` | what is legal from here |
 | `RuleContext.GetOutcomes` | what could happen when one of them is applied, and how likely each of those is |
 | `RuleContext.GetTerminalStatus` | whether a state is final, and its outcome |
-| `RuleContext.Projections` / `Project` | what else the rule set will say about a position, and its answer for one |
+| `RuleContext.Projections` / `Project` | what else the rule set will say about a position, and its answer for one; what it holds once is listed under its alias |
 | `RuleRuntime.UseStore` / `UseCoordinator` | give the runtime the opened store a rule set that keeps instances names, and what keeps a transition that writes to two stores; a `MemoryStateStore` stands in for any store, for a walk or a test |
-| `RuleContext.ApplyAsync` / `GetValidInputsAsync` / `ProjectAsync` | the same three questions, for a rule set whose documents a store keeps — the host hands over an input, never a state |
+| `RuleContext.ApplyAsync` / `GetValidInputsAsync` / `ProjectAsync` / `GetTerminalStatusAsync` | the same questions, for a rule set whose documents a store keeps — the host hands over an input or an address, never a state |
+| `RuleContext.InstanceProjections` / `ProjectAsync(at, name)` | what a rule set held `many` says about one instance, and its answer at that instance's address |
 | `CommittedTransition.Commit` | what the store did about a transition, to record beside its input and replay with it |
+| `CommittedTransition.At` / `AtStatus` | the instance the input was about, under the key the store assigned, and whether it is final now |
+| `InstanceNotFoundException.At` | an address, in a collection whose keys a store generates, that no instance is at |
 | `ValidInput.Input` / `Arguments` / `Actor` | one legal move: what it is, what it was called with — by name or in declared parameter order — and whose it is where a rule set says |
 | `ValidInput.Open` / `IsComplete` / `ValidInputSet.HasOpenParameters` | what a move is still waiting for, where a rule set leaves a parameter `open`, and whether anything in the answer is |
 | `OpenParameter.Description` / `Field` / `Op` | the bounds the admitting schema declares, the state field it is edited into, and the operation to read both against |
@@ -427,7 +435,9 @@ walk that stays the fetcher's
 ([why](doc/runtime.md#uses-and-held-a-rule-set-that-holds-others)).
 
 Exceptions: `RuleSetBuildException` for a document that is not a valid rule set,
-`RuleDocumentException` for a state, input, outcome or commit document this rule set cannot accept,
+`RuleDocumentException` for a state, input, outcome or commit document this rule set cannot accept —
+`InstanceNotFoundException` is the kind of that one meaning an address names no instance, in a
+collection whose keys a store generates —
 `IllegalInputException` for a move the rules do not allow — `InputRejectedException` is the
 kind of that one meaning the move *was* on offer and the value supplied for an open parameter
 is what is wrong, and it carries a code per refusal the rule set named — `RuleEvaluationException` for
